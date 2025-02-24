@@ -3,6 +3,10 @@ module.exports = {
 	solidity: "0.8.19",
 	networks: {
 		hardhat: {
+			mining: {
+				auto: true,
+				interval: 1000
+			},
 			accounts: [
 				{
 					privateKey: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",

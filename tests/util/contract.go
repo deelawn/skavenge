@@ -69,7 +69,6 @@ func NewTransactOpts(client *ethclient.Client, privateKeyHex string) (*bind.Tran
 	}
 	auth.Nonce = big.NewInt(int64(nonce))
 	auth.Value = big.NewInt(0)             // in wei
-	auth.GasLimit = uint64(3000000)        // in units
 	auth.GasPrice = big.NewInt(1000000000) // in wei (1 gwei)
 
 	return auth, nil
