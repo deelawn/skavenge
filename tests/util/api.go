@@ -126,14 +126,14 @@ func encodePrivateKey(privateKey *ecdsa.PrivateKey) (string, error) {
 }
 
 // EncryptMessage encrypts a message for a recipient.
-func (c *APIClient) EncryptMessage(message string, recipientPublicKey *ecdsa.PublicKey) (string, error) {
+func (c *APIClient) EncryptMessage(message string, recipientPublicKey *ecdsa.PublicKey) ([]byte, error) {
 	// Base64 encode the message
 	encodedMessage := base64.StdEncoding.EncodeToString([]byte(message))
 
 	// Encode the recipient public key
 	encodedPublicKey, err := encodePublicKey(recipientPublicKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to encode recipient public key: %w", err)
+		return nil, fmt.Errorf("failed to encode recipient public key: %w", err)
 	}
 
 	req := EncryptMessageRequest{
@@ -144,23 +144,29 @@ func (c *APIClient) EncryptMessage(message string, recipientPublicKey *ecdsa.Pub
 	var resp EncryptMessageResponse
 	err = c.doRequest(EncryptEndpoint, req, &resp)
 	if err != nil {
-		return "", fmt.Errorf("encryption failed: %w", err)
+		return nil, fmt.Errorf("encryption failed: %w", err)
 	}
 
-	// Response is already base64 encoded, return it as is
-	return resp.Data.Ciphertext, nil
+	decodedCipherText, err := base64.StdEncoding.DecodeString(resp.Data.Ciphertext)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode ciphertext: %w", err)
+	}
+
+	return decodedCipherText, nil
 }
 
 // DecryptMessage decrypts a message using a private key.
-func (c *APIClient) DecryptMessage(encryptedMessage string, privateKey *ecdsa.PrivateKey) (string, error) {
+func (c *APIClient) DecryptMessage(encryptedMessage []byte, privateKey *ecdsa.PrivateKey) (string, error) {
 	// Encode the private key
 	encodedPrivateKey, err := encodePrivateKey(privateKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to encode private key: %w", err)
 	}
 
+	encodedEncryptedMessage := base64.StdEncoding.EncodeToString(encryptedMessage)
+
 	req := DecryptMessageRequest{
-		EncryptedMessage: encryptedMessage,
+		EncryptedMessage: encodedEncryptedMessage,
 		PrivateKey:       encodedPrivateKey,
 	}
 
@@ -180,44 +186,60 @@ func (c *APIClient) DecryptMessage(encryptedMessage string, privateKey *ecdsa.Pr
 }
 
 // GenerateProof generates a proof for transferring a clue.
-func (c *APIClient) GenerateProof(message string, recipientPublicKey *ecdsa.PublicKey, senderPrivateKey *ecdsa.PrivateKey) (string, string, error) {
+func (c *APIClient) GenerateProof(
+	message string,
+	b64EncryptedMessage string,
+	recipientPublicKey *ecdsa.PublicKey,
+	senderPrivateKey *ecdsa.PrivateKey,
+) ([]byte, []byte, error) {
 	// Base64 encode the message
 	encodedMessage := base64.StdEncoding.EncodeToString([]byte(message))
 
 	// Encode the public key
 	encodedPublicKey, err := encodePublicKey(recipientPublicKey)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to encode recipient public key: %w", err)
+		return nil, nil, fmt.Errorf("failed to encode recipient public key: %w", err)
 	}
 
 	// Encode the private key
 	encodedPrivateKey, err := encodePrivateKey(senderPrivateKey)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to encode sender private key: %w", err)
+		return nil, nil, fmt.Errorf("failed to encode sender private key: %w", err)
 	}
 
 	req := GenerateProofRequest{
 		Message:            encodedMessage,
 		RecipientPublicKey: encodedPublicKey,
 		SenderPrivateKey:   encodedPrivateKey,
+		SellerCipherText:   b64EncryptedMessage,
 	}
 
 	var resp GenerateProofResponse
 	err = c.doRequest(GenerateProofEndpoint, req, &resp)
 	if err != nil {
-		return "", "", fmt.Errorf("proof generation failed: %w", err)
+		return nil, nil, fmt.Errorf("proof generation failed: %w", err)
 	}
 
-	// Responses are already base64 encoded, return them as is
-	return resp.Data.Proof, resp.Data.BuyerCipherText, nil // TODO
+	decodedProof, err := base64.StdEncoding.DecodeString(resp.Data.Proof)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to decode proof: %w", err)
+	}
+
+	decodedBuyerCipherText, err := base64.StdEncoding.DecodeString(resp.Data.BuyerCipherText)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to decode buyer ciphertext: %w", err)
+	}
+
+	return decodedProof, decodedBuyerCipherText, nil
 }
 
 // VerifyProof verifies a proof for transferring a clue.
-func (c *APIClient) VerifyProof(proof string, sellerCipherText string) (bool, error) {
-	encodedSellerCipherText := base64.StdEncoding.EncodeToString([]byte(sellerCipherText))
+func (c *APIClient) VerifyProof(proof []byte, sellerCipherText []byte) (bool, error) {
+	encodedProof := base64.StdEncoding.EncodeToString(proof)
+	encodedSellerCipherText := base64.StdEncoding.EncodeToString(sellerCipherText)
 
 	req := VerifyProofRequest{
-		Proof:            proof,
+		Proof:            encodedProof,
 		SellerCipherText: encodedSellerCipherText,
 	}
 

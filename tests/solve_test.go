@@ -13,10 +13,7 @@ import (
 	"github.com/deelawn/skavenge/tests/util"
 )
 
-var (
-	buyer = "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
-	other = "7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"
-)
+var buyer string = "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
 
 // TestSuccessfulSolve tests the successful solving of a clue.
 func TestSuccessfulSolve(t *testing.T) {
@@ -55,7 +52,7 @@ func TestSuccessfulSolve(t *testing.T) {
 	require.NoError(t, err, "Failed to encrypt clue content")
 
 	// Mint the clue
-	tx, err := contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
+	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -132,7 +129,7 @@ func TestFailedSolveAttempt(t *testing.T) {
 	require.NoError(t, err, "Failed to encrypt clue content")
 
 	// Mint the clue
-	tx, err := contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
+	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -212,7 +209,7 @@ func TestMaximumSolveAttempts(t *testing.T) {
 	require.NoError(t, err, "Failed to encrypt clue content")
 
 	// Mint the clue
-	tx, err := contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
+	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -317,7 +314,7 @@ func TestNonOwnerSolveAttempt(t *testing.T) {
 	require.NoError(t, err, "Failed to encrypt clue content")
 
 	// Mint the clue
-	tx, err := contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
+	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -383,7 +380,7 @@ func TestSolveAlreadySolvedClue(t *testing.T) {
 	require.NoError(t, err, "Failed to encrypt clue content")
 
 	// Mint the clue
-	tx, err := contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
+	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined

@@ -57,11 +57,8 @@ func TestSuccessfulMint(t *testing.T) {
 	require.NoError(t, err, "Failed to encrypt clue content")
 	require.NotEmpty(t, encryptedClueContent, "Encrypted clue content should not be empty")
 
-	// Convert the encrypted content to bytes
-	encryptedClueBytes := []byte(encryptedClueContent)
-
 	// Mint a new clue with the encrypted content
-	tx, err := contract.MintClue(minterAuth, encryptedClueBytes, solutionHash)
+	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -82,12 +79,12 @@ func TestSuccessfulMint(t *testing.T) {
 	// Check the clue content is correctly stored (encrypted)
 	clueContents, err := contract.GetClueContents(nil, big.NewInt(int64(tokenId)))
 	require.NoError(t, err)
-	require.Equal(t, encryptedClueBytes, clueContents, "Stored encrypted content does not match")
+	require.Equal(t, encryptedClueContent, clueContents, "Stored encrypted content does not match")
 
 	// Verify the clue struct in the mapping
 	clueData, err := contract.Clues(nil, big.NewInt(int64(tokenId)))
 	require.NoError(t, err)
-	require.Equal(t, encryptedClueBytes, clueData.EncryptedContents, "Encrypted contents do not match")
+	require.Equal(t, encryptedClueContent, clueData.EncryptedContents, "Encrypted contents do not match")
 	require.Equal(t, solutionHash, clueData.SolutionHash, "Solution hash does not match")
 	require.False(t, clueData.IsSolved, "Clue should not be marked as solved")
 	require.Equal(t, uint64(0), clueData.SolveAttempts.Uint64(), "Solve attempts should be 0")
@@ -131,11 +128,8 @@ func TestMintWithEmptySolutionHash(t *testing.T) {
 	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
-	// Convert the encrypted content to bytes
-	encryptedClueBytes := []byte(encryptedClueContent)
-
 	// Try to mint with empty solution hash
-	tx, err := contract.MintClue(minterAuth, encryptedClueBytes, emptySolutionHash)
+	tx, err := contract.MintClue(minterAuth, encryptedClueContent, emptySolutionHash)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -187,7 +181,7 @@ func TestMintMultipleClues(t *testing.T) {
 	firstEncryptedClueContent, err := apiClient.EncryptMessage(firstClueContent, &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt first clue content")
 
-	tx1, err := contract.MintClue(minterAuth, []byte(firstEncryptedClueContent), firstSolutionHash)
+	tx1, err := contract.MintClue(minterAuth, firstEncryptedClueContent, firstSolutionHash)
 	require.NoError(t, err)
 	receipt1, err := util.WaitForTransaction(client, tx1)
 	require.NoError(t, err)
@@ -207,7 +201,7 @@ func TestMintMultipleClues(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx2, err := contract.MintClue(minterAuth, []byte(secondEncryptedClueContent), secondSolutionHash)
+	tx2, err := contract.MintClue(minterAuth, secondEncryptedClueContent, secondSolutionHash)
 	require.NoError(t, err)
 	receipt2, err := util.WaitForTransaction(client, tx2)
 	require.NoError(t, err)
@@ -221,13 +215,13 @@ func TestMintMultipleClues(t *testing.T) {
 	// Verify contents of first clue (encrypted)
 	firstClueData, err := contract.Clues(nil, big.NewInt(1))
 	require.NoError(t, err)
-	require.Equal(t, []byte(firstEncryptedClueContent), firstClueData.EncryptedContents, "First clue encrypted content does not match")
+	require.Equal(t, firstEncryptedClueContent, firstClueData.EncryptedContents, "First clue encrypted content does not match")
 	require.Equal(t, firstSolutionHash, firstClueData.SolutionHash, "First solution hash does not match")
 
 	// Verify contents of second clue (encrypted)
 	secondClueData, err := contract.Clues(nil, big.NewInt(2))
 	require.NoError(t, err)
-	require.Equal(t, []byte(secondEncryptedClueContent), secondClueData.EncryptedContents, "Second clue encrypted content does not match")
+	require.Equal(t, secondEncryptedClueContent, secondClueData.EncryptedContents, "Second clue encrypted content does not match")
 	require.Equal(t, secondSolutionHash, secondClueData.SolutionHash, "Second solution hash does not match")
 
 	// Verify we can decrypt both clues
