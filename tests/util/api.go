@@ -188,12 +188,13 @@ func (c *APIClient) DecryptMessage(encryptedMessage []byte, privateKey *ecdsa.Pr
 // GenerateProof generates a proof for transferring a clue.
 func (c *APIClient) GenerateProof(
 	message string,
-	b64EncryptedMessage string,
+	encryptedMessage []byte,
 	recipientPublicKey *ecdsa.PublicKey,
 	senderPrivateKey *ecdsa.PrivateKey,
 ) ([]byte, []byte, error) {
 	// Base64 encode the message
 	encodedMessage := base64.StdEncoding.EncodeToString([]byte(message))
+	encodedEncryptedMessage := base64.StdEncoding.EncodeToString(encryptedMessage)
 
 	// Encode the public key
 	encodedPublicKey, err := encodePublicKey(recipientPublicKey)
@@ -211,7 +212,7 @@ func (c *APIClient) GenerateProof(
 		Message:            encodedMessage,
 		RecipientPublicKey: encodedPublicKey,
 		SenderPrivateKey:   encodedPrivateKey,
-		SellerCipherText:   b64EncryptedMessage,
+		SellerCipherText:   encodedEncryptedMessage,
 	}
 
 	var resp GenerateProofResponse
