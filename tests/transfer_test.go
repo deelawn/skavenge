@@ -2,10 +2,12 @@
 package tests
 
 import (
+	"context"
 	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
@@ -180,8 +182,7 @@ func TestInvalidProofVerification(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create event listener
-	// listener, err := util.NewEventListener(client, contract, address)
-	_, err = util.NewEventListener(client, contract, address)
+	listener, err := util.NewEventListener(client, contract, address)
 	require.NoError(t, err)
 
 	// Setup minter account and keys
@@ -258,33 +259,19 @@ func TestInvalidProofVerification(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, ok, "Proof verification didn't fail")
 
-	// Buyer attempts to verify the invalid proof
-	// buyerAuth, err = util.NewTransactOpts(client, buyer)
-	// require.NoError(t, err)
-	// buyerAuth.GasLimit = 300000 // Set higher gas limit for potentially failing transaction
-
-	// The verification should technically succeed at the contract level because we're just storing the verification state
-	// but using the API, it would likely fail to verify the ZK proof
-	// _, err = contract.VerifyProof(buyerAuth, transferId)
-	// require.Error(t, err)
-	// This might not fail at the contract level since it just sets a status, but would fail when validating the proof off-chain
-
-	// Wait for the timeout period
-	// time.Sleep(3*time.Minute + 5*time.Second) // TRANSFER_TIMEOUT is 3 minutes
-
 	// Cancel the transfer
-	// buyerAuth, err = util.NewTransactOpts(client, buyer)
-	// require.NoError(t, err)
+	buyerAuth, err = util.NewTransactOpts(client, buyer)
+	require.NoError(t, err)
 
-	// cancelTx, err := contract.CancelTransfer(buyerAuth, transferId)
-	// require.NoError(t, err)
-	// cancelReceipt, err := util.WaitForTransaction(client, cancelTx)
-	// require.NoError(t, err)
+	cancelTx, err := contract.CancelTransfer(buyerAuth, transferId)
+	require.NoError(t, err)
+	cancelReceipt, err := util.WaitForTransaction(client, cancelTx)
+	require.NoError(t, err)
 
 	// Verify the TransferCancelled event is emitted
-	// transferCancelledFound, err := listener.CheckEvent(cancelReceipt, "TransferCancelled")
-	// require.NoError(t, err)
-	// require.True(t, transferCancelledFound, "TransferCancelled event not found")
+	transferCancelledFound, err := listener.CheckEvent(cancelReceipt, "TransferCancelled")
+	require.NoError(t, err)
+	require.True(t, transferCancelledFound, "TransferCancelled event not found")
 }
 
 // TestCompletingTransferWithoutVerification tests completing a transfer without verification.
@@ -373,104 +360,101 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 }
 
 // TestCancelTransfer tests cancelling a transfer.
-// func TestCancelTransfer(t *testing.T) {
-// 	// Connect to Hardhat network
-// 	client, err := ethclient.Dial("http://localhost:8545")
-// 	require.NoError(t, err)
+func TestCancelTransfer(t *testing.T) {
+	// Connect to Hardhat network
+	client, err := ethclient.Dial("http://localhost:8545")
+	require.NoError(t, err)
 
-// 	// Setup deployer account
-// 	deployerAuth, err := util.NewTransactOpts(client, deployer)
-// 	require.NoError(t, err)
+	// Setup deployer account
+	deployerAuth, err := util.NewTransactOpts(client, deployer)
+	require.NoError(t, err)
 
-// 	// Deploy contract
-// 	contract, address, err := util.DeployContract(client, deployerAuth)
-// 	require.NoError(t, err)
+	// Deploy contract
+	contract, address, err := util.DeployContract(client, deployerAuth)
+	require.NoError(t, err)
 
-// 	// Create event listener
-// 	listener, err := util.NewEventListener(client, contract, address)
-// 	require.NoError(t, err)
+	// Create event listener
+	listener, err := util.NewEventListener(client, contract, address)
+	require.NoError(t, err)
 
-// 	// Setup minter account and keys
-// 	minterPrivKey, err := crypto.HexToECDSA(minter)
-// 	require.NoError(t, err)
-// 	minterAuth, err := util.NewTransactOpts(client, minter)
-// 	require.NoError(t, err)
+	// Setup minter account and keys
+	minterPrivKey, err := crypto.HexToECDSA(minter)
+	require.NoError(t, err)
+	minterAuth, err := util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
 
-// 	// Setup buyer account and keys
-// 	buyerPrivKey, err := crypto.HexToECDSA(buyer)
-// 	require.NoError(t, err)
-// 	buyerAddr := crypto.PubkeyToAddress(buyerPrivKey.PublicKey)
-// 	buyerAuth, err := util.NewTransactOpts(client, buyer)
-// 	require.NoError(t, err)
+	// Setup buyer account and keys
+	buyerPrivKey, err := crypto.HexToECDSA(buyer)
+	require.NoError(t, err)
+	buyerAddr := crypto.PubkeyToAddress(buyerPrivKey.PublicKey)
+	buyerAuth, err := util.NewTransactOpts(client, buyer)
+	require.NoError(t, err)
 
-// 	// Create API client for ZK proof operations
-// 	apiClient := util.NewAPIClient()
+	// Create API client for ZK proof operations
+	apiClient := util.NewAPIClient()
 
-// 	// Get initial buyer balance
-// 	initialBuyerBalance, err := client.BalanceAt(context.Background(), buyerAddr, nil)
-// 	require.NoError(t, err)
+	// Get initial buyer balance
+	initialBuyerBalance, err := client.BalanceAt(context.Background(), buyerAddr, nil)
+	require.NoError(t, err)
 
-// 	// Mint a clue
-// 	clueContent := "Find the hidden treasure in the forest"
-// 	solution := "Behind the waterfall"
-// 	solutionHash := crypto.Keccak256Hash([]byte(solution))
+	// Mint a clue
+	clueContent := "Find the hidden treasure in the forest"
+	solution := "Behind the waterfall"
+	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
-// 	// Encrypt the clue content
-// 	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
-// 	require.NoError(t, err, "Failed to encrypt clue content")
+	// Encrypt the clue content
+	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
+	require.NoError(t, err, "Failed to encrypt clue content")
 
-// 	// Mint the clue
-// 	tx, err := contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
-// 	require.NoError(t, err)
-// 	_, err = util.WaitForTransaction(client, tx)
-// 	require.NoError(t, err)
+	// Mint the clue
+	tx, err := contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
 
-// 	tokenId := big.NewInt(1)
+	tokenId := big.NewInt(1)
 
-// 	// Initiate purchase from buyer with 1 ETH
-// 	paymentAmount := big.NewInt(1000000000000000000) // 1 ETH
-// 	buyerAuth.Value = paymentAmount
-// 	buyTx, err := contract.InitiatePurchase(buyerAuth, tokenId)
-// 	require.NoError(t, err)
-// 	_, err = util.WaitForTransaction(client, buyTx)
-// 	require.NoError(t, err)
+	// Initiate purchase from buyer with 1 ETH
+	paymentAmount := big.NewInt(1000000000000000000) // 1 ETH
+	buyerAuth.Value = paymentAmount
+	buyTx, err := contract.InitiatePurchase(buyerAuth, tokenId)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, buyTx)
+	require.NoError(t, err)
 
-// 	// Generate transfer ID
-// 	transferId, err := contract.GenerateTransferId(nil, buyerAddr, tokenId)
-// 	require.NoError(t, err)
+	// Generate transfer ID
+	transferId, err := contract.GenerateTransferId(nil, buyerAddr, tokenId)
+	require.NoError(t, err)
 
-// 	// Wait for the timeout period
-// 	time.Sleep(3*time.Minute + 5*time.Second) // TRANSFER_TIMEOUT is 3 minutes
+	// Cancel the transfer
+	buyerAuth, err = util.NewTransactOpts(client, buyer)
+	require.NoError(t, err)
 
-// 	// Cancel the transfer
-// 	buyerAuth, err = util.NewTransactOpts(client, buyer)
-// 	require.NoError(t, err)
+	cancelTx, err := contract.CancelTransfer(buyerAuth, transferId)
+	require.NoError(t, err)
+	cancelReceipt, err := util.WaitForTransaction(client, cancelTx)
+	require.NoError(t, err)
 
-// 	cancelTx, err := contract.CancelTransfer(buyerAuth, transferId)
-// 	require.NoError(t, err)
-// 	cancelReceipt, err := util.WaitForTransaction(client, cancelTx)
-// 	require.NoError(t, err)
+	// Verify the TransferCancelled event is emitted
+	transferCancelledFound, err := listener.CheckEvent(cancelReceipt, "TransferCancelled")
+	require.NoError(t, err)
+	require.True(t, transferCancelledFound, "TransferCancelled event not found")
 
-// 	// Verify the TransferCancelled event is emitted
-// 	transferCancelledFound, err := listener.CheckEvent(cancelReceipt, "TransferCancelled")
-// 	require.NoError(t, err)
-// 	require.True(t, transferCancelledFound, "TransferCancelled event not found")
+	// Verify buyer received refund (checking balance increase is challenging due to gas costs,
+	// so we'll just check the transfer object is deleted)
+	transferData, err := contract.Transfers(nil, transferId)
+	require.NoError(t, err)
+	require.Equal(t, common.Address{}, transferData.Buyer, "Transfer should be deleted after cancellation")
+	require.Equal(t, big.NewInt(0).String(), transferData.Value.String(), "Transfer value should be 0 after cancellation")
 
-// 	// Verify buyer received refund (checking balance increase is challenging due to gas costs,
-// 	// so we'll just check the transfer object is deleted)
-// 	transferData, err := contract.Transfers(nil, transferId)
-// 	require.NoError(t, err)
-// 	require.Equal(t, common.Address{}, transferData.Buyer, "Transfer should be deleted after cancellation")
-// 	require.Equal(t, big.NewInt(0), transferData.Value, "Transfer value should be 0 after cancellation")
+	// Final buyer balance should be close to initial balance minus gas costs
+	finalBuyerBalance, err := client.BalanceAt(context.Background(), buyerAddr, nil)
+	require.NoError(t, err)
 
-// 	// Final buyer balance should be close to initial balance minus gas costs
-// 	finalBuyerBalance, err := client.BalanceAt(context.Background(), buyerAddr, nil)
-// 	require.NoError(t, err)
+	// Calculate difference (should be just gas costs)
+	balanceDiff := new(big.Int).Sub(initialBuyerBalance, finalBuyerBalance)
 
-// 	// Calculate difference (should be just gas costs)
-// 	balanceDiff := new(big.Int).Sub(initialBuyerBalance, finalBuyerBalance)
-
-// 	// Check that the difference is less than 0.1 ETH (meaning the 1 ETH was refunded, with just gas costs deducted)
-// 	maxGasCost := big.NewInt(100000000000000000) // 0.1 ETH
-// 	require.True(t, balanceDiff.Cmp(maxGasCost) < 0, "Balance difference should be small (just gas costs)")
-// }
+	// Check that the difference is less than 0.1 ETH (meaning the 1 ETH was refunded, with just gas costs deducted)
+	maxGasCost := big.NewInt(100000000000000000) // 0.1 ETH
+	require.True(t, balanceDiff.Cmp(maxGasCost) < 0, "Balance difference should be small (just gas costs)")
+}

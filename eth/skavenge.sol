@@ -199,13 +199,21 @@ contract Skavenge is ERC721, ReentrancyGuard {
     }
 
     /**
-     * @dev Cancels a stalled transfer
+     * @dev Cancels a transfer
+     * Can be cancelled by:
+     * - The token owner at any time
+     * - The buyer at any time
+     * - Anyone once the transfer has timed out
      * @param transferId The ID of the transfer to cancel
      */
     function cancelTransfer(bytes32 transferId) external {
         TokenTransfer storage t = transfers[transferId];
         require(t.buyer != address(0), "Transfer does not exist");
-
+        
+        bool isOwner = ownerOf(t.tokenId) == msg.sender;
+        bool isBuyer = t.buyer == msg.sender;
+        
+        // Check if the transfer has expired
         bool isExpired = (t.proofProvidedAt == 0 &&
             block.timestamp > t.initiatedAt + TRANSFER_TIMEOUT) ||
             (t.verifiedAt == 0 &&
@@ -213,9 +221,10 @@ contract Skavenge is ERC721, ReentrancyGuard {
                 block.timestamp > t.proofProvidedAt + TRANSFER_TIMEOUT) ||
             (t.verifiedAt > 0 &&
                 block.timestamp > t.verifiedAt + TRANSFER_TIMEOUT);
-
-        require(isExpired, "Transfer not expired");
-
+        
+        // Allow cancellation by owner, buyer, or anyone if the transfer is expired
+        require(isOwner || isBuyer || isExpired, "Not authorized to cancel");
+        
         // Refund buyer
         if (t.value > 0) {
             payable(t.buyer).transfer(t.value);
