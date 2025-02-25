@@ -43,10 +43,6 @@ func TestSuccessfulMint(t *testing.T) {
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	// Get minter's public key for encryption
-	minterPublicKey := util.DerivePublicKey(minterPrivKey)
-	require.NotEmpty(t, minterPublicKey, "Failed to derive minter's public key")
-
 	// Create API client for ZK proof operations
 	apiClient := util.NewAPIClient()
 
@@ -56,7 +52,8 @@ func TestSuccessfulMint(t *testing.T) {
 	solutionHash := sha256.Sum256([]byte(solution))
 
 	// Encrypt the clue content using the ZK proof API
-	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, minterPublicKey)
+	// Pass the ECDSA public key directly to the API client
+	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 	require.NotEmpty(t, encryptedClueContent, "Encrypted clue content should not be empty")
 
@@ -96,7 +93,8 @@ func TestSuccessfulMint(t *testing.T) {
 	require.Equal(t, uint64(0), clueData.SolveAttempts.Uint64(), "Solve attempts should be 0")
 
 	// Decrypt the clue to verify it matches the original content
-	decryptedClue, err := apiClient.DecryptMessage(encryptedClueContent, minter)
+	// Pass the ECDSA private key directly to the API client
+	decryptedClue, err := apiClient.DecryptMessage(encryptedClueContent, minterPrivKey)
 	require.NoError(t, err, "Failed to decrypt clue content")
 	require.Equal(t, clueContent, decryptedClue, "Decrypted content does not match original")
 }
@@ -121,10 +119,6 @@ func TestMintWithEmptySolutionHash(t *testing.T) {
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	// Get minter's public key for encryption
-	minterPublicKey := util.DerivePublicKey(minterPrivKey)
-	require.NotEmpty(t, minterPublicKey, "Failed to derive minter's public key")
-
 	// Create API client for ZK proof operations
 	apiClient := util.NewAPIClient()
 
@@ -133,7 +127,8 @@ func TestMintWithEmptySolutionHash(t *testing.T) {
 	var emptySolutionHash [32]byte
 
 	// Encrypt the clue content using the ZK proof API
-	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, minterPublicKey)
+	// Pass the ECDSA public key directly to the API client
+	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
 	// Convert the encrypted content to bytes
@@ -179,10 +174,6 @@ func TestMintMultipleClues(t *testing.T) {
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	// Get minter's public key for encryption
-	minterPublicKey := util.DerivePublicKey(minterPrivKey)
-	require.NotEmpty(t, minterPublicKey, "Failed to derive minter's public key")
-
 	// Create API client for ZK proof operations
 	apiClient := util.NewAPIClient()
 
@@ -192,7 +183,8 @@ func TestMintMultipleClues(t *testing.T) {
 	firstSolutionHash := sha256.Sum256([]byte(firstSolution))
 
 	// Encrypt the first clue content
-	firstEncryptedClueContent, err := apiClient.EncryptMessage(firstClueContent, minterPublicKey)
+	// Pass the ECDSA public key directly to the API client
+	firstEncryptedClueContent, err := apiClient.EncryptMessage(firstClueContent, &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt first clue content")
 
 	tx1, err := contract.MintClue(minterAuth, []byte(firstEncryptedClueContent), firstSolutionHash)
@@ -207,7 +199,8 @@ func TestMintMultipleClues(t *testing.T) {
 	secondSolutionHash := sha256.Sum256([]byte(secondSolution))
 
 	// Encrypt the second clue content
-	secondEncryptedClueContent, err := apiClient.EncryptMessage(secondClueContent, minterPublicKey)
+	// Pass the ECDSA public key directly to the API client
+	secondEncryptedClueContent, err := apiClient.EncryptMessage(secondClueContent, &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt second clue content")
 
 	// Need to update nonce for second transaction
@@ -238,11 +231,12 @@ func TestMintMultipleClues(t *testing.T) {
 	require.Equal(t, secondSolutionHash, secondClueData.SolutionHash, "Second solution hash does not match")
 
 	// Verify we can decrypt both clues
-	decryptedFirstClue, err := apiClient.DecryptMessage(firstEncryptedClueContent, minter)
+	// Pass the ECDSA private key directly to the API client
+	decryptedFirstClue, err := apiClient.DecryptMessage(firstEncryptedClueContent, minterPrivKey)
 	require.NoError(t, err, "Failed to decrypt first clue")
 	require.Equal(t, firstClueContent, decryptedFirstClue, "Decrypted first clue doesn't match original")
 
-	decryptedSecondClue, err := apiClient.DecryptMessage(secondEncryptedClueContent, minter)
+	decryptedSecondClue, err := apiClient.DecryptMessage(secondEncryptedClueContent, minterPrivKey)
 	require.NoError(t, err, "Failed to decrypt second clue")
 	require.Equal(t, secondClueContent, decryptedSecondClue, "Decrypted second clue doesn't match original")
 }

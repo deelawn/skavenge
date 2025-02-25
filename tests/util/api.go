@@ -3,11 +3,15 @@ package util
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"time"
+
+	"github.com/deelawn/skavenge-zk-proof/zk"
 )
 
 const (
@@ -40,112 +44,189 @@ func NewAPIClient() *APIClient {
 // EncryptMessageRequest represents a request to encrypt a message.
 type EncryptMessageRequest struct {
 	Message            string `json:"message"`
-	RecipientPublicKey string `json:"recipientPublicKey"`
+	RecipientPublicKey string `json:"pubKey"`
 }
 
 // EncryptMessageResponse represents a response from the message encryption endpoint.
 type EncryptMessageResponse struct {
-	EncryptedMessage string `json:"encryptedMessage"`
+	Data struct {
+		Ciphertext string `json:"ciphertext"`
+	} `json:"data"`
+	Message string `json:"message"`
 }
 
 // DecryptMessageRequest represents a request to decrypt a message.
 type DecryptMessageRequest struct {
-	EncryptedMessage string `json:"encryptedMessage"`
-	PrivateKey       string `json:"privateKey"`
+	EncryptedMessage string `json:"ciphertext"`
+	PrivateKey       string `json:"privKey"`
 }
 
 // DecryptMessageResponse represents a response from the message decryption endpoint.
 type DecryptMessageResponse struct {
+	Data struct {
+		Message string `json:"message"`
+	} `json:"data"`
 	Message string `json:"message"`
 }
 
 // GenerateProofRequest represents a request to generate a proof.
 type GenerateProofRequest struct {
 	Message            string `json:"message"`
-	RecipientPublicKey string `json:"recipientPublicKey"`
-	SenderPrivateKey   string `json:"senderPrivateKey"`
+	RecipientPublicKey string `json:"buyerPubKey"`
+	SenderPrivateKey   string `json:"sellerKey"`
+	SellerCipherText   string `json:"sellerCipherText"` // TODO
 }
 
 // GenerateProofResponse represents a response from the proof generation endpoint.
 type GenerateProofResponse struct {
-	Proof       string `json:"proof"`
-	NewClueHash string `json:"newClueHash"`
+	Data struct {
+		Proof            string `json:"proof"`
+		SellerCipherText string `json:"sellerCipherText"` // TODO
+		BuyerCipherText  string `json:"buyerCipherText"`  // TODO
+	} `json:"data"`
+	Message string `json:"message"`
 }
 
 // VerifyProofRequest represents a request to verify a proof.
 type VerifyProofRequest struct {
-	Proof               string `json:"proof"`
-	RecipientPrivateKey string `json:"recipientPrivateKey"`
+	Proof            string `json:"proof"`
+	SellerCipherText string `json:"sellerCipherText"` // TODO
 }
 
 // VerifyProofResponse represents a response from the proof verification endpoint.
 type VerifyProofResponse struct {
-	Valid bool `json:"valid"`
+	Data struct {
+		Valid bool `json:"valid"`
+	} `json:"data"`
+	Message string `json:"message"`
+}
+
+// encodePublicKey marshals and base64 encodes an ECDSA public key for API requests
+func encodePublicKey(publicKey *ecdsa.PublicKey) (string, error) {
+	ps := zk.NewProofSystem()
+	keyBytes, err := ps.MarshalPublicKey(publicKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal public key: %w", err)
+	}
+
+	// Base64 encode the DER bytes
+	return base64.StdEncoding.EncodeToString(keyBytes), nil
+}
+
+// encodePrivateKey marshals and base64 encodes an ECDSA private key for API requests
+func encodePrivateKey(privateKey *ecdsa.PrivateKey) (string, error) {
+	ps := zk.NewProofSystem()
+	keyBytes, err := ps.MarshalPrivateKey(privateKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal private key: %w", err)
+	}
+
+	// Base64 encode the DER bytes
+	return base64.StdEncoding.EncodeToString(keyBytes), nil
 }
 
 // EncryptMessage encrypts a message for a recipient.
-func (c *APIClient) EncryptMessage(message, recipientPublicKey string) (string, error) {
+func (c *APIClient) EncryptMessage(message string, recipientPublicKey *ecdsa.PublicKey) (string, error) {
+	// Base64 encode the message
+	encodedMessage := base64.StdEncoding.EncodeToString([]byte(message))
+
+	// Encode the recipient public key
+	encodedPublicKey, err := encodePublicKey(recipientPublicKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode recipient public key: %w", err)
+	}
+
 	req := EncryptMessageRequest{
-		Message:            message,
-		RecipientPublicKey: recipientPublicKey,
+		Message:            encodedMessage,
+		RecipientPublicKey: encodedPublicKey,
 	}
 
 	var resp EncryptMessageResponse
-	err := c.doRequest(EncryptEndpoint, req, &resp)
+	err = c.doRequest(EncryptEndpoint, req, &resp)
 	if err != nil {
 		return "", fmt.Errorf("encryption failed: %w", err)
 	}
 
-	return resp.EncryptedMessage, nil
+	// Response is already base64 encoded, return it as is
+	return resp.Data.Ciphertext, nil
 }
 
 // DecryptMessage decrypts a message using a private key.
-func (c *APIClient) DecryptMessage(encryptedMessage, privateKey string) (string, error) {
+func (c *APIClient) DecryptMessage(encryptedMessage string, privateKey *ecdsa.PrivateKey) (string, error) {
+	// Encode the private key
+	encodedPrivateKey, err := encodePrivateKey(privateKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode private key: %w", err)
+	}
+
 	req := DecryptMessageRequest{
 		EncryptedMessage: encryptedMessage,
-		PrivateKey:       privateKey,
+		PrivateKey:       encodedPrivateKey,
 	}
 
 	var resp DecryptMessageResponse
-	err := c.doRequest(DecryptEndpoint, req, &resp)
+	err = c.doRequest(DecryptEndpoint, req, &resp)
 	if err != nil {
 		return "", fmt.Errorf("decryption failed: %w", err)
 	}
 
-	return resp.Message, nil
+	// Decode the base64 encoded message from the response
+	decodedMessage, err := base64.StdEncoding.DecodeString(resp.Data.Message)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode response message: %w", err)
+	}
+
+	return string(decodedMessage), nil
 }
 
 // GenerateProof generates a proof for transferring a clue.
-func (c *APIClient) GenerateProof(message, recipientPublicKey, senderPrivateKey string) (string, string, error) {
+func (c *APIClient) GenerateProof(message string, recipientPublicKey *ecdsa.PublicKey, senderPrivateKey *ecdsa.PrivateKey) (string, string, error) {
+	// Base64 encode the message
+	encodedMessage := base64.StdEncoding.EncodeToString([]byte(message))
+
+	// Encode the public key
+	encodedPublicKey, err := encodePublicKey(recipientPublicKey)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to encode recipient public key: %w", err)
+	}
+
+	// Encode the private key
+	encodedPrivateKey, err := encodePrivateKey(senderPrivateKey)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to encode sender private key: %w", err)
+	}
+
 	req := GenerateProofRequest{
-		Message:            message,
-		RecipientPublicKey: recipientPublicKey,
-		SenderPrivateKey:   senderPrivateKey,
+		Message:            encodedMessage,
+		RecipientPublicKey: encodedPublicKey,
+		SenderPrivateKey:   encodedPrivateKey,
 	}
 
 	var resp GenerateProofResponse
-	err := c.doRequest(GenerateProofEndpoint, req, &resp)
+	err = c.doRequest(GenerateProofEndpoint, req, &resp)
 	if err != nil {
 		return "", "", fmt.Errorf("proof generation failed: %w", err)
 	}
 
-	return resp.Proof, resp.NewClueHash, nil
+	// Responses are already base64 encoded, return them as is
+	return resp.Data.Proof, resp.Data.BuyerCipherText, nil // TODO
 }
 
 // VerifyProof verifies a proof for transferring a clue.
-func (c *APIClient) VerifyProof(proof, recipientPrivateKey string) (bool, error) {
+func (c *APIClient) VerifyProof(proof string, sellerCipherText string) (bool, error) {
+	encodedSellerCipherText := base64.StdEncoding.EncodeToString([]byte(sellerCipherText))
+
 	req := VerifyProofRequest{
-		Proof:               proof,
-		RecipientPrivateKey: recipientPrivateKey,
+		Proof:            proof,
+		SellerCipherText: encodedSellerCipherText,
 	}
 
 	var resp VerifyProofResponse
-	err := c.doRequest(VerifyProofEndpoint, req, &resp)
-	if err != nil {
+	if err := c.doRequest(VerifyProofEndpoint, req, &resp); err != nil {
 		return false, fmt.Errorf("proof verification failed: %w", err)
 	}
 
-	return resp.Valid, nil
+	return resp.Data.Valid, nil
 }
 
 // doRequest performs an HTTP request to the API and unmarshals the response.
@@ -171,6 +252,7 @@ func (c *APIClient) doRequest(endpoint string, reqBody interface{}, respBody int
 	defer resp.Body.Close()
 
 	// Read the response body
+	// TODO: Use decoder and check for error response
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read response body: %w", err)
