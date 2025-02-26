@@ -44,7 +44,8 @@ func TestSuccessfulMint(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create API client for ZK proof operations
-	apiClient := util.NewAPIClient()
+	apiClient, err := util.NewGRPCClient()
+	require.NoError(t, err)
 
 	// Sample data for the clue
 	clueContent := "Find the hidden treasure in the old oak tree"
@@ -117,7 +118,8 @@ func TestMintWithEmptySolutionHash(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create API client for ZK proof operations
-	apiClient := util.NewAPIClient()
+	apiClient, err := util.NewGRPCClient()
+	require.NoError(t, err)
 
 	// Sample data for the clue
 	clueContent := "Find the hidden treasure in the old oak tree"
@@ -169,7 +171,8 @@ func TestMintMultipleClues(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create API client for ZK proof operations
-	apiClient := util.NewAPIClient()
+	apiClient, err := util.NewGRPCClient()
+	require.NoError(t, err)
 
 	// Mint first clue
 	firstClueContent := "First clue content"

@@ -40,7 +40,8 @@ func TestSuccessfulSolve(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create API client for encryption
-	apiClient := util.NewAPIClient()
+	apiClient, err := util.NewGRPCClient()
+	require.NoError(t, err)
 
 	// Mint a clue with a known solution
 	clueContent := "Find the hidden treasure in the forest"
@@ -117,7 +118,8 @@ func TestFailedSolveAttempt(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create API client for encryption
-	apiClient := util.NewAPIClient()
+	apiClient, err := util.NewGRPCClient()
+	require.NoError(t, err)
 
 	// Mint a clue with a known solution
 	clueContent := "Find the hidden treasure in the forest"
@@ -197,7 +199,8 @@ func TestMaximumSolveAttempts(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create API client for encryption
-	apiClient := util.NewAPIClient()
+	apiClient, err := util.NewGRPCClient()
+	require.NoError(t, err)
 
 	// Mint a clue with a known solution
 	clueContent := "Find the hidden treasure in the forest"
@@ -302,7 +305,8 @@ func TestNonOwnerSolveAttempt(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create API client for encryption
-	apiClient := util.NewAPIClient()
+	apiClient, err := util.NewGRPCClient()
+	require.NoError(t, err)
 
 	// Mint a clue with a known solution
 	clueContent := "Find the hidden treasure in the forest"
@@ -368,7 +372,8 @@ func TestSolveAlreadySolvedClue(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create API client for encryption
-	apiClient := util.NewAPIClient()
+	apiClient, err := util.NewGRPCClient()
+	require.NoError(t, err)
 
 	// Mint a clue with a known solution
 	clueContent := "Find the hidden treasure in the forest"

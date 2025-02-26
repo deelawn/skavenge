@@ -2,295 +2,203 @@
 package util
 
 import (
-	"bytes"
+	"context"
 	"crypto/ecdsa"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"time"
 
+	proto "github.com/deelawn/skavenge-zk-proof/api/zkproof"
 	"github.com/deelawn/skavenge-zk-proof/zk"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const (
-	// DefaultAPIBaseURL is the default base URL for the ZK proof API.
-	DefaultAPIBaseURL = "http://localhost:8080"
+	// DefaultGRPCAddr is the default address for the ZK proof gRPC API.
+	DefaultGRPCAddr = "localhost:9090"
 
-	// API endpoints
-	EncryptEndpoint       = "/api/message/encrypt"
-	DecryptEndpoint       = "/api/message/decrypt"
-	GenerateProofEndpoint = "/api/proof/generate"
-	VerifyProofEndpoint   = "/api/proof/verify"
+	// DefaultTimeout for gRPC calls
+	DefaultTimeout = 30 * time.Second
 )
 
-// APIClient is a client for the ZK proof API.
-type APIClient struct {
-	BaseURL    string
-	HTTPClient *http.Client
+// GRPCClient is a client for the ZK proof gRPC API.
+type GRPCClient struct {
+	conn   *grpc.ClientConn
+	client proto.ServiceClient
 }
 
-// NewAPIClient creates a new API client with the default base URL.
-func NewAPIClient() *APIClient {
-	return &APIClient{
-		BaseURL: DefaultAPIBaseURL,
-		HTTPClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+// NewGRPCClient creates a new gRPC client with the default address.
+func NewGRPCClient() (*GRPCClient, error) {
+	return NewGRPCClientWithAddr(DefaultGRPCAddr)
+}
+
+// NewGRPCClientWithAddr creates a new gRPC client with the specified address.
+func NewGRPCClientWithAddr(addr string) (*GRPCClient, error) {
+	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to gRPC server: %w", err)
 	}
+
+	client := proto.NewServiceClient(conn)
+	return &GRPCClient{
+		conn:   conn,
+		client: client,
+	}, nil
 }
 
-// EncryptMessageRequest represents a request to encrypt a message.
-type EncryptMessageRequest struct {
-	Message            string `json:"message"`
-	RecipientPublicKey string `json:"pubKey"`
+// Close closes the gRPC connection.
+func (c *GRPCClient) Close() error {
+	if c.conn != nil {
+		return c.conn.Close()
+	}
+	return nil
 }
 
-// EncryptMessageResponse represents a response from the message encryption endpoint.
-type EncryptMessageResponse struct {
-	Data struct {
-		Ciphertext string `json:"ciphertext"`
-	} `json:"data"`
-	Message string `json:"message"`
-}
-
-// DecryptMessageRequest represents a request to decrypt a message.
-type DecryptMessageRequest struct {
-	EncryptedMessage string `json:"ciphertext"`
-	PrivateKey       string `json:"privKey"`
-}
-
-// DecryptMessageResponse represents a response from the message decryption endpoint.
-type DecryptMessageResponse struct {
-	Data struct {
-		Message string `json:"message"`
-	} `json:"data"`
-	Message string `json:"message"`
-}
-
-// GenerateProofRequest represents a request to generate a proof.
-type GenerateProofRequest struct {
-	Message            string `json:"message"`
-	RecipientPublicKey string `json:"buyerPubKey"`
-	SenderPrivateKey   string `json:"sellerKey"`
-	SellerCipherText   string `json:"sellerCipherText"` // TODO
-}
-
-// GenerateProofResponse represents a response from the proof generation endpoint.
-type GenerateProofResponse struct {
-	Data struct {
-		Proof            string `json:"proof"`
-		SellerCipherText string `json:"sellerCipherText"` // TODO
-		BuyerCipherText  string `json:"buyerCipherText"`  // TODO
-	} `json:"data"`
-	Message string `json:"message"`
-}
-
-// VerifyProofRequest represents a request to verify a proof.
-type VerifyProofRequest struct {
-	Proof            string `json:"proof"`
-	SellerCipherText string `json:"sellerCipherText"` // TODO
-}
-
-// VerifyProofResponse represents a response from the proof verification endpoint.
-type VerifyProofResponse struct {
-	Data struct {
-		Valid bool `json:"valid"`
-	} `json:"data"`
-	Message string `json:"message"`
-}
-
-// encodePublicKey marshals and base64 encodes an ECDSA public key for API requests
-func encodePublicKey(publicKey *ecdsa.PublicKey) (string, error) {
+// encodePublicKey marshals an ECDSA public key for gRPC requests
+func encodePublicKey(publicKey *ecdsa.PublicKey) ([]byte, error) {
 	ps := zk.NewProofSystem()
 	keyBytes, err := ps.MarshalPublicKey(publicKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal public key: %w", err)
+		return nil, fmt.Errorf("failed to marshal public key: %w", err)
 	}
 
-	// Base64 encode the DER bytes
-	return base64.StdEncoding.EncodeToString(keyBytes), nil
+	return keyBytes, nil
 }
 
-// encodePrivateKey marshals and base64 encodes an ECDSA private key for API requests
-func encodePrivateKey(privateKey *ecdsa.PrivateKey) (string, error) {
+// encodePrivateKey marshals an ECDSA private key for gRPC requests
+func encodePrivateKey(privateKey *ecdsa.PrivateKey) ([]byte, error) {
 	ps := zk.NewProofSystem()
 	keyBytes, err := ps.MarshalPrivateKey(privateKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal private key: %w", err)
+		return nil, fmt.Errorf("failed to marshal private key: %w", err)
 	}
 
-	// Base64 encode the DER bytes
-	return base64.StdEncoding.EncodeToString(keyBytes), nil
+	return keyBytes, nil
 }
 
 // EncryptMessage encrypts a message for a recipient.
-func (c *APIClient) EncryptMessage(message string, recipientPublicKey *ecdsa.PublicKey) ([]byte, error) {
-	// Base64 encode the message
-	encodedMessage := base64.StdEncoding.EncodeToString([]byte(message))
+func (c *GRPCClient) EncryptMessage(message string, recipientPublicKey *ecdsa.PublicKey) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
 
-	// Encode the recipient public key
+	// Marshal the recipient public key
 	encodedPublicKey, err := encodePublicKey(recipientPublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode recipient public key: %w", err)
 	}
 
-	req := EncryptMessageRequest{
-		Message:            encodedMessage,
-		RecipientPublicKey: encodedPublicKey,
+	// Create the request
+	req := &proto.EncryptMessageRequest{
+		Message: []byte(message),
+		PubKey:  encodedPublicKey,
 	}
 
-	var resp EncryptMessageResponse
-	err = c.doRequest(EncryptEndpoint, req, &resp)
+	// Call the gRPC service
+	resp, err := c.client.EncryptMessage(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("encryption failed: %w", err)
 	}
 
-	decodedCipherText, err := base64.StdEncoding.DecodeString(resp.Data.Ciphertext)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode ciphertext: %w", err)
-	}
-
-	return decodedCipherText, nil
+	return resp.Ciphertext, nil
 }
 
 // DecryptMessage decrypts a message using a private key.
-func (c *APIClient) DecryptMessage(encryptedMessage []byte, privateKey *ecdsa.PrivateKey) (string, error) {
-	// Encode the private key
+func (c *GRPCClient) DecryptMessage(encryptedMessage []byte, privateKey *ecdsa.PrivateKey) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
+
+	// Marshal the private key
 	encodedPrivateKey, err := encodePrivateKey(privateKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to encode private key: %w", err)
 	}
 
-	encodedEncryptedMessage := base64.StdEncoding.EncodeToString(encryptedMessage)
-
-	req := DecryptMessageRequest{
-		EncryptedMessage: encodedEncryptedMessage,
-		PrivateKey:       encodedPrivateKey,
+	// Create the request
+	req := &proto.DecryptMessageRequest{
+		Ciphertext: encryptedMessage,
+		PrivKey:    encodedPrivateKey,
 	}
 
-	var resp DecryptMessageResponse
-	err = c.doRequest(DecryptEndpoint, req, &resp)
+	// Call the gRPC service
+	resp, err := c.client.DecryptMessage(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("decryption failed: %w", err)
 	}
 
-	// Decode the base64 encoded message from the response
-	decodedMessage, err := base64.StdEncoding.DecodeString(resp.Data.Message)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode response message: %w", err)
-	}
-
-	return string(decodedMessage), nil
+	return string(resp.Message), nil
 }
 
-// GenerateProof generates a proof for transferring a clue.
-func (c *APIClient) GenerateProof(
+// GeneratePartialProof generates a partial proof for transferring a clue.
+func (c *GRPCClient) GeneratePartialProof(
 	message string,
-	encryptedMessage []byte,
-	recipientPublicKey *ecdsa.PublicKey,
-	senderPrivateKey *ecdsa.PrivateKey,
-) ([]byte, []byte, error) {
-	// Base64 encode the message
-	encodedMessage := base64.StdEncoding.EncodeToString([]byte(message))
-	encodedEncryptedMessage := base64.StdEncoding.EncodeToString(encryptedMessage)
+	sellerCipherText []byte,
+	buyerPublicKey *ecdsa.PublicKey,
+	sellerPublicKey *ecdsa.PublicKey,
+) (*proto.GeneratePartialProofResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
 
-	// Encode the public key
-	encodedPublicKey, err := encodePublicKey(recipientPublicKey)
+	// Marshal the keys
+	encodedBuyerPublicKey, err := encodePublicKey(buyerPublicKey)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to encode recipient public key: %w", err)
+		return nil, fmt.Errorf("failed to encode buyer public key: %w", err)
 	}
 
-	// Encode the private key
-	encodedPrivateKey, err := encodePrivateKey(senderPrivateKey)
+	encodedSellerPublicKey, err := encodePublicKey(sellerPublicKey)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to encode sender private key: %w", err)
+		return nil, fmt.Errorf("failed to encode seller public key: %w", err)
 	}
 
-	req := GenerateProofRequest{
-		Message:            encodedMessage,
-		RecipientPublicKey: encodedPublicKey,
-		SenderPrivateKey:   encodedPrivateKey,
-		SellerCipherText:   encodedEncryptedMessage,
+	// Create the partial proof request
+	partialProofReq := &proto.GeneratePartialProofRequest{
+		Message:          []byte(message),
+		SellerPubKey:     encodedSellerPublicKey,
+		BuyerPubKey:      encodedBuyerPublicKey,
+		SellerCipherText: sellerCipherText,
 	}
 
-	var resp GenerateProofResponse
-	err = c.doRequest(GenerateProofEndpoint, req, &resp)
+	// Call the gRPC service to generate the partial proof
+	partialProofResp, err := c.client.GeneratePartialProof(ctx, partialProofReq)
 	if err != nil {
-		return nil, nil, fmt.Errorf("proof generation failed: %w", err)
+		return nil, fmt.Errorf("partial proof generation failed: %w", err)
 	}
 
-	decodedProof, err := base64.StdEncoding.DecodeString(resp.Data.Proof)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decode proof: %w", err)
-	}
-
-	decodedBuyerCipherText, err := base64.StdEncoding.DecodeString(resp.Data.BuyerCipherText)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decode buyer ciphertext: %w", err)
-	}
-
-	return decodedProof, decodedBuyerCipherText, nil
+	return partialProofResp, nil
 }
 
-// VerifyProof verifies a proof for transferring a clue.
-func (c *APIClient) VerifyProof(proof []byte, sellerCipherText []byte) (bool, error) {
-	encodedProof := base64.StdEncoding.EncodeToString(proof)
-	encodedSellerCipherText := base64.StdEncoding.EncodeToString(sellerCipherText)
+// MarshalProof marshals a proof for on-chain use.
+func (c *GRPCClient) MarshalProof(proof *proto.Proof) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
 
-	req := VerifyProofRequest{
-		Proof:            encodedProof,
-		SellerCipherText: encodedSellerCipherText,
+	// Create the marshal request
+	marshalReq := &proto.MarshalProofRequest{
+		Proof: proof,
 	}
 
-	var resp VerifyProofResponse
-	if err := c.doRequest(VerifyProofEndpoint, req, &resp); err != nil {
+	// Call the gRPC service to marshal the proof
+	marshalResp, err := c.client.MarshalProof(ctx, marshalReq)
+	if err != nil {
+		return nil, fmt.Errorf("proof marshaling failed: %w", err)
+	}
+
+	return marshalResp.Proof, nil
+}
+
+// VerifyProof verifies a proof for a clue transfer.
+func (c *GRPCClient) VerifyProof(proof []byte, sellerCipherText []byte) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
+	defer cancel()
+
+	req := &proto.VerifyProofRequest{
+		Proof:            proof,
+		SellerCipherText: sellerCipherText,
+	}
+
+	resp, err := c.client.VerifyProof(ctx, req)
+	if err != nil {
 		return false, fmt.Errorf("proof verification failed: %w", err)
 	}
 
-	return resp.Data.Valid, nil
-}
-
-// doRequest performs an HTTP request to the API and unmarshals the response.
-func (c *APIClient) doRequest(endpoint string, reqBody interface{}, respBody interface{}) error {
-	// Marshal the request body
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request body: %w", err)
-	}
-
-	// Create the request
-	req, err := http.NewRequest("POST", c.BaseURL+endpoint, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	// Send the request
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Read the response body
-	// TODO: Use decoder and check for error response
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Check for error response
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API returned non-OK status code %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Unmarshal the response body
-	err = json.Unmarshal(body, respBody)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal response body: %w", err)
-	}
-
-	return nil
+	return resp.IsValid, nil
 }
