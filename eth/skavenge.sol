@@ -6,43 +6,70 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title Skavenge
- * @dev Implementation of a scavenger hunt game using ERC721 tokens.
- * Each token represents a clue that can be solved and traded.
+ * @dev A scavenger hunt NFT that stores encrypted clues which users can solve and trade
  */
 contract Skavenge is ERC721, ReentrancyGuard {
-    // Constants
-    uint256 public constant TRANSFER_TIMEOUT = 3 minutes;
-    uint256 public constant MAX_SOLVE_ATTEMPTS = 3;
-
-    // Simple counter to replace Counters.sol
-    uint256 private _currentTokenId;
-
-    // Structs
+    // Clue structure
     struct Clue {
-        bytes encryptedContents; // Encrypted clue content, readable by owner
-        bytes32 solutionHash; // Hash of the correct solution
+        bytes encryptedContents; // Encrypted content of the clue
+        bytes32 solutionHash; // Hash of the solution
         bool isSolved; // Whether the clue has been solved
-        uint256 solveAttempts; // Number of attempts made to solve
+        uint256 solveAttempts; // Number of attempts made to solve the clue
+        uint256 salePrice; // Price in wei for which the clue is for sale
     }
 
-    // Renamed from Transfer to TokenTransfer to avoid conflict with ERC721 event
+    // TokenTransfer structure
     struct TokenTransfer {
-        address buyer; // Address of the potential buyer
-        uint256 tokenId; // ID of the token being transferred
-        uint256 value; // Amount of ETH offered
+        address buyer; // Address of the buyer
+        uint256 tokenId; // Token ID being transferred
+        uint256 value; // Value sent with the transfer
         uint256 initiatedAt; // Timestamp when transfer was initiated
-        bytes proof; // Proof provided by seller
-        bytes32 newClueHash; // Hash of the new encrypted clue
-        bool proofVerified; // Whether buyer has verified the proof
+        bytes proof; // ZK proof of knowledge of encrypted message
+        bytes32 newClueHash; // Hash of the new encrypted clue for the buyer
+        bool proofVerified; // Whether the proof has been verified
         uint256 proofProvidedAt; // Timestamp when proof was provided
         uint256 verifiedAt; // Timestamp when proof was verified
     }
 
-    // State variables
+    // Maximum number of attempts to solve a clue
+    uint256 public constant MAX_SOLVE_ATTEMPTS = 3;
+
+    // Transfer timeout in seconds
+    uint256 public constant TRANSFER_TIMEOUT = 180; // 3 minutes
+
+    // Current token ID counter
+    uint256 private _tokenIdCounter;
+
+    // Mapping from token ID to Clue struct
     mapping(uint256 => Clue) public clues;
-    mapping(bytes32 => TokenTransfer) public transfers; // transferId => TokenTransfer
+
+    // Mapping from transfer ID to Transfer struct
+    mapping(bytes32 => TokenTransfer) public transfers;
+
+    // Mapping to track which token IDs are for sale
+    mapping(uint256 => bool) public cluesForSale;
+
+    // Array to store token IDs that are for sale (for pagination)
+    uint256[] private _cluesForSaleList;
+
+    // Error for attempting to transfer a solved clue
+    error SolvedClueTransferNotAllowed();
+
+    // Error for attempting to buy a clue that is not for sale
+    error ClueNotForSale();
+
+    // Error for attempting to buy a clue with insufficient funds
+    error InsufficientFunds();
+
+    // Error for attempting to set a sale price on a solved clue
+    error SolvedClueCannotBeSold();
 
     // Events
+    event ClueAttempted(uint256 indexed tokenId, uint256 remainingAttempts);
+    event ClueSolved(uint256 indexed tokenId);
+    event SalePriceSet(uint256 indexed tokenId, uint256 price);
+    event SalePriceRemoved(uint256 indexed tokenId);
+
     event TransferInitiated(
         bytes32 indexed transferId,
         address indexed buyer,
@@ -56,188 +83,147 @@ contract Skavenge is ERC721, ReentrancyGuard {
     event ProofVerified(bytes32 indexed transferId);
     event TransferCompleted(bytes32 indexed transferId);
     event TransferCancelled(bytes32 indexed transferId);
-    event ClueSolved(uint256 indexed tokenId);
-    event ClueAttempted(uint256 indexed tokenId, uint256 remainingAttempts);
-
-    // Custom error to prevent solved clues from being transferred
-    error SolvedClueTransferNotAllowed();
-
-    constructor() ERC721("Skavenge", "SKVG") {}
 
     /**
-     * @dev Generates a unique transfer ID from buyer address and token ID
-     * @param buyer Address of the buyer
-     * @param tokenId ID of the token being transferred
+     * @dev Constructor for the Skavenge contract
      */
-    function generateTransferId(
-        address buyer,
-        uint256 tokenId
-    ) public pure returns (bytes32) {
-        return keccak256(abi.encodePacked(buyer, tokenId));
+    constructor() ERC721("Skavenge", "SKVG") {
+        _tokenIdCounter = 1; // Start token IDs at 1
     }
 
     /**
-     * @dev Initiates the purchase of a clue token
-     * @param tokenId The ID of the token to purchase
+     * @dev Get the current token ID counter
      */
-    function initiatePurchase(uint256 tokenId) external payable nonReentrant {
-        // Use ownerOf to check if token exists instead of _exists
-        // This will revert if token doesn't exist
-        ownerOf(tokenId);
+    function getCurrentTokenId() external view returns (uint256) {
+        return _tokenIdCounter;
+    }
 
-        // Check if the clue is solved
-        if (clues[tokenId].isSolved) {
-            revert SolvedClueTransferNotAllowed();
-        }
+    /**
+     * @dev Mint a new clue
+     * @param encryptedContents Encrypted content of the clue
+     * @param solutionHash Hash of the solution
+     */
+    function mintClue(
+        bytes calldata encryptedContents,
+        bytes32 solutionHash
+    ) external returns (uint256 tokenId) {
+        tokenId = _tokenIdCounter++;
 
-        bytes32 transferId = generateTransferId(msg.sender, tokenId);
-        require(
-            transfers[transferId].buyer == address(0),
-            "Transfer already initiated"
-        );
-
-        transfers[transferId] = TokenTransfer({
-            buyer: msg.sender,
-            tokenId: tokenId,
-            value: msg.value,
-            initiatedAt: block.timestamp,
-            proof: "",
-            newClueHash: bytes32(0),
-            proofVerified: false,
-            proofProvidedAt: 0,
-            verifiedAt: 0
+        clues[tokenId] = Clue({
+            encryptedContents: encryptedContents,
+            solutionHash: solutionHash,
+            isSolved: false,
+            solveAttempts: 0,
+            salePrice: 0
         });
 
-        emit TransferInitiated(transferId, msg.sender, tokenId);
+        _mint(msg.sender, tokenId);
+
+        return tokenId;
     }
 
     /**
-     * @dev Called by the seller to provide proof and the hash of the new encrypted clue
-     * @param transferId The ID of the transfer
-     * @param proof The proof data
-     * @param newClueHash Hash of the newly encrypted clue content
+     * @dev Get the encrypted contents of a clue
+     * @param tokenId Token ID of the clue
      */
-    function provideProof(
-        bytes32 transferId,
-        bytes calldata proof,
-        bytes32 newClueHash
-    ) external {
-        TokenTransfer storage t = transfers[transferId];
-        require(t.buyer != address(0), "Transfer does not exist");
-        require(
-            block.timestamp <= t.initiatedAt + TRANSFER_TIMEOUT,
-            "Transfer expired"
-        );
-        require(ownerOf(t.tokenId) == msg.sender, "Not token owner");
-
-        t.proof = proof;
-        t.newClueHash = newClueHash;
-        t.proofProvidedAt = block.timestamp;
-
-        emit ProofProvided(transferId, proof, newClueHash);
+    function getClueContents(
+        uint256 tokenId
+    ) external view returns (bytes memory) {
+        ownerOf(tokenId); // Will revert if token doesn't exist
+        return clues[tokenId].encryptedContents;
     }
 
     /**
-     * @dev Called by the buyer to verify they accept the proof
-     * @param transferId The ID of the transfer
+     * @dev Set a sale price for a clue
+     * @param tokenId Token ID of the clue
+     * @param price Price in wei
      */
-    function verifyProof(bytes32 transferId) external {
-        TokenTransfer storage t = transfers[transferId];
-        require(t.buyer == msg.sender, "Not the buyer");
-        require(t.proofProvidedAt > 0, "Proof not yet provided");
-        require(
-            block.timestamp <= t.proofProvidedAt + TRANSFER_TIMEOUT,
-            "Proof verification expired"
-        );
+    function setSalePrice(uint256 tokenId, uint256 price) external {
+        require(ownerOf(tokenId) == msg.sender, "Not token owner");
 
-        t.proofVerified = true;
-        t.verifiedAt = block.timestamp;
-
-        emit ProofVerified(transferId);
-    }
-
-    /**
-     * @dev Completes the transfer process
-     * @param transferId The ID of the transfer
-     * @param newEncryptedContents The newly encrypted clue contents
-     */
-    function completeTransfer(
-        bytes32 transferId,
-        bytes calldata newEncryptedContents
-    ) external nonReentrant {
-        TokenTransfer storage t = transfers[transferId];
-        require(ownerOf(t.tokenId) == msg.sender, "Not token owner");
-        require(t.proofVerified, "Proof not verified");
-        require(
-            block.timestamp <= t.verifiedAt + TRANSFER_TIMEOUT,
-            "Transfer completion expired"
-        );
-
-        // Verify the new encrypted contents match the previously provided hash
-        require(
-            keccak256(newEncryptedContents) == t.newClueHash,
-            "Content hash mismatch"
-        );
-
-        // Check if the clue is solved
-        if (clues[t.tokenId].isSolved) {
-            revert SolvedClueTransferNotAllowed();
+        if (clues[tokenId].isSolved) {
+            revert SolvedClueCannotBeSold();
         }
 
-        // Update clue contents and reset solve attempts
-        Clue storage clue = clues[t.tokenId];
-        clue.encryptedContents = newEncryptedContents;
-        clue.solveAttempts = 0;
+        clues[tokenId].salePrice = price;
 
-        // Transfer token and payment
-        _transfer(msg.sender, t.buyer, t.tokenId);
-        payable(msg.sender).transfer(t.value);
-
-        // Cleanup transfer data
-        emit TransferCompleted(transferId);
-        delete transfers[transferId];
-    }
-
-    /**
-     * @dev Cancels a transfer
-     * Can be cancelled by:
-     * - The token owner at any time
-     * - The buyer at any time
-     * - Anyone once the transfer has timed out
-     * @param transferId The ID of the transfer to cancel
-     */
-    function cancelTransfer(bytes32 transferId) external {
-        TokenTransfer storage t = transfers[transferId];
-        require(t.buyer != address(0), "Transfer does not exist");
-        
-        bool isOwner = ownerOf(t.tokenId) == msg.sender;
-        bool isBuyer = t.buyer == msg.sender;
-        
-        // Check if the transfer has expired
-        bool isExpired = (t.proofProvidedAt == 0 &&
-            block.timestamp > t.initiatedAt + TRANSFER_TIMEOUT) ||
-            (t.verifiedAt == 0 &&
-                t.proofProvidedAt > 0 &&
-                block.timestamp > t.proofProvidedAt + TRANSFER_TIMEOUT) ||
-            (t.verifiedAt > 0 &&
-                block.timestamp > t.verifiedAt + TRANSFER_TIMEOUT);
-        
-        // Allow cancellation by owner, buyer, or anyone if the transfer is expired
-        require(isOwner || isBuyer || isExpired, "Not authorized to cancel");
-        
-        // Refund buyer
-        if (t.value > 0) {
-            payable(t.buyer).transfer(t.value);
+        // Add to the for-sale list if not already there
+        if (!cluesForSale[tokenId] && price > 0) {
+            cluesForSale[tokenId] = true;
+            _cluesForSaleList.push(tokenId);
+        }
+        // Remove from the for-sale list if price is set to 0
+        else if (cluesForSale[tokenId] && price == 0) {
+            _removeFromForSaleList(tokenId);
         }
 
-        emit TransferCancelled(transferId);
-        delete transfers[transferId];
+        emit SalePriceSet(tokenId, price);
     }
 
     /**
-     * @dev Attempts to solve a clue
-     * @param tokenId The ID of the clue token
-     * @param solution The proposed solution
+     * @dev Remove a clue from sale
+     * @param tokenId Token ID of the clue
+     */
+    function removeSalePrice(uint256 tokenId) external {
+        require(ownerOf(tokenId) == msg.sender, "Not token owner");
+
+        if (cluesForSale[tokenId]) {
+            _removeFromForSaleList(tokenId);
+        }
+
+        clues[tokenId].salePrice = 0;
+        emit SalePriceRemoved(tokenId);
+    }
+
+    /**
+     * @dev Get clues for sale with pagination
+     * @param offset Starting index
+     * @param limit Maximum number of items to return
+     */
+    function getCluesForSale(
+        uint256 offset,
+        uint256 limit
+    )
+        external
+        view
+        returns (
+            uint256[] memory tokenIds,
+            address[] memory owners,
+            uint256[] memory prices,
+            bool[] memory solvedStatus
+        )
+    {
+        uint256 total = _cluesForSaleList.length;
+        uint256 end = offset + limit > total ? total : offset + limit;
+        uint256 resultSize = end > offset ? end - offset : 0;
+
+        tokenIds = new uint256[](resultSize);
+        owners = new address[](resultSize);
+        prices = new uint256[](resultSize);
+        solvedStatus = new bool[](resultSize);
+
+        for (uint256 i = 0; i < resultSize; i++) {
+            uint256 tokenId = _cluesForSaleList[offset + i];
+            tokenIds[i] = tokenId;
+            owners[i] = ownerOf(tokenId);
+            prices[i] = clues[tokenId].salePrice;
+            solvedStatus[i] = clues[tokenId].isSolved;
+        }
+
+        return (tokenIds, owners, prices, solvedStatus);
+    }
+
+    /**
+     * @dev Get the total number of clues for sale
+     */
+    function getTotalCluesForSale() external view returns (uint256) {
+        return _cluesForSaleList.length;
+    }
+
+    /**
+     * @dev Attempt to solve a clue
+     * @param tokenId Token ID of the clue
+     * @param solution Proposed solution
      */
     function attemptSolution(
         uint256 tokenId,
@@ -251,77 +237,285 @@ contract Skavenge is ERC721, ReentrancyGuard {
         );
 
         clues[tokenId].solveAttempts++;
+
         emit ClueAttempted(
             tokenId,
             MAX_SOLVE_ATTEMPTS - clues[tokenId].solveAttempts
         );
 
-        if (
-            keccak256(abi.encodePacked(solution)) == clues[tokenId].solutionHash
-        ) {
+        if (keccak256(bytes(solution)) == clues[tokenId].solutionHash) {
             clues[tokenId].isSolved = true;
+
+            // Remove from sale if it was for sale
+            if (cluesForSale[tokenId]) {
+                _removeFromForSaleList(tokenId);
+                clues[tokenId].salePrice = 0;
+                emit SalePriceRemoved(tokenId);
+            }
+
             emit ClueSolved(tokenId);
         }
     }
 
     /**
-     * @dev Creates a new clue token
-     * @param encryptedContents The encrypted contents of the clue
-     * @param solutionHash The hash of the correct solution
+     * @dev Initiate purchase of a clue
+     * @param tokenId Token ID of the clue
      */
-    function mintClue(
-        bytes calldata encryptedContents,
-        bytes32 solutionHash
-    ) external {
-        // Increment token ID (replacing Counters functionality)
-        _currentTokenId += 1;
-        uint256 newTokenId = _currentTokenId;
+    function initiatePurchase(uint256 tokenId) external payable nonReentrant {
+        ownerOf(tokenId); // Verify token exists
 
-        clues[newTokenId] = Clue({
-            encryptedContents: encryptedContents,
-            solutionHash: solutionHash,
-            isSolved: false,
-            solveAttempts: 0
+        // Check if the clue is for sale
+        if (!cluesForSale[tokenId] || clues[tokenId].salePrice == 0) {
+            revert ClueNotForSale();
+        }
+
+        // Check if sent value is at least the sale price
+        if (msg.value < clues[tokenId].salePrice) {
+            revert InsufficientFunds();
+        }
+
+        // Check if the clue is solved
+        if (clues[tokenId].isSolved) {
+            revert SolvedClueTransferNotAllowed();
+        }
+
+        // Check if transfer already initiated
+        bytes32 transferId = generateTransferId(msg.sender, tokenId);
+        require(
+            transfers[transferId].buyer == address(0),
+            "Transfer already initiated"
+        );
+
+        // Create transfer record
+        transfers[transferId] = TokenTransfer({
+            buyer: msg.sender,
+            tokenId: tokenId,
+            value: msg.value,
+            initiatedAt: block.timestamp,
+            proof: new bytes(0),
+            newClueHash: bytes32(0),
+            proofVerified: false,
+            proofProvidedAt: 0,
+            verifiedAt: 0
         });
 
-        _mint(msg.sender, newTokenId);
+        emit TransferInitiated(transferId, msg.sender, tokenId);
     }
 
     /**
-     * @dev Returns the encrypted contents of a clue
-     * @param tokenId The ID of the clue token
+     * @dev Generate a transfer ID
+     * @param buyer Address of the buyer
+     * @param tokenId Token ID being transferred
      */
-    function getClueContents(
+    function generateTransferId(
+        address buyer,
         uint256 tokenId
-    ) external view returns (bytes memory) {
-        // Using ownerOf instead of _exists
-        // This will revert if the token doesn't exist
-        ownerOf(tokenId); // Will revert if token doesn't exist
-        return clues[tokenId].encryptedContents;
+    ) public pure returns (bytes32) {
+        return keccak256(abi.encodePacked(buyer, tokenId));
     }
 
     /**
-     * @dev Hook that is called before any token transfer
-     * This includes minting and burning.
+     * @dev Provide proof for a clue transfer
+     * @param transferId ID of the transfer
+     * @param proof ZK proof of knowledge of encrypted message
+     * @param newClueHash Hash of the new encrypted clue for the buyer
+     */
+    function provideProof(
+        bytes32 transferId,
+        bytes calldata proof,
+        bytes32 newClueHash
+    ) external nonReentrant {
+        TokenTransfer storage transfer = transfers[transferId];
+        require(transfer.buyer != address(0), "Transfer does not exist");
+        require(ownerOf(transfer.tokenId) == msg.sender, "Not token owner");
+
+        // Check if transfer has timed out
+        require(
+            block.timestamp - transfer.initiatedAt <= TRANSFER_TIMEOUT,
+            "Transfer expired"
+        );
+
+        transfer.proof = proof;
+        transfer.newClueHash = newClueHash;
+        transfer.proofProvidedAt = block.timestamp;
+
+        emit ProofProvided(transferId, proof, newClueHash);
+    }
+
+    /**
+     * @dev Verify proof for a clue transfer
+     * @param transferId ID of the transfer
+     */
+    function verifyProof(bytes32 transferId) external nonReentrant {
+        TokenTransfer storage transfer = transfers[transferId];
+        require(transfer.buyer == msg.sender, "Not the buyer");
+        require(transfer.proofProvidedAt > 0, "Proof not yet provided");
+
+        // Check if proof provision has timed out
+        require(
+            block.timestamp - transfer.proofProvidedAt <= TRANSFER_TIMEOUT,
+            "Proof verification expired"
+        );
+
+        transfer.proofVerified = true;
+        transfer.verifiedAt = block.timestamp;
+
+        emit ProofVerified(transferId);
+    }
+
+    /**
+     * @dev Complete a clue transfer with new encrypted contents
+     * @param transferId ID of the transfer
+     * @param newEncryptedContents New encrypted contents of the clue for the buyer
+     */
+    function completeTransfer(
+        bytes32 transferId,
+        bytes calldata newEncryptedContents
+    ) external nonReentrant {
+        TokenTransfer storage transfer = transfers[transferId];
+        require(transfer.buyer != address(0), "Transfer does not exist");
+        require(ownerOf(transfer.tokenId) == msg.sender, "Not token owner");
+
+        // Check if verification has timed out
+        require(transfer.verifiedAt > 0, "Proof not verified");
+        require(
+            block.timestamp - transfer.verifiedAt <= TRANSFER_TIMEOUT,
+            "Transfer completion expired"
+        );
+
+        // Verify the hash of the new encrypted contents
+        require(
+            keccak256(newEncryptedContents) == transfer.newClueHash,
+            "Content hash mismatch"
+        );
+
+        // Check if the clue is solved
+        if (clues[transfer.tokenId].isSolved) {
+            revert SolvedClueTransferNotAllowed();
+        }
+
+        // Update the clue contents
+        clues[transfer.tokenId].encryptedContents = newEncryptedContents;
+        clues[transfer.tokenId].solveAttempts = 0;
+
+        // Transfer ownership
+        _safeTransfer(msg.sender, transfer.buyer, transfer.tokenId, "");
+
+        // Send payment to seller
+        (bool sent, ) = payable(msg.sender).call{value: transfer.value}("");
+        require(sent, "Failed to send Ether");
+
+        // Remove from sale list
+        if (cluesForSale[transfer.tokenId]) {
+            _removeFromForSaleList(transfer.tokenId);
+            clues[transfer.tokenId].salePrice = 0;
+            emit SalePriceRemoved(transfer.tokenId);
+        }
+
+        // Clear the transfer
+        delete transfers[transferId];
+
+        emit TransferCompleted(transferId);
+    }
+
+    /**
+     * @dev Cancel a clue transfer
+     * @param transferId ID of the transfer
+     */
+    function cancelTransfer(bytes32 transferId) external nonReentrant {
+        TokenTransfer storage transfer = transfers[transferId];
+        require(transfer.buyer != address(0), "Transfer does not exist");
+
+        bool isBuyer = transfer.buyer == msg.sender;
+        bool isSeller = ownerOf(transfer.tokenId) == msg.sender;
+
+        // Check cancellation conditions
+        bool canCancel = false;
+
+        // Buyer can always cancel
+        if (isBuyer) {
+            canCancel = true;
+        }
+
+        // Seller can cancel if:
+        // 1. No proof provided and timeout elapsed, or
+        // 2. Proof provided but not verified and timeout elapsed, or
+        // 3. Proof verified but not completed and timeout elapsed
+        if (isSeller) {
+            if (
+                transfer.proofProvidedAt == 0 &&
+                block.timestamp - transfer.initiatedAt > TRANSFER_TIMEOUT
+            ) {
+                canCancel = true;
+            } else if (
+                transfer.proofProvidedAt > 0 &&
+                !transfer.proofVerified &&
+                block.timestamp - transfer.proofProvidedAt > TRANSFER_TIMEOUT
+            ) {
+                canCancel = true;
+            } else if (
+                transfer.verifiedAt > 0 &&
+                block.timestamp - transfer.verifiedAt > TRANSFER_TIMEOUT
+            ) {
+                canCancel = true;
+            }
+        }
+
+        require(canCancel, "Not authorized to cancel");
+
+        // Refund the buyer
+        if (transfer.value > 0) {
+            (bool sent, ) = payable(transfer.buyer).call{value: transfer.value}(
+                ""
+            );
+            require(sent, "Failed to send Ether");
+        }
+
+        emit TransferCancelled(transferId);
+
+        // Clear the transfer
+        delete transfers[transferId];
+    }
+
+    /**
+     * @dev Remove a token ID from the for-sale list
+     * @param tokenId Token ID to remove
+     */
+    function _removeFromForSaleList(uint256 tokenId) private {
+        if (!cluesForSale[tokenId]) {
+            return;
+        }
+
+        cluesForSale[tokenId] = false;
+
+        // Find and remove the token ID from the array
+        for (uint256 i = 0; i < _cluesForSaleList.length; i++) {
+            if (_cluesForSaleList[i] == tokenId) {
+                // Replace the item with the last item in the array
+                _cluesForSaleList[i] = _cluesForSaleList[
+                    _cluesForSaleList.length - 1
+                ];
+                // Remove the last item
+                _cluesForSaleList.pop();
+                break;
+            }
+        }
+    }
+
+    /**
+     * @dev Override _beforeTokenTransfer to handle transfers
      */
     function _beforeTokenTransfer(
         address from,
         address to,
         uint256 tokenId
     ) internal virtual {
-        // Check if the token exists (will fail for non-existent tokens)
+        // If this is a transfer (not a mint), clear the sale price
         if (from != address(0) && to != address(0)) {
-            // Only check for transfers (not minting or burning)
-            if (clues[tokenId].isSolved) {
-                revert SolvedClueTransferNotAllowed();
+            if (cluesForSale[tokenId]) {
+                _removeFromForSaleList(tokenId);
             }
+            clues[tokenId].salePrice = 0;
         }
-    }
-
-    /**
-     * @dev Returns the current token ID
-     */
-    function getCurrentTokenId() external view returns (uint256) {
-        return _currentTokenId;
     }
 }

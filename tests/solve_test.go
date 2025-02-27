@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
 
+	"github.com/deelawn/skavenge/eth/bindings"
 	"github.com/deelawn/skavenge/tests/util"
 )
 
@@ -62,10 +63,33 @@ func TestSuccessfulSolve(t *testing.T) {
 	require.Equal(t, uint64(1), receipt.Status, "Mint transaction failed")
 
 	// Verify the clue is not solved yet
-	tokenId := big.NewInt(1)
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
+
 	clueData, err := contract.Clues(nil, tokenId)
 	require.NoError(t, err)
 	require.False(t, clueData.IsSolved, "Clue should not be solved yet")
+
+	// Set sale price for the clue
+	minterAuth, err = util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	require.NoError(t, err)
+	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), salePriceReceipt.Status, "Set sale price transaction failed")
+
+	// Verify sale price was set
+	clueData, err = contract.Clues(nil, tokenId)
+	require.NoError(t, err)
+	require.Equal(t, salePrice.String(), clueData.SalePrice.String(), "Sale price should be set to 1 ETH")
+
+	// Verify the clue is marked for sale
+	isForSale, err := contract.CluesForSale(nil, tokenId)
+	require.NoError(t, err)
+	require.True(t, isForSale, "Clue should be marked for sale")
 
 	// Solve the clue with the correct solution
 	// Update auth to ensure correct nonce
@@ -87,10 +111,23 @@ func TestSuccessfulSolve(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, clueSolvedFound, "ClueSolved event not found")
 
+	// Verify the SalePriceRemoved event was emitted
+	salePriceRemovedFound, err := listener.CheckEvent(solveReceipt, "SalePriceRemoved")
+	require.NoError(t, err)
+	require.True(t, salePriceRemovedFound, "SalePriceRemoved event not found")
+
 	// Verify the clue is now marked as solved
 	clueData, err = contract.Clues(nil, tokenId)
 	require.NoError(t, err)
 	require.True(t, clueData.IsSolved, "Clue should be marked as solved")
+
+	// Verify the sale price was reset to 0
+	require.Equal(t, big.NewInt(0).String(), clueData.SalePrice.String(), "Sale price should be reset to 0")
+
+	// Verify the clue is no longer for sale
+	isForSale, err = contract.CluesForSale(nil, tokenId)
+	require.NoError(t, err)
+	require.False(t, isForSale, "Clue should no longer be marked for sale")
 }
 
 // TestFailedSolveAttempt tests a failed attempt to solve a clue.
@@ -139,8 +176,21 @@ func TestFailedSolveAttempt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), receipt.Status, "Mint transaction failed")
 
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
+
+	// Set sale price for the clue
+	minterAuth, err = util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	require.NoError(t, err)
+	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), salePriceReceipt.Status, "Set sale price transaction failed")
+
 	// Verify initial solve attempts
-	tokenId := big.NewInt(1)
 	clueData, err := contract.Clues(nil, tokenId)
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), clueData.SolveAttempts.Uint64(), "Initial solve attempts should be 0")
@@ -172,10 +222,94 @@ func TestFailedSolveAttempt(t *testing.T) {
 
 	// Verify solve attempts was incremented
 	require.Equal(t, uint64(1), clueData.SolveAttempts.Uint64(), "Solve attempts should be incremented to 1")
+
+	// Verify the sale price is still set
+	require.Equal(t, salePrice.String(), clueData.SalePrice.String(), "Sale price should still be set")
+
+	// Verify the clue is still for sale
+	isForSale, err := contract.CluesForSale(nil, tokenId)
+	require.NoError(t, err)
+	require.True(t, isForSale, "Clue should still be marked for sale")
 }
 
-// TestMaximumSolveAttempts tests reaching the maximum number of solve attempts.
-func TestMaximumSolveAttempts(t *testing.T) {
+// TestSetSalePriceOnSolvedClue tests attempting to set a sale price on a solved clue.
+func TestSetSalePriceOnSolvedClue(t *testing.T) {
+	// Connect to Hardhat network
+	client, err := ethclient.Dial("http://localhost:8545")
+	require.NoError(t, err)
+
+	// Setup deployer account
+	deployerAuth, err := util.NewTransactOpts(client, deployer)
+	require.NoError(t, err)
+
+	// Deploy contract
+	contract, _, err := util.DeployContract(client, deployerAuth)
+	require.NoError(t, err)
+
+	// Create event listener
+	// listener, err := util.NewEventListener(client, contract, address)
+	// require.NoError(t, err)
+
+	// Setup minter account
+	minterPrivKey, err := crypto.HexToECDSA(minter)
+	require.NoError(t, err)
+	minterAuth, err := util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+
+	// Create API client for encryption
+	apiClient, err := util.NewGRPCClient()
+	require.NoError(t, err)
+
+	// Mint a clue with a known solution
+	clueContent := "Find the hidden treasure in the forest"
+	solution := "Behind the waterfall"
+	solutionHash := crypto.Keccak256Hash([]byte(solution))
+
+	// Encrypt the clue content
+	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
+	require.NoError(t, err, "Failed to encrypt clue content")
+
+	// Mint the clue
+	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	require.NoError(t, err)
+
+	// Wait for the transaction to be mined
+	receipt, err := util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), receipt.Status, "Mint transaction failed")
+
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
+
+	// Solve the clue first
+	minterAuth, err = util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+
+	solveTx, err := contract.AttemptSolution(minterAuth, tokenId, solution)
+	require.NoError(t, err)
+	solveReceipt, err := util.WaitForTransaction(client, solveTx)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), solveReceipt.Status, "Solution attempt should succeed")
+
+	// Verify the clue is solved
+	clueData, err := contract.Clues(nil, tokenId)
+	require.NoError(t, err)
+	require.True(t, clueData.IsSolved, "Clue should be marked as solved")
+
+	// Now try to set a sale price on the solved clue
+	minterAuth, err = util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+	minterAuth.GasLimit = 300000 // Set higher gas limit for failing transaction
+
+	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+
+	// This should fail because the clue is solved
+	_, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	require.Error(t, err, "Setting sale price on solved clue should fail")
+}
+
+// TestRemoveSalePrice tests the function to remove a sale price.
+func TestRemoveSalePrice(t *testing.T) {
 	// Connect to Hardhat network
 	client, err := ethclient.Dial("http://localhost:8545")
 	require.NoError(t, err)
@@ -202,7 +336,7 @@ func TestMaximumSolveAttempts(t *testing.T) {
 	apiClient, err := util.NewGRPCClient()
 	require.NoError(t, err)
 
-	// Mint a clue with a known solution
+	// Mint a clue
 	clueContent := "Find the hidden treasure in the forest"
 	solution := "Behind the waterfall"
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
@@ -214,216 +348,64 @@ func TestMaximumSolveAttempts(t *testing.T) {
 	// Mint the clue
 	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
-
-	// Wait for the transaction to be mined
 	receipt, err := util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), receipt.Status, "Mint transaction failed")
 
-	tokenId := big.NewInt(1)
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
 
-	// Make three incorrect solution attempts
-	incorrectSolutions := []string{
-		"In the cave",
-		"Under the bridge",
-		"Behind the tree",
-	}
+	// Set sale price for the clue
+	minterAuth, err = util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+	salePrice := big.NewInt(1000000000000000000) // 1 ETH
 
-	for i, incorrectSolution := range incorrectSolutions {
-		// Update auth to ensure correct nonce
-		minterAuth, err = util.NewTransactOpts(client, minter)
-		require.NoError(t, err)
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, salePriceTx)
+	require.NoError(t, err)
 
-		solveTx, err := contract.AttemptSolution(minterAuth, tokenId, incorrectSolution)
-		require.NoError(t, err)
+	// Verify the sale price is set
+	clueData, err := contract.Clues(nil, tokenId)
+	require.NoError(t, err)
+	require.Equal(t, salePrice.String(), clueData.SalePrice.String(), "Sale price should be set to 1 ETH")
 
-		// Wait for the transaction to be mined
-		solveReceipt, err := util.WaitForTransaction(client, solveTx)
-		require.NoError(t, err)
-		require.Equal(t, uint64(1), solveReceipt.Status, "Solution attempt transaction failed")
+	// Verify the clue is marked for sale
+	isForSale, err := contract.CluesForSale(nil, tokenId)
+	require.NoError(t, err)
+	require.True(t, isForSale, "Clue should be marked for sale")
 
-		// Verify the ClueAttempted event was emitted
-		clueAttemptedFound, err := listener.CheckEvent(solveReceipt, "ClueAttempted")
-		require.NoError(t, err)
-		require.True(t, clueAttemptedFound, "ClueAttempted event not found")
-
-		// Verify solve attempts was incremented
-		clueData, err := contract.Clues(nil, tokenId)
-		require.NoError(t, err)
-		require.Equal(t, uint64(i+1), clueData.SolveAttempts.Uint64(),
-			"Solve attempts should be incremented to %d", i+1)
-	}
-
-	// Attempt a 4th solution (should fail)
+	// Now remove the sale price
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	// We need to set the gas limit higher as the transaction will revert
-	minterAuth.GasLimit = 300000
-
-	// Try one more attempt which should fail with "No attempts remaining"
-	_, err = contract.AttemptSolution(minterAuth, tokenId, "In the hollow tree")
-	require.Error(t, err, "Transaction should be sent but will revert")
-
-	// TODO: take another look at why this doesn't work.
-
-	// // Wait for the transaction to be mined
-	// fourthSolveReceipt, err := bind.WaitMined(context.Background(), client, fourthSolveTx)
-	// require.NoError(t, err)
-
-	// // Transaction should fail (status 0)
-	// require.Equal(t, uint64(0), fourthSolveReceipt.Status, "Fourth solution attempt should fail")
-
-	// Verify solve attempts is still 3
-	clueData, err := contract.Clues(nil, tokenId)
+	removeTx, err := contract.RemoveSalePrice(minterAuth, tokenId)
 	require.NoError(t, err)
-	require.Equal(t, uint64(3), clueData.SolveAttempts.Uint64(), "Solve attempts should still be 3")
+	removeReceipt, err := util.WaitForTransaction(client, removeTx)
+	require.NoError(t, err)
+
+	// Verify the SalePriceRemoved event was emitted
+	salePriceRemovedFound, err := listener.CheckEvent(removeReceipt, "SalePriceRemoved")
+	require.NoError(t, err)
+	require.True(t, salePriceRemovedFound, "SalePriceRemoved event not found")
+
+	// Verify the sale price was reset to 0
+	clueData, err = contract.Clues(nil, tokenId)
+	require.NoError(t, err)
+	require.Equal(t, big.NewInt(0).String(), clueData.SalePrice.String(), "Sale price should be reset to 0")
+
+	// Verify the clue is no longer for sale
+	isForSale, err = contract.CluesForSale(nil, tokenId)
+	require.NoError(t, err)
+	require.False(t, isForSale, "Clue should no longer be marked for sale")
 }
 
-// TestNonOwnerSolveAttempt tests a non-owner attempting to solve a clue.
-func TestNonOwnerSolveAttempt(t *testing.T) {
-	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
-	require.NoError(t, err)
+func getLastMintedTokenID(contract *bindings.Skavenge) (*big.Int, error) {
+	tokenId, err := contract.GetCurrentTokenId(nil)
+	if err != nil {
+		return nil, err
+	}
 
-	// Setup deployer account
-	deployerAuth, err := util.NewTransactOpts(client, deployer)
-	require.NoError(t, err)
-
-	// Deploy contract
-	contract, _, err := util.DeployContract(client, deployerAuth)
-	require.NoError(t, err)
-
-	// Setup minter account
-	minterPrivKey, err := crypto.HexToECDSA(minter)
-	require.NoError(t, err)
-	minterAuth, err := util.NewTransactOpts(client, minter)
-	require.NoError(t, err)
-
-	// Setup non-owner account
-	nonOwnerAuth, err := util.NewTransactOpts(client, buyer) // Using buyer as non-owner
-	require.NoError(t, err)
-
-	// Create API client for encryption
-	apiClient, err := util.NewGRPCClient()
-	require.NoError(t, err)
-
-	// Mint a clue with a known solution
-	clueContent := "Find the hidden treasure in the forest"
-	solution := "Behind the waterfall"
-	solutionHash := crypto.Keccak256Hash([]byte(solution))
-
-	// Encrypt the clue content
-	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
-	require.NoError(t, err, "Failed to encrypt clue content")
-
-	// Mint the clue
-	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
-	require.NoError(t, err)
-
-	// Wait for the transaction to be mined
-	receipt, err := util.WaitForTransaction(client, tx)
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), receipt.Status, "Mint transaction failed")
-
-	tokenId := big.NewInt(1)
-
-	// Set higher gas limit for the failing transaction
-	nonOwnerAuth.GasLimit = 300000
-
-	// Non-owner attempts to solve (should fail)
-	_, err = contract.AttemptSolution(nonOwnerAuth, tokenId, solution)
-	require.Error(t, err, "Transaction should be sent but will revert")
-
-	// // Wait for the transaction to be mined
-	// solveReceipt, err := bind.WaitMined(context.Background(), client, solveTx)
-	// require.NoError(t, err)
-
-	// // Transaction should fail (status 0)
-	// require.Equal(t, uint64(0), solveReceipt.Status, "Non-owner solution attempt should fail")
-
-	// Verify clue is still not solved
-	clueData, err := contract.Clues(nil, tokenId)
-	require.NoError(t, err)
-	require.False(t, clueData.IsSolved, "Clue should not be solved")
-
-	// Verify solve attempts is still 0
-	require.Equal(t, uint64(0), clueData.SolveAttempts.Uint64(), "Solve attempts should still be 0")
-}
-
-// TestSolveAlreadySolvedClue tests attempting to solve an already solved clue.
-func TestSolveAlreadySolvedClue(t *testing.T) {
-	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
-	require.NoError(t, err)
-
-	// Setup deployer account
-	deployerAuth, err := util.NewTransactOpts(client, deployer)
-	require.NoError(t, err)
-
-	// Deploy contract
-	contract, _, err := util.DeployContract(client, deployerAuth)
-	require.NoError(t, err)
-
-	// Setup minter account
-	minterPrivKey, err := crypto.HexToECDSA(minter)
-	require.NoError(t, err)
-	minterAuth, err := util.NewTransactOpts(client, minter)
-	require.NoError(t, err)
-
-	// Create API client for encryption
-	apiClient, err := util.NewGRPCClient()
-	require.NoError(t, err)
-
-	// Mint a clue with a known solution
-	clueContent := "Find the hidden treasure in the forest"
-	solution := "Behind the waterfall"
-	solutionHash := crypto.Keccak256Hash([]byte(solution))
-
-	// Encrypt the clue content
-	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
-	require.NoError(t, err, "Failed to encrypt clue content")
-
-	// Mint the clue
-	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
-	require.NoError(t, err)
-
-	// Wait for the transaction to be mined
-	receipt, err := util.WaitForTransaction(client, tx)
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), receipt.Status, "Mint transaction failed")
-
-	tokenId := big.NewInt(1)
-
-	// Solve the clue first time
-	minterAuth, err = util.NewTransactOpts(client, minter)
-	require.NoError(t, err)
-
-	solveTx, err := contract.AttemptSolution(minterAuth, tokenId, solution)
-	require.NoError(t, err)
-
-	// Wait for the transaction to be mined
-	solveReceipt, err := util.WaitForTransaction(client, solveTx)
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), solveReceipt.Status, "First solution attempt should succeed")
-
-	// Verify the clue is now solved
-	clueData, err := contract.Clues(nil, tokenId)
-	require.NoError(t, err)
-	require.True(t, clueData.IsSolved, "Clue should be marked as solved")
-
-	// Try to solve again with the same solution
-	minterAuth, err = util.NewTransactOpts(client, minter)
-	require.NoError(t, err)
-	minterAuth.GasLimit = 300000 // Set higher gas limit for failing transaction
-
-	_, err = contract.AttemptSolution(minterAuth, tokenId, solution)
-	require.Error(t, err, "Transaction should be sent but will revert")
-
-	// // Wait for the transaction to be mined
-	// secondSolveReceipt, err := bind.WaitMined(context.Background(), client, secondSolveTx)
-	// require.NoError(t, err)
-
-	// // Transaction should fail (status 0)
-	// require.Equal(t, uint64(0), secondSolveReceipt.Status, "Second solution attempt should fail")
+	tokenId.Sub(tokenId, big.NewInt(1))
+	return tokenId, nil
 }

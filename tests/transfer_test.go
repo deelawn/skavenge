@@ -70,11 +70,23 @@ func TestSuccessfulTransfer(t *testing.T) {
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
+
 	// Verify the clue is minted successfully
-	tokenId := big.NewInt(1)
 	owner, err := contract.OwnerOf(nil, tokenId)
 	require.NoError(t, err)
 	require.Equal(t, crypto.PubkeyToAddress(minterPrivKey.PublicKey), owner, "Minter should be the owner")
+
+	// Set sale price in order to be able to initiate purchase.
+	minterAuth, err = util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	require.NoError(t, err)
+	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), salePriceReceipt.Status, "Set sale price transaction failed")
 
 	// Initiate purchase from buyer account
 	// Set value to 1 ETH
@@ -238,7 +250,18 @@ func TestInvalidProofVerification(t *testing.T) {
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
-	tokenId := big.NewInt(1)
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
+
+	// Set sale price in order to be able to initiate purchase.
+	minterAuth, err = util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	require.NoError(t, err)
+	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), salePriceReceipt.Status, "Set sale price transaction failed")
 
 	// Initiate purchase from buyer
 	buyerAuth.Value = big.NewInt(1000000000000000000) // 1 ETH
@@ -361,7 +384,18 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
-	tokenId := big.NewInt(1)
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
+
+	// Set sale price in order to be able to initiate purchase.
+	minterAuth, err = util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	require.NoError(t, err)
+	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), salePriceReceipt.Status, "Set sale price transaction failed")
 
 	// Initiate purchase from buyer
 	buyerAuth.Value = big.NewInt(1000000000000000000) // 1 ETH
@@ -474,7 +508,18 @@ func TestCancelTransfer(t *testing.T) {
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
-	tokenId := big.NewInt(1)
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
+
+	// Set sale price in order to be able to initiate purchase.
+	minterAuth, err = util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	require.NoError(t, err)
+	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), salePriceReceipt.Status, "Set sale price transaction failed")
 
 	// Initiate purchase from buyer with 1 ETH
 	paymentAmount := big.NewInt(1000000000000000000) // 1 ETH

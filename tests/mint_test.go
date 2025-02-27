@@ -66,24 +66,26 @@ func TestSuccessfulMint(t *testing.T) {
 	receipt, err := util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
+
 	// Verify the appropriate events are emitted
 	transferFound, err := listener.CheckEvent(receipt, "Transfer")
 	require.NoError(t, err)
 	require.True(t, transferFound, "Transfer event not found")
 
 	// Check that the token with ID 1 has been minted to the minter
-	tokenId := uint64(1) // First token is ID 1
-	owner, err := contract.OwnerOf(nil, big.NewInt(int64(tokenId)))
+	owner, err := contract.OwnerOf(nil, tokenId)
 	require.NoError(t, err)
 	require.Equal(t, minterAddr, owner, "Minter is not the owner of the token")
 
 	// Check the clue content is correctly stored (encrypted)
-	clueContents, err := contract.GetClueContents(nil, big.NewInt(int64(tokenId)))
+	clueContents, err := contract.GetClueContents(nil, tokenId)
 	require.NoError(t, err)
 	require.Equal(t, encryptedClueContent, clueContents, "Stored encrypted content does not match")
 
 	// Verify the clue struct in the mapping
-	clueData, err := contract.Clues(nil, big.NewInt(int64(tokenId)))
+	clueData, err := contract.Clues(nil, tokenId)
 	require.NoError(t, err)
 	require.Equal(t, encryptedClueContent, clueData.EncryptedContents, "Encrypted contents do not match")
 	require.Equal(t, solutionHash, clueData.SolutionHash, "Solution hash does not match")
@@ -141,11 +143,11 @@ func TestMintWithEmptySolutionHash(t *testing.T) {
 	// Verify that the transaction succeeded
 	require.Equal(t, uint64(1), receipt.Status, "Transaction should succeed")
 
-	// Get the token ID
-	tokenId := uint64(1)
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
 
 	// Check the solution hash
-	clueData, err := contract.Clues(nil, big.NewInt(int64(tokenId)))
+	clueData, err := contract.Clues(nil, tokenId)
 	require.NoError(t, err)
 	require.Equal(t, emptySolutionHash, clueData.SolutionHash, "Solution hash should be empty")
 }
@@ -173,6 +175,11 @@ func TestMintMultipleClues(t *testing.T) {
 	// Create API client for ZK proof operations
 	apiClient, err := util.NewGRPCClient()
 	require.NoError(t, err)
+
+	startTokenId, err := contract.GetCurrentTokenId(nil)
+	require.NoError(t, err)
+
+	expTokenId := startTokenId.Add(startTokenId, big.NewInt(2))
 
 	// Mint first clue
 	firstClueContent := "First clue content"
@@ -213,7 +220,7 @@ func TestMintMultipleClues(t *testing.T) {
 	// Check that getCurrentTokenId returns 2
 	currentTokenId, err := contract.GetCurrentTokenId(nil)
 	require.NoError(t, err)
-	require.Equal(t, uint64(2), currentTokenId.Uint64(), "Current token ID should be 2")
+	require.Equal(t, expTokenId.Uint64(), currentTokenId.Uint64(), "Current token ID should be 2 more than start")
 
 	// Verify contents of first clue (encrypted)
 	firstClueData, err := contract.Clues(nil, big.NewInt(1))
