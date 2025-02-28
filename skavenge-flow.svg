@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000">
+  <!-- Background -->
+  <rect width="1600" height="1000" fill="#f8f9fa" />
+
+  <!-- Title -->
+  <text x="800" y="60" font-family="Arial, sans-serif" font-size="36" font-weight="bold" text-anchor="middle"
+    fill="#333">Skavenge NFT Clue Lifecycle</text>
+
+  <!-- Legend -->
+  <rect x="50" y="100" width="30" height="30" fill="#6495ED" rx="4" ry="4" />
+  <text x="90" y="120" font-family="Arial, sans-serif" font-size="18" fill="#333">State</text>
+
+  <rect x="230" y="100" width="30" height="30" fill="#FF8C00" rx="4" ry="4" />
+  <text x="270" y="120" font-family="Arial, sans-serif" font-size="18" fill="#333">User Action</text>
+
+  <!-- Main Flow - States -->
+  <!-- Initial State -->
+  <rect x="600" y="180" width="250" height="80" fill="#6495ED" rx="15" ry="15" />
+  <text x="725" y="230" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
+    fill="white">Minted</text>
+
+  <!-- For Sale State -->
+  <rect x="300" y="450" width="250" height="80" fill="#6495ED" rx="15" ry="15" />
+  <text x="425" y="500" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
+    fill="white">For Sale</text>
+
+  <!-- Solving Attempts State -->
+  <rect x="900" y="450" width="250" height="80" fill="#6495ED" rx="15" ry="15" />
+  <text x="1025" y="480" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
+    fill="white">Solve Attempts</text>
+  <text x="1025" y="510" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="white">(Max 3
+    Attempts)</text>
+
+  <!-- Solved State -->
+  <rect x="900" y="700" width="250" height="80" fill="#6495ED" rx="15" ry="15" />
+  <text x="1025" y="750" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
+    fill="white">Solved</text>
+
+  <!-- Transfer States -->
+  <rect x="300" y="700" width="250" height="80" fill="#6495ED" rx="15" ry="15" />
+  <text x="425" y="730" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
+    fill="white">Transfer Initiated</text>
+  <text x="425" y="760" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="white">(3 min
+    timeout)</text>
+
+  <rect x="300" y="900" width="250" height="80" fill="#6495ED" rx="15" ry="15" />
+  <text x="425" y="930" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
+    fill="white">Proof Provided</text>
+  <text x="425" y="960" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="white">(3 min
+    timeout)</text>
+
+  <rect x="900" y="900" width="250" height="80" fill="#6495ED" rx="15" ry="15" />
+  <text x="1025" y="930" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
+    fill="white">Proof Verified</text>
+  <text x="1025" y="960" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="white">(3 min
+    timeout)</text>
+
+  <rect x="600" y="700" width="250" height="80" fill="#6495ED" rx="15" ry="15" />
+  <text x="725" y="750" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
+    fill="white">Transferred</text>
+
+  <!-- Arrows and Action Labels -->
+  <!-- Mint to For Sale -->
+  <path d="M 625 260 L 425 360 L 425 450" stroke="#333" stroke-width="3" fill="none" marker-end="url(#arrowhead)" />
+
+  <!-- Mint Action -->
+  <rect x="425" y="160" width="140" height="50" fill="#FF8C00" rx="6" ry="6" />
+  <text x="495" y="192" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle"
+    fill="white">mintClue()</text>
+
+  <!-- Set Sale Price Action -->
+  <rect x="225" y="350" width="160" height="50" fill="#FF8C00" rx="6" ry="6" />
+  <text x="305" y="382" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle"
+    fill="white">setSalePrice()</text>
+
+  <!-- Mint to Solution Attempts -->
+  <path d="M 825 260 L 1025 360 L 1025 450" stroke="#333" stroke-width="3" fill="none" marker-end="url(#arrowhead)" />
+
+  <!-- For Sale to Transfer Initiated -->
+  <path d="M 425 530 L 425 700" stroke="#333" stroke-width="3" fill="none" marker-end="url(#arrowhead)" />
+
+  <!-- Initiate Purchase Action -->
+  <rect x="440" y="600" width="170" height="50" fill="#FF8C00" rx="6" ry="6" />
+  <text x="525" y="632" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle"
+    fill="white">initiatePurchase()</text>
+
+  <!-- Solution Attempts to Solved -->
+  <path d="M 1025 530 L 1025 700" stroke="#333" stroke-width="3" fill="none" marker-end="url(#arrowhead)" />
+
+  <!-- Attempt Solution Action -->
+  <rect x="1050" y="600" width="200" height="50" fill="#FF8C00" rx="6" ry="6" />
+  <text x="1150" y="632" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle"
+    fill="white">attemptSolution()</text>
+
+  <!-- Transfer Initiated to Proof Provided -->
+  <path d="M 425 780 L 425 900" stroke="#333" stroke-width="3" fill="none" marker-end="url(#arrowhead)" />
+
+  <!-- Provide Proof Action -->
+  <rect x="450" y="810" width="160" height="50" fill="#FF8C00" rx="6" ry="6" />
+  <text x="530" y="842" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle"
+    fill="white">provideProof()</text>
+
+  <!-- Proof Provided to Proof Verified -->
+  <path d="M 550 940 L 900 940" stroke="#333" stroke-width="3" fill="none" marker-end="url(#arrowhead)" />
+
+  <!-- Verify Proof Action -->
+  <rect x="600" y="860" width="160" height="50" fill="#FF8C00" rx="6" ry="6" />
+  <text x="680" y="892" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle"
+    fill="white">verifyProof()</text>
+
+  <!-- Proof Verified to Transferred -->
+  <path d="M 900 920 L 800 920 L 800 780" stroke="#333" stroke-width="3" fill="none" marker-end="url(#arrowhead)" />
+
+  <!-- Complete Transfer Action -->
+  <rect x="800" y="820" width="200" height="50" fill="#FF8C00" rx="6" ry="6" />
+  <text x="900" y="852" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle"
+    fill="white">completeTransfer()</text>
+
+  <!-- Transferred back to cycle (can be solved or sold by new owner) -->
+  <path d="M 725 700 L 725 280 L 725 260" stroke="#333" stroke-width="3" fill="none" marker-end="url(#arrowhead)" />
+  <text x="550" y="350" font-family="Arial, sans-serif" font-size="18" fill="#333" transform="rotate(-90, 750, 350)">New
+    owner cycle</text>
+
+  <!-- Markers -->
+  <defs>
+    <marker id="arrowhead" markerWidth="12" markerHeight="8" refX="12" refY="4" orient="auto">
+      <polygon points="0 0, 12 4, 0 8" fill="#333" />
+    </marker>
+  </defs>
+
+  <!-- Optional flow for cancellation -->
+  <path d="M 300 740 C 150 740, 150 300, 300 300 C 400 300, 500 280, 600 220" stroke="#333" stroke-width="3"
+    stroke-dasharray="6,6" fill="none" marker-end="url(#arrowhead)" />
+  <rect x="150" y="600" width="160" height="50" fill="#FF8C00" rx="6" ry="6" opacity="0.8" />
+  <text x="230" y="632" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle"
+    fill="white">cancelTransfer()</text>
+</svg>
