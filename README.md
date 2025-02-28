@@ -1,7 +1,7 @@
 # Skavenge NFT Scavenger Hunt
 
 Skavenge is an NFT-based scavenger hunt game implemented on Ethereum. Players can mint, solve, and trade clues as NFTs using zero-knowledge proofs for secure transfers.
-
+![skavenge diagram](skavenge-flow.svg)
 ## Project Structure
 
 ```
