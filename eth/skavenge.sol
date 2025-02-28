@@ -40,6 +40,9 @@ contract Skavenge is ERC721, ReentrancyGuard {
     // Current token ID counter
     uint256 private _tokenIdCounter;
 
+    // Address authorized to mint new clues
+    address public authorizedMinter;
+
     // Mapping from token ID to Clue struct
     mapping(uint256 => Clue) public clues;
 
@@ -64,6 +67,12 @@ contract Skavenge is ERC721, ReentrancyGuard {
     // Error for attempting to set a sale price on a solved clue
     error SolvedClueCannotBeSold();
 
+    // Error for unauthorized minting
+    error UnauthorizedMinter();
+
+    // Error for unauthorized minter update
+    error UnauthorizedMinterUpdate();
+
     // Events
     event ClueAttempted(uint256 indexed tokenId, uint256 remainingAttempts);
     event ClueSolved(uint256 indexed tokenId);
@@ -84,11 +93,16 @@ contract Skavenge is ERC721, ReentrancyGuard {
     event TransferCompleted(bytes32 indexed transferId);
     event TransferCancelled(bytes32 indexed transferId);
 
+    // Event emitted when authorized minter is updated
+    event AuthorizedMinterUpdated(address indexed oldMinter, address indexed newMinter);
+
     /**
      * @dev Constructor for the Skavenge contract
+     * @param initialMinter Address authorized to mint new clues
      */
-    constructor() ERC721("Skavenge", "SKVG") {
+    constructor(address initialMinter) ERC721("Skavenge", "SKVG") {
         _tokenIdCounter = 1; // Start token IDs at 1
+        authorizedMinter = initialMinter;
     }
 
     /**
@@ -107,6 +121,9 @@ contract Skavenge is ERC721, ReentrancyGuard {
         bytes calldata encryptedContents,
         bytes32 solutionHash
     ) external returns (uint256 tokenId) {
+        if (msg.sender != authorizedMinter) {
+            revert UnauthorizedMinter();
+        }
         tokenId = _tokenIdCounter++;
 
         clues[tokenId] = Clue({
@@ -505,6 +522,19 @@ contract Skavenge is ERC721, ReentrancyGuard {
     /**
      * @dev Override _beforeTokenTransfer to handle transfers
      */
+    /**
+     * @dev Update the authorized minter address
+     * @param newMinter New address authorized to mint clues
+     */
+    function updateAuthorizedMinter(address newMinter) external {
+        if (msg.sender != authorizedMinter) {
+            revert UnauthorizedMinterUpdate();
+        }
+        address oldMinter = authorizedMinter;
+        authorizedMinter = newMinter;
+        emit AuthorizedMinterUpdated(oldMinter, newMinter);
+    }
+
     function _beforeTokenTransfer(
         address from,
         address to,

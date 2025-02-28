@@ -40,7 +40,14 @@ func TestSuccessfulMint(t *testing.T) {
 	minterPrivKey, err := crypto.HexToECDSA(minter)
 	require.NoError(t, err)
 	minterAddr := crypto.PubkeyToAddress(minterPrivKey.PublicKey)
-	minterAuth, err := util.NewTransactOpts(client, minter)
+
+	// Update authorized minter to minter address.
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+
+	// Wait for the transaction to be mined
+	receipt, err := util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
 	// Create API client for ZK proof operations
@@ -58,12 +65,16 @@ func TestSuccessfulMint(t *testing.T) {
 	require.NoError(t, err, "Failed to encrypt clue content")
 	require.NotEmpty(t, encryptedClueContent, "Encrypted clue content should not be empty")
 
-	// Mint a new clue with the encrypted content
-	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	// Since deployer is the authorized minter in our test setup, we need to use deployer account to mint
+	minterAuth, err := util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+
+	// Mint a new clue with the encrypted content, but to the minter address
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
-	receipt, err := util.WaitForTransaction(client, tx)
+	receipt, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
 	tokenId, err := getLastMintedTokenID(contract)
@@ -116,6 +127,17 @@ func TestMintWithEmptySolutionHash(t *testing.T) {
 	// Setup minter account and keys
 	minterPrivKey, err := crypto.HexToECDSA(minter)
 	require.NoError(t, err)
+	minterAddr := crypto.PubkeyToAddress(minterPrivKey.PublicKey)
+
+	// Update authorized minter to minter address.
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+
+	// Wait for the transaction to be mined
+	receipt, err := util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
@@ -132,12 +154,16 @@ func TestMintWithEmptySolutionHash(t *testing.T) {
 	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
+	// Get deployer auth for minting
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	require.NoError(t, err)
+
 	// Try to mint with empty solution hash
-	tx, err := contract.MintClue(minterAuth, encryptedClueContent, emptySolutionHash)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, emptySolutionHash)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
-	receipt, err := util.WaitForTransaction(client, tx)
+	receipt, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
 	// Verify that the transaction succeeded
@@ -169,6 +195,21 @@ func TestMintMultipleClues(t *testing.T) {
 	// Setup minter account and keys
 	minterPrivKey, err := crypto.HexToECDSA(minter)
 	require.NoError(t, err)
+	minterAddr := crypto.PubkeyToAddress(minterPrivKey.PublicKey)
+
+	// Update authorized minter to minter address.
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+
+	// Wait for the transaction to be mined
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Update authorized minter to minter address.
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	require.NoError(t, err)
+
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
@@ -207,7 +248,7 @@ func TestMintMultipleClues(t *testing.T) {
 	secondEncryptedClueContent, err := apiClient.EncryptMessage(secondClueContent, &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt second clue content")
 
-	// Need to update nonce for second transaction
+	// Need to use deployer for second mint as well
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
@@ -243,4 +284,79 @@ func TestMintMultipleClues(t *testing.T) {
 	decryptedSecondClue, err := apiClient.DecryptMessage(secondEncryptedClueContent, minterPrivKey)
 	require.NoError(t, err, "Failed to decrypt second clue")
 	require.Equal(t, secondClueContent, decryptedSecondClue, "Decrypted second clue doesn't match original")
+}
+
+// TestUpdateAuthorizedMinter tests the authorized minter update functionality
+func TestUpdateAuthorizedMinter(t *testing.T) {
+	// Connect to Hardhat network
+	client, err := ethclient.Dial("http://localhost:8545")
+	require.NoError(t, err)
+
+	// Setup deployer account (initial authorized minter)
+	deployerAuth, err := util.NewTransactOpts(client, deployer)
+	require.NoError(t, err)
+
+	// Deploy contract
+	contract, address, err := util.DeployContract(client, deployerAuth)
+	require.NoError(t, err)
+
+	// Create event listener
+	listener, err := util.NewEventListener(client, contract, address)
+	require.NoError(t, err)
+
+	// Verify initial authorized minter is the deployer
+	initialMinter, err := contract.AuthorizedMinter(nil)
+	require.NoError(t, err)
+	require.Equal(t, deployerAuth.From, initialMinter, "Initial minter should be the deployer")
+
+	// Setup minter (who will become the new authorized minter)
+	minterPrivKey, err := crypto.HexToECDSA(minter)
+	require.NoError(t, err)
+	minterAddr := crypto.PubkeyToAddress(minterPrivKey.PublicKey)
+
+	// Update the authorized minter to the minter account
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	require.NoError(t, err)
+
+	updateTx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+
+	updateReceipt, err := util.WaitForTransaction(client, updateTx)
+	require.NoError(t, err)
+
+	// Verify the AuthorizedMinterUpdated event was emitted
+	updateEventFound, err := listener.CheckEvent(updateReceipt, "AuthorizedMinterUpdated")
+	require.NoError(t, err)
+	require.True(t, updateEventFound, "AuthorizedMinterUpdated event not found")
+
+	// Verify the authorized minter has been updated
+	newMinter, err := contract.AuthorizedMinter(nil)
+	require.NoError(t, err)
+	require.Equal(t, minterAddr, newMinter, "Authorized minter should be updated to the minter address")
+
+	// Try to update the authorized minter using the old minter (deployer) - should fail
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	require.NoError(t, err)
+	deployerAuth.GasLimit = 300000 // Higher gas limit for failing transaction
+
+	_, err = contract.UpdateAuthorizedMinter(deployerAuth, deployerAuth.From)
+	require.Error(t, err, "Only current authorized minter should be able to update")
+
+	// Try to mint a clue with the deployer - should fail as it's no longer authorized
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	require.NoError(t, err)
+	deployerAuth.GasLimit = 300000 // Higher gas limit for failing transaction
+
+	_, err = contract.MintClue(deployerAuth, []byte{1, 2, 3}, [32]byte{})
+	require.Error(t, err, "Non-authorized account should not be able to mint")
+
+	// Mint a clue with the new authorized minter
+	minterAuth, err := util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+
+	mintTx, err := contract.MintClue(minterAuth, []byte{1, 2, 3}, [32]byte{})
+	require.NoError(t, err)
+
+	_, err = util.WaitForTransaction(client, mintTx)
+	require.NoError(t, err, "New authorized minter should be able to mint clues")
 }

@@ -39,6 +39,16 @@ func TestSuccessfulSolve(t *testing.T) {
 	require.NoError(t, err)
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
+	minterAddr := minterAuth.From
+
+	// Update authorized minter to minter address.
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+
+	// Wait for the transaction to be mined
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
 
 	// Create API client for encryption
 	apiClient, err := util.NewGRPCClient()
@@ -53,8 +63,11 @@ func TestSuccessfulSolve(t *testing.T) {
 	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
-	// Mint the clue
-	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	// Mint the clue using deployer as authorized minter
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	require.NoError(t, err)
+
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -153,6 +166,16 @@ func TestFailedSolveAttempt(t *testing.T) {
 	require.NoError(t, err)
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
+	minterAddr := minterAuth.From
+
+	// Update authorized minter to minter address.
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+
+	// Wait for the transaction to be mined
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
 
 	// Create API client for encryption
 	apiClient, err := util.NewGRPCClient()
@@ -167,8 +190,11 @@ func TestFailedSolveAttempt(t *testing.T) {
 	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
-	// Mint the clue
-	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	// Mint the clue using deployer as authorized minter
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	require.NoError(t, err)
+
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -255,6 +281,16 @@ func TestSetSalePriceOnSolvedClue(t *testing.T) {
 	require.NoError(t, err)
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
+	minterAddr := minterAuth.From
+
+	// Update authorized minter to minter address.
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+
+	// Wait for the transaction to be mined
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
 
 	// Create API client for encryption
 	apiClient, err := util.NewGRPCClient()
@@ -269,8 +305,11 @@ func TestSetSalePriceOnSolvedClue(t *testing.T) {
 	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
-	// Mint the clue
-	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	// Mint the clue using deployer as authorized minter
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	require.NoError(t, err)
+
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -331,6 +370,16 @@ func TestRemoveSalePrice(t *testing.T) {
 	require.NoError(t, err)
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
+	minterAddr := minterAuth.From
+
+	// Update authorized minter to minter address.
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+
+	// Wait for the transaction to be mined
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
 
 	// Create API client for encryption
 	apiClient, err := util.NewGRPCClient()
@@ -346,7 +395,7 @@ func TestRemoveSalePrice(t *testing.T) {
 	require.NoError(t, err, "Failed to encrypt clue content")
 
 	// Mint the clue
-	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
 	receipt, err := util.WaitForTransaction(client, tx)
 	require.NoError(t, err)

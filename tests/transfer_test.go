@@ -43,6 +43,16 @@ func TestSuccessfulTransfer(t *testing.T) {
 	require.NoError(t, err)
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
+	minterAddr := minterAuth.From
+
+	// Update authorized minter to minter address.
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+
+	// Wait for the transaction to be mined
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
 
 	// Setup buyer account and keys
 	buyerPrivKey, err := crypto.HexToECDSA(buyer)
@@ -64,8 +74,11 @@ func TestSuccessfulTransfer(t *testing.T) {
 	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
-	// Mint a new clue
-	tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	// Mint a new clue using deployer as authorized minter
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	require.NoError(t, err)
+
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -223,6 +236,16 @@ func TestInvalidProofVerification(t *testing.T) {
 	require.NoError(t, err)
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
+	minterAddr := minterAuth.From
+
+	// Update authorized minter to minter address.
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+
+	// Wait for the transaction to be mined
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
 
 	// Setup buyer account and keys
 	buyerPrivKey, err := crypto.HexToECDSA(buyer)
@@ -244,8 +267,11 @@ func TestInvalidProofVerification(t *testing.T) {
 	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
-	// Mint the clue
-	tx, err := contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
+	// Mint the clue using deployer as authorized minter
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	require.NoError(t, err)
+
+	tx, err = contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -357,6 +383,16 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	require.NoError(t, err)
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
+	minterAddr := minterAuth.From
+
+	// Update authorized minter to minter address.
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+
+	// Wait for the transaction to be mined
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
 
 	// Setup buyer account and keys
 	buyerPrivKey, err := crypto.HexToECDSA(buyer)
@@ -378,8 +414,7 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
-	// Mint the clue
-	tx, err := contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
+	tx, err = contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -477,6 +512,16 @@ func TestCancelTransfer(t *testing.T) {
 	require.NoError(t, err)
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
+	minterAddr := minterAuth.From
+
+	// Update authorized minter to minter address.
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+
+	// Wait for the transaction to be mined
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
 
 	// Setup buyer account and keys
 	buyerPrivKey, err := crypto.HexToECDSA(buyer)
@@ -502,8 +547,11 @@ func TestCancelTransfer(t *testing.T) {
 	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
-	// Mint the clue
-	tx, err := contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
+	// Mint the clue using deployer as authorized minter
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	require.NoError(t, err)
+
+	tx, err = contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)

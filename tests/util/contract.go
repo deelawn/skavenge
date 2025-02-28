@@ -21,7 +21,9 @@ import (
 // DeployContract deploys a fresh instance of the Skavenge contract for testing.
 // Returns the contract instance, the contract address, and any error encountered.
 func DeployContract(client *ethclient.Client, auth *bind.TransactOpts) (*bindings.Skavenge, common.Address, error) {
-	address, tx, contract, err := bindings.DeploySkavenge(auth, client)
+	// Use deployer as initial minter
+	initialMinter := auth.From
+	address, tx, contract, err := bindings.DeploySkavenge(auth, client, initialMinter)
 	if err != nil {
 		return nil, common.Address{}, err
 	}
