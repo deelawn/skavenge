@@ -22,7 +22,7 @@ var (
 // TestSuccessfulMint tests the successful minting of a new clue.
 func TestSuccessfulMint(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account
@@ -111,7 +111,7 @@ func TestSuccessfulMint(t *testing.T) {
 // TestMintWithEmptySolutionHash tests minting a clue with empty solution hash.
 func TestMintWithEmptySolutionHash(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account
@@ -177,7 +177,7 @@ func TestMintWithEmptySolutionHash(t *testing.T) {
 // TestMintMultipleClues tests minting multiple clues.
 func TestMintMultipleClues(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account
@@ -283,7 +283,7 @@ func TestMintMultipleClues(t *testing.T) {
 // TestUpdateAuthorizedMinter tests the authorized minter update functionality
 func TestUpdateAuthorizedMinter(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account (initial authorized minter)

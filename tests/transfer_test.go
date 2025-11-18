@@ -23,7 +23,7 @@ var (
 // TestSuccessfulTransfer tests the successful transfer of a clue.
 func TestSuccessfulTransfer(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account
@@ -201,7 +201,7 @@ func TestSuccessfulTransfer(t *testing.T) {
 // TestInvalidProofVerification tests verification of an invalid proof.
 func TestInvalidProofVerification(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account
@@ -337,7 +337,7 @@ func TestInvalidProofVerification(t *testing.T) {
 // TestCompletingTransferWithoutVerification tests completing a transfer without verification.
 func TestCompletingTransferWithoutVerification(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account
@@ -445,7 +445,7 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 // TestCancelTransfer tests cancelling a transfer.
 func TestCancelTransfer(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account
