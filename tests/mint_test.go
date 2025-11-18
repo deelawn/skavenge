@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/deelawn/skavenge/tests/util"
+	"github.com/deelawn/skavenge/zkproof"
 )
 
 var (
@@ -50,18 +51,16 @@ func TestSuccessfulMint(t *testing.T) {
 	receipt, err := util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
-	// Create API client for ZK proof operations
-	apiClient, err := util.NewGRPCClient()
-	require.NoError(t, err)
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
 
 	// Sample data for the clue
 	clueContent := "Find the hidden treasure in the old oak tree"
 	solution := "Oak tree"
 	solutionHash := sha256.Sum256([]byte(solution))
 
-	// Encrypt the clue content using the ZK proof API
-	// Pass the ECDSA public key directly to the API client
-	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
+	// Encrypt the clue content using the ZK proof system
+	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 	require.NotEmpty(t, encryptedClueContent, "Encrypted clue content should not be empty")
 
@@ -104,10 +103,9 @@ func TestSuccessfulMint(t *testing.T) {
 	require.Equal(t, uint64(0), clueData.SolveAttempts.Uint64(), "Solve attempts should be 0")
 
 	// Decrypt the clue to verify it matches the original content
-	// Pass the ECDSA private key directly to the API client
-	decryptedClue, err := apiClient.DecryptMessage(encryptedClueContent, minterPrivKey)
+	decryptedClueBytes, err := ps.DecryptMessage(encryptedClueContent, minterPrivKey)
 	require.NoError(t, err, "Failed to decrypt clue content")
-	require.Equal(t, clueContent, decryptedClue, "Decrypted content does not match original")
+	require.Equal(t, clueContent, string(decryptedClueBytes), "Decrypted content does not match original")
 }
 
 // TestMintWithEmptySolutionHash tests minting a clue with empty solution hash.
@@ -141,17 +139,15 @@ func TestMintWithEmptySolutionHash(t *testing.T) {
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	// Create API client for ZK proof operations
-	apiClient, err := util.NewGRPCClient()
-	require.NoError(t, err)
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
 
 	// Sample data for the clue
 	clueContent := "Find the hidden treasure in the old oak tree"
 	var emptySolutionHash [32]byte
 
-	// Encrypt the clue content using the ZK proof API
-	// Pass the ECDSA public key directly to the API client
-	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
+	// Encrypt the clue content using the ZK proof system
+	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
 	// Get deployer auth for minting
@@ -213,9 +209,8 @@ func TestMintMultipleClues(t *testing.T) {
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	// Create API client for ZK proof operations
-	apiClient, err := util.NewGRPCClient()
-	require.NoError(t, err)
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
 
 	startTokenId, err := contract.GetCurrentTokenId(nil)
 	require.NoError(t, err)
@@ -276,14 +271,13 @@ func TestMintMultipleClues(t *testing.T) {
 	require.Equal(t, secondSolutionHash, secondClueData.SolutionHash, "Second solution hash does not match")
 
 	// Verify we can decrypt both clues
-	// Pass the ECDSA private key directly to the API client
-	decryptedFirstClue, err := apiClient.DecryptMessage(firstEncryptedClueContent, minterPrivKey)
+	decryptedFirstClueBytes, err := ps.DecryptMessage(firstEncryptedClueContent, minterPrivKey)
 	require.NoError(t, err, "Failed to decrypt first clue")
-	require.Equal(t, firstClueContent, decryptedFirstClue, "Decrypted first clue doesn't match original")
+	require.Equal(t, firstClueContent, string(decryptedFirstClueBytes), "Decrypted first clue doesn't match original")
 
-	decryptedSecondClue, err := apiClient.DecryptMessage(secondEncryptedClueContent, minterPrivKey)
+	decryptedSecondClueBytes, err := ps.DecryptMessage(secondEncryptedClueContent, minterPrivKey)
 	require.NoError(t, err, "Failed to decrypt second clue")
-	require.Equal(t, secondClueContent, decryptedSecondClue, "Decrypted second clue doesn't match original")
+	require.Equal(t, secondClueContent, string(decryptedSecondClueBytes), "Decrypted second clue doesn't match original")
 }
 
 // TestUpdateAuthorizedMinter tests the authorized minter update functionality

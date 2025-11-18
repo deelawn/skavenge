@@ -12,8 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
 
-	proto "github.com/deelawn/skavenge-zk-proof/api/zkproof"
 	"github.com/deelawn/skavenge/tests/util"
+	"github.com/deelawn/skavenge/zkproof"
 )
 
 var (
@@ -61,9 +61,8 @@ func TestSuccessfulTransfer(t *testing.T) {
 	buyerAuth, err := util.NewTransactOpts(client, buyer)
 	require.NoError(t, err)
 
-	// Create API client for ZK proof operations
-	apiClient, err := util.NewGRPCClient()
-	require.NoError(t, err)
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
 
 	// Sample data for the clue
 	clueContent := "Find the hidden treasure in the old oak tree"
@@ -71,7 +70,7 @@ func TestSuccessfulTransfer(t *testing.T) {
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
 	// Encrypt the clue content for the minter
-	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
+	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
 	// Mint a new clue using deployer as authorized minter
@@ -118,37 +117,21 @@ func TestSuccessfulTransfer(t *testing.T) {
 	transferId, err := contract.GenerateTransferId(nil, buyerAddr, tokenId)
 	require.NoError(t, err)
 
-	// Generate proof and encrypted clue for buyer
-	partialProof, err := apiClient.GeneratePartialProof(clueContent, encryptedClueContent, &buyerPrivKey.PublicKey, &minterPrivKey.PublicKey)
+	// Generate complete proof for buyer using GenerateProof
+	proofResult, err := ps.GenerateProof([]byte(clueContent), minterPrivKey, &buyerPrivKey.PublicKey, encryptedClueContent)
 	require.NoError(t, err, "Failed to generate proof")
 
-	// Calculate S value for the proof
-	c, ok := new(big.Int).SetString(partialProof.C, 10)
-	require.True(t, ok, "Failed to parse C value")
-	k, ok := new(big.Int).SetString(partialProof.K, 10)
-	require.True(t, ok, "Failed to parse K value")
-	curveN, ok := new(big.Int).SetString(partialProof.CurveN, 10)
-	require.True(t, ok, "Failed to parse CurveN value")
-
-	s := computeS(c, k, minterPrivKey.D, curveN)
-	proof := &proto.Proof{
-		C:               c.String(),
-		S:               s.String(),
-		R1:              partialProof.R1,
-		R2:              partialProof.R2,
-		BuyerPubKey:     partialProof.BuyerPubKey,
-		SellerPubKey:    partialProof.SellerPubKey,
-		BuyerCipherHash: partialProof.BuyerCipherHash,
-	}
-
-	marshalRes, err := apiClient.MarshalProof(proof)
-	require.NoError(t, err)
+	marshalRes := proofResult.Proof.Marshal()
 
 	// Provide proof to the contract
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	proofTx, err := contract.ProvideProof(minterAuth, transferId, marshalRes, [32]byte(partialProof.BuyerCipherHash))
+	// Convert BuyerCipherHash to [32]byte
+	var buyerCipherHashArray [32]byte
+	copy(buyerCipherHashArray[:], proofResult.BuyerCipherHash)
+
+	proofTx, err := contract.ProvideProof(minterAuth, transferId, marshalRes, buyerCipherHashArray)
 	require.NoError(t, err)
 	proofReceipt, err := util.WaitForTransaction(client, proofTx)
 	require.NoError(t, err)
@@ -164,10 +147,12 @@ func TestSuccessfulTransfer(t *testing.T) {
 	clue, err := contract.Clues(&bind.CallOpts{}, transfer.TokenId)
 	require.NoError(t, err)
 
-	// Verify the proof using the API.
-	ok, err = apiClient.VerifyProof(transfer.Proof, clue.EncryptedContents)
+	// Verify the proof using zkproof
+	verifyProof := zkproof.NewProof()
+	err = verifyProof.Unmarshal(transfer.Proof)
 	require.NoError(t, err)
-	require.True(t, ok, "Proof verification failed")
+	valid := ps.VerifyProof(verifyProof, clue.EncryptedContents)
+	require.True(t, valid, "Proof verification failed")
 
 	// Verify proof by buyer
 	buyerAuth, err = util.NewTransactOpts(client, buyer)
@@ -187,7 +172,7 @@ func TestSuccessfulTransfer(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	completeTx, err := contract.CompleteTransfer(minterAuth, transferId, partialProof.BuyerCipherText)
+	completeTx, err := contract.CompleteTransfer(minterAuth, transferId, proofResult.BuyerCipherText)
 	require.NoError(t, err)
 	completeReceipt, err := util.WaitForTransaction(client, completeTx)
 	require.NoError(t, err)
@@ -205,12 +190,12 @@ func TestSuccessfulTransfer(t *testing.T) {
 	// Verify the clue content is updated
 	newClueContents, err := contract.GetClueContents(nil, tokenId)
 	require.NoError(t, err)
-	require.Equal(t, partialProof.BuyerCipherText, newClueContents, "Clue content should be updated for buyer")
+	require.Equal(t, proofResult.BuyerCipherText, newClueContents, "Clue content should be updated for buyer")
 
 	// Verify the buyer can decrypt the clue
-	decryptedClue, err := apiClient.DecryptMessage(newClueContents, buyerPrivKey)
+	decryptedClueBytes, err := ps.DecryptMessage(newClueContents, buyerPrivKey)
 	require.NoError(t, err, "Buyer should be able to decrypt the clue")
-	require.Equal(t, clueContent, decryptedClue, "Decrypted content should match original")
+	require.Equal(t, clueContent, string(decryptedClueBytes), "Decrypted content should match original")
 }
 
 // TestInvalidProofVerification tests verification of an invalid proof.
@@ -254,9 +239,8 @@ func TestInvalidProofVerification(t *testing.T) {
 	buyerAuth, err := util.NewTransactOpts(client, buyer)
 	require.NoError(t, err)
 
-	// Create API client for ZK proof operations
-	apiClient, err := util.NewGRPCClient()
-	require.NoError(t, err)
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
 
 	// Mint a clue
 	clueContent := "Find the hidden treasure in the forest"
@@ -264,14 +248,14 @@ func TestInvalidProofVerification(t *testing.T) {
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
 	// Encrypt the clue content
-	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
+	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
 	// Mint the clue using deployer as authorized minter
 	deployerAuth, err = util.NewTransactOpts(client, deployer)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -300,31 +284,11 @@ func TestInvalidProofVerification(t *testing.T) {
 	transferId, err := contract.GenerateTransferId(nil, buyerAddr, tokenId)
 	require.NoError(t, err)
 
-	// Generate proof and encrypted clue for buyer
-	partialProof, err := apiClient.GeneratePartialProof(clueContent, encryptedClueContent, &buyerPrivKey.PublicKey, &minterPrivKey.PublicKey)
+	// Generate complete proof for buyer using GenerateProof
+	proofResult, err := ps.GenerateProof([]byte(clueContent), minterPrivKey, &buyerPrivKey.PublicKey, encryptedClueContent)
 	require.NoError(t, err, "Failed to generate proof")
 
-	// Calculate S value for the proof
-	c, ok := new(big.Int).SetString(partialProof.C, 10)
-	require.True(t, ok, "Failed to parse C value")
-	k, ok := new(big.Int).SetString(partialProof.K, 10)
-	require.True(t, ok, "Failed to parse K value")
-	curveN, ok := new(big.Int).SetString(partialProof.CurveN, 10)
-	require.True(t, ok, "Failed to parse CurveN value")
-	s := computeS(c, k, minterPrivKey.D, curveN)
-
-	proof := &proto.Proof{
-		C:               c.String(),
-		S:               s.String(),
-		R1:              partialProof.R1,
-		R2:              partialProof.R2,
-		BuyerPubKey:     partialProof.BuyerPubKey,
-		SellerPubKey:    partialProof.SellerPubKey,
-		BuyerCipherHash: partialProof.BuyerCipherHash,
-	}
-
-	marshalRes, err := apiClient.MarshalProof(proof)
-	require.NoError(t, err)
+	marshalRes := proofResult.Proof.Marshal()
 
 	// Modify proof to make it invalid (just corrupt the first byte)
 	invalidProof := append([]byte{'X'}, marshalRes[1:]...)
@@ -333,7 +297,11 @@ func TestInvalidProofVerification(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	proofTx, err := contract.ProvideProof(minterAuth, transferId, []byte(invalidProof), [32]byte(partialProof.BuyerCipherHash))
+	// Convert BuyerCipherHash to [32]byte
+	var buyerCipherHashArray [32]byte
+	copy(buyerCipherHashArray[:], proofResult.BuyerCipherHash)
+
+	proofTx, err := contract.ProvideProof(minterAuth, transferId, []byte(invalidProof), buyerCipherHashArray)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, proofTx)
 	require.NoError(t, err)
@@ -344,10 +312,12 @@ func TestInvalidProofVerification(t *testing.T) {
 	clue, err := contract.Clues(&bind.CallOpts{}, transfer.TokenId)
 	require.NoError(t, err)
 
-	// Verify the proof using the API.
-	ok, err = apiClient.VerifyProof(transfer.Proof, clue.EncryptedContents)
+	// Verify the proof using zkproof
+	verifyProof := zkproof.NewProof()
+	err = verifyProof.Unmarshal(transfer.Proof)
 	require.NoError(t, err)
-	require.False(t, ok, "Proof verification didn't fail")
+	valid := ps.VerifyProof(verifyProof, clue.EncryptedContents)
+	require.False(t, valid, "Proof verification didn't fail")
 
 	// Cancel the transfer
 	buyerAuth, err = util.NewTransactOpts(client, buyer)
@@ -401,9 +371,8 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	buyerAuth, err := util.NewTransactOpts(client, buyer)
 	require.NoError(t, err)
 
-	// Create API client for ZK proof operations
-	apiClient, err := util.NewGRPCClient()
-	require.NoError(t, err)
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
 
 	// Mint a clue
 	clueContent := "Find the hidden treasure in the forest"
@@ -411,10 +380,10 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
 	// Encrypt the clue content
-	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
+	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
-	tx, err = contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -443,37 +412,21 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	transferId, err := contract.GenerateTransferId(nil, buyerAddr, tokenId)
 	require.NoError(t, err)
 
-	// Generate proof and encrypted clue for buyer
-	partialProof, err := apiClient.GeneratePartialProof(clueContent, encryptedClueContent, &buyerPrivKey.PublicKey, &minterPrivKey.PublicKey)
+	// Generate complete proof for buyer using GenerateProof
+	proofResult, err := ps.GenerateProof([]byte(clueContent), minterPrivKey, &buyerPrivKey.PublicKey, encryptedClueContent)
 	require.NoError(t, err, "Failed to generate proof")
 
-	// Calculate S value for the proof
-	c, ok := new(big.Int).SetString(partialProof.C, 10)
-	require.True(t, ok, "Failed to parse C value")
-	k, ok := new(big.Int).SetString(partialProof.K, 10)
-	require.True(t, ok, "Failed to parse K value")
-	curveN, ok := new(big.Int).SetString(partialProof.CurveN, 10)
-	require.True(t, ok, "Failed to parse CurveN value")
-	s := computeS(c, k, minterPrivKey.D, curveN)
-
-	proof := &proto.Proof{
-		C:               c.String(),
-		S:               s.String(),
-		R1:              partialProof.R1,
-		R2:              partialProof.R2,
-		BuyerPubKey:     partialProof.BuyerPubKey,
-		SellerPubKey:    partialProof.SellerPubKey,
-		BuyerCipherHash: partialProof.BuyerCipherHash,
-	}
-
-	marshalRes, err := apiClient.MarshalProof(proof)
-	require.NoError(t, err)
+	marshalRes := proofResult.Proof.Marshal()
 
 	// Provide proof to the contract
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	proofTx, err := contract.ProvideProof(minterAuth, transferId, marshalRes, [32]byte(partialProof.BuyerCipherHash))
+	// Convert BuyerCipherHash to [32]byte
+	var buyerCipherHashArray [32]byte
+	copy(buyerCipherHashArray[:], proofResult.BuyerCipherHash)
+
+	proofTx, err := contract.ProvideProof(minterAuth, transferId, marshalRes, buyerCipherHashArray)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, proofTx)
 	require.NoError(t, err)
@@ -484,7 +437,7 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	require.NoError(t, err)
 	minterAuth.GasLimit = 300000 // Higher gas limit for failing transaction
 
-	_, err = contract.CompleteTransfer(minterAuth, transferId, partialProof.BuyerCipherText)
+	_, err = contract.CompleteTransfer(minterAuth, transferId, proofResult.BuyerCipherText)
 	require.Error(t, err, "Transaction should fail")
 	// require.Contains(t, err.Error(), "execution reverted", "Transaction should revert")
 }
@@ -530,9 +483,8 @@ func TestCancelTransfer(t *testing.T) {
 	buyerAuth, err := util.NewTransactOpts(client, buyer)
 	require.NoError(t, err)
 
-	// Create API client for ZK proof operations
-	apiClient, err := util.NewGRPCClient()
-	require.NoError(t, err)
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
 
 	// Get initial buyer balance
 	initialBuyerBalance, err := client.BalanceAt(context.Background(), buyerAddr, nil)
@@ -544,14 +496,14 @@ func TestCancelTransfer(t *testing.T) {
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
 	// Encrypt the clue content
-	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
+	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
 	// Mint the clue using deployer as authorized minter
 	deployerAuth, err = util.NewTransactOpts(client, deployer)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, []byte(encryptedClueContent), solutionHash)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -614,9 +566,3 @@ func TestCancelTransfer(t *testing.T) {
 	require.True(t, balanceDiff.Cmp(maxGasCost) < 0, "Balance difference should be small (just gas costs)")
 }
 
-func computeS(c, k, sellerKeyD, curveN *big.Int) *big.Int {
-	s := new(big.Int).Mul(c, sellerKeyD)
-	s.Sub(k, s)
-	s.Mod(s, curveN)
-	return s
-}
