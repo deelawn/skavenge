@@ -18,23 +18,23 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: Build Docker images
-      run: docker-compose build
+      run: docker compose build
 
     - name: Start Hardhat node
       run: |
-        docker-compose up -d hardhat
+        docker compose up -d hardhat
         echo "Waiting for Hardhat to be ready..."
         sleep 10
 
     - name: Run Go tests
-      run: docker-compose up --abort-on-container-exit test
+      run: docker compose up --abort-on-container-exit test
 
     - name: Show test logs on failure
       if: failure()
       run: |
-        docker-compose logs hardhat
-        docker-compose logs test
+        docker compose logs hardhat
+        docker compose logs test
 
     - name: Cleanup
       if: always()
-      run: docker-compose down -v
+      run: docker compose down -v
