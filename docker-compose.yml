@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  hardhat:
+    build:
+      context: .
+      dockerfile: Dockerfile.hardhat
+    container_name: skavenge-hardhat
+    ports:
+      - "8545:8545"
+    networks:
+      - skavenge-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8545"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: skavenge-test
+    depends_on:
+      hardhat:
+        condition: service_healthy
+    environment:
+      - HARDHAT_URL=http://hardhat:8545
+    networks:
+      - skavenge-network
+
+networks:
+  skavenge-network:
+    driver: bridge

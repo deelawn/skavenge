@@ -12,6 +12,7 @@ import (
 
 	"github.com/deelawn/skavenge/eth/bindings"
 	"github.com/deelawn/skavenge/tests/util"
+	"github.com/deelawn/skavenge/zkproof"
 )
 
 var buyer string = "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
@@ -19,7 +20,7 @@ var buyer string = "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab
 // TestSuccessfulSolve tests the successful solving of a clue.
 func TestSuccessfulSolve(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account
@@ -50,9 +51,8 @@ func TestSuccessfulSolve(t *testing.T) {
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
-	// Create API client for encryption
-	apiClient, err := util.NewGRPCClient()
-	require.NoError(t, err)
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
 
 	// Mint a clue with a known solution
 	clueContent := "Find the hidden treasure in the forest"
@@ -60,7 +60,7 @@ func TestSuccessfulSolve(t *testing.T) {
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
 	// Encrypt the clue content
-	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
+	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
 	// Mint the clue using deployer as authorized minter
@@ -146,7 +146,7 @@ func TestSuccessfulSolve(t *testing.T) {
 // TestFailedSolveAttempt tests a failed attempt to solve a clue.
 func TestFailedSolveAttempt(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account
@@ -177,9 +177,8 @@ func TestFailedSolveAttempt(t *testing.T) {
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
-	// Create API client for encryption
-	apiClient, err := util.NewGRPCClient()
-	require.NoError(t, err)
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
 
 	// Mint a clue with a known solution
 	clueContent := "Find the hidden treasure in the forest"
@@ -187,7 +186,7 @@ func TestFailedSolveAttempt(t *testing.T) {
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
 	// Encrypt the clue content
-	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
+	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
 	// Mint the clue using deployer as authorized minter
@@ -261,7 +260,7 @@ func TestFailedSolveAttempt(t *testing.T) {
 // TestSetSalePriceOnSolvedClue tests attempting to set a sale price on a solved clue.
 func TestSetSalePriceOnSolvedClue(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account
@@ -292,9 +291,8 @@ func TestSetSalePriceOnSolvedClue(t *testing.T) {
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
-	// Create API client for encryption
-	apiClient, err := util.NewGRPCClient()
-	require.NoError(t, err)
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
 
 	// Mint a clue with a known solution
 	clueContent := "Find the hidden treasure in the forest"
@@ -302,7 +300,7 @@ func TestSetSalePriceOnSolvedClue(t *testing.T) {
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
 	// Encrypt the clue content
-	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
+	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
 	// Mint the clue using deployer as authorized minter
@@ -350,7 +348,7 @@ func TestSetSalePriceOnSolvedClue(t *testing.T) {
 // TestRemoveSalePrice tests the function to remove a sale price.
 func TestRemoveSalePrice(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account
@@ -381,9 +379,8 @@ func TestRemoveSalePrice(t *testing.T) {
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
-	// Create API client for encryption
-	apiClient, err := util.NewGRPCClient()
-	require.NoError(t, err)
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
 
 	// Mint a clue
 	clueContent := "Find the hidden treasure in the forest"
@@ -391,7 +388,7 @@ func TestRemoveSalePrice(t *testing.T) {
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
 	// Encrypt the clue content
-	encryptedClueContent, err := apiClient.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
+	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
 	// Mint the clue
