@@ -74,8 +74,9 @@ contract Skavenge is ERC721, ReentrancyGuard {
     error UnauthorizedMinterUpdate();
 
     // Events
+    event ClueMinted(uint256 indexed tokenId, address minter);
     event ClueAttempted(uint256 indexed tokenId, uint256 remainingAttempts);
-    event ClueSolved(uint256 indexed tokenId);
+    event ClueSolved(uint256 indexed tokenId, string solution);
     event SalePriceSet(uint256 indexed tokenId, uint256 price);
     event SalePriceRemoved(uint256 indexed tokenId);
 
@@ -94,7 +95,10 @@ contract Skavenge is ERC721, ReentrancyGuard {
     event TransferCancelled(bytes32 indexed transferId);
 
     // Event emitted when authorized minter is updated
-    event AuthorizedMinterUpdated(address indexed oldMinter, address indexed newMinter);
+    event AuthorizedMinterUpdated(
+        address indexed oldMinter,
+        address indexed newMinter
+    );
 
     /**
      * @dev Constructor for the Skavenge contract
@@ -135,6 +139,8 @@ contract Skavenge is ERC721, ReentrancyGuard {
         });
 
         _mint(msg.sender, tokenId);
+
+        emit ClueMinted(tokenId, msg.sender);
 
         return tokenId;
     }
@@ -270,7 +276,7 @@ contract Skavenge is ERC721, ReentrancyGuard {
                 emit SalePriceRemoved(tokenId);
             }
 
-            emit ClueSolved(tokenId);
+            emit ClueSolved(tokenId, solution);
         }
     }
 
