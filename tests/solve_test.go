@@ -20,7 +20,7 @@ var buyer string = "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab
 // TestSuccessfulSolve tests the successful solving of a clue.
 func TestSuccessfulSolve(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account
@@ -146,7 +146,7 @@ func TestSuccessfulSolve(t *testing.T) {
 // TestFailedSolveAttempt tests a failed attempt to solve a clue.
 func TestFailedSolveAttempt(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account
@@ -260,7 +260,7 @@ func TestFailedSolveAttempt(t *testing.T) {
 // TestSetSalePriceOnSolvedClue tests attempting to set a sale price on a solved clue.
 func TestSetSalePriceOnSolvedClue(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account
@@ -348,7 +348,7 @@ func TestSetSalePriceOnSolvedClue(t *testing.T) {
 // TestRemoveSalePrice tests the function to remove a sale price.
 func TestRemoveSalePrice(t *testing.T) {
 	// Connect to Hardhat network
-	client, err := ethclient.Dial("http://localhost:8545")
+	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
 
 	// Setup deployer account

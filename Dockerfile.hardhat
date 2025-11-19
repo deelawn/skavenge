@@ -1,0 +1,32 @@
+# Dockerfile for running Hardhat node
+FROM node:20-alpine
+
+# Install wget for healthcheck
+RUN apk add --no-cache wget
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json ./
+COPY eth/package.json eth/package-lock.json ./eth/
+
+# Install root dependencies
+RUN npm install
+
+# Install eth dependencies
+WORKDIR /app/eth
+RUN npm install
+
+# Go back to root
+WORKDIR /app
+
+# Copy hardhat config and eth directory
+COPY hardhat.config.js ./
+COPY eth/ ./eth/
+
+# Expose Hardhat network port
+EXPOSE 8545
+
+# Run Hardhat node
+CMD ["npx", "hardhat", "node", "--hostname", "0.0.0.0"]

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"math/big"
+	"os"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -17,6 +18,15 @@ import (
 
 	"github.com/deelawn/skavenge/eth/bindings"
 )
+
+// GetHardhatURL returns the Hardhat URL from environment variable or default.
+func GetHardhatURL() string {
+	url := os.Getenv("HARDHAT_URL")
+	if url == "" {
+		url = "http://localhost:8545"
+	}
+	return url
+}
 
 // DeployContract deploys a fresh instance of the Skavenge contract for testing.
 // Returns the contract instance, the contract address, and any error encountered.
