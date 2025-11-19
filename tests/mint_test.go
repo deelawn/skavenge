@@ -222,12 +222,9 @@ func TestMintMultipleClues(t *testing.T) {
 	firstSolution := "First solution"
 	firstSolutionHash := sha256.Sum256([]byte(firstSolution))
 
-	// Create ZK proof system
-	ps := zkproof.NewProofSystem()
-
 	// Encrypt the first clue content
 	// Pass the ECDSA public key directly to the API client
-	firstEncryptedClueContent, err := ps.EncryptMessage(firstClueContent, &minterPrivKey.PublicKey)
+	firstEncryptedClueContent, err := ps.EncryptMessage([]byte(firstClueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt first clue content")
 
 	tx1, err := contract.MintClue(minterAuth, firstEncryptedClueContent, firstSolutionHash)
@@ -243,7 +240,7 @@ func TestMintMultipleClues(t *testing.T) {
 
 	// Encrypt the second clue content
 	// Pass the ECDSA public key directly to the API client
-	secondEncryptedClueContent, err := ps.EncryptMessage(secondClueContent, &minterPrivKey.PublicKey)
+	secondEncryptedClueContent, err := ps.EncryptMessage([]byte(secondClueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt second clue content")
 
 	// Need to use deployer for second mint as well
