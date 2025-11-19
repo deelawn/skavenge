@@ -2,8 +2,8 @@
 package tests
 
 import (
-	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/rand"
 	"math/big"
 	"testing"
 
@@ -42,7 +42,7 @@ func TestVulnerability_DifferentPlaintextSameProof(t *testing.T) {
 	// Setup minter account and keys
 	minterPrivKey, err := crypto.HexToECDSA(secMinter)
 	require.NoError(t, err)
-	minterAuth, err := util.NewTransactOpts(client, minter)
+	minterAuth, err := util.NewTransactOpts(client, secMinter)
 	require.NoError(t, err)
 	minterAddr := minterAuth.From
 
@@ -57,7 +57,7 @@ func TestVulnerability_DifferentPlaintextSameProof(t *testing.T) {
 	buyerPrivKey, err := crypto.HexToECDSA(secBuyer)
 	require.NoError(t, err)
 	buyerAddr := crypto.PubkeyToAddress(buyerPrivKey.PublicKey)
-	buyerAuth, err := util.NewTransactOpts(client, buyer)
+	buyerAuth, err := util.NewTransactOpts(client, secBuyer)
 	require.NoError(t, err)
 
 	// Create ZK proof system
@@ -74,7 +74,7 @@ func TestVulnerability_DifferentPlaintextSameProof(t *testing.T) {
 	require.NoError(t, err)
 
 	// Mint a clue with the real encrypted content
-	minterAuth, err = util.NewTransactOpts(client, minter)
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	tx, err = contract.MintClue(minterAuth, encryptedRealClue, solutionHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
@@ -84,7 +84,7 @@ func TestVulnerability_DifferentPlaintextSameProof(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set sale price
-	minterAuth, err = util.NewTransactOpts(client, minter)
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
 	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
 	require.NoError(t, err)
@@ -114,7 +114,7 @@ func TestVulnerability_DifferentPlaintextSameProof(t *testing.T) {
 	fakeBuyerCipherHash := crypto.Keccak256(fakeBuyerCipherText)
 
 	// Step 4: Provide proof to contract with the FAKE hash
-	minterAuth, err = util.NewTransactOpts(client, minter)
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	var fakeBuyerCipherHashArray [32]byte
 	copy(fakeBuyerCipherHashArray[:], fakeBuyerCipherHash)
 
@@ -137,14 +137,14 @@ func TestVulnerability_DifferentPlaintextSameProof(t *testing.T) {
 	require.True(t, valid, "Proof should verify against seller's ciphertext")
 
 	// Buyer calls VerifyProof (just sets a flag, no real verification)
-	buyerAuth, err = util.NewTransactOpts(client, buyer)
+	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
 	tx, err = contract.VerifyProof(buyerAuth, transferId)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
 	// Complete transfer with the FAKE encrypted content for buyer
-	minterAuth, err = util.NewTransactOpts(client, minter)
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	tx, err = contract.CompleteTransfer(minterAuth, transferId, fakeBuyerCipherText)
 	require.NoError(t, err, "Transfer should complete successfully")
 	_, err = util.WaitForTransaction(client, tx)
@@ -194,7 +194,7 @@ func TestVulnerability_GarbageProofAccepted(t *testing.T) {
 	// Setup minter account and keys
 	minterPrivKey, err := crypto.HexToECDSA(secMinter)
 	require.NoError(t, err)
-	minterAuth, err := util.NewTransactOpts(client, minter)
+	minterAuth, err := util.NewTransactOpts(client, secMinter)
 	require.NoError(t, err)
 	minterAddr := minterAuth.From
 
@@ -209,7 +209,7 @@ func TestVulnerability_GarbageProofAccepted(t *testing.T) {
 	buyerPrivKey, err := crypto.HexToECDSA(secBuyer)
 	require.NoError(t, err)
 	buyerAddr := crypto.PubkeyToAddress(buyerPrivKey.PublicKey)
-	buyerAuth, err := util.NewTransactOpts(client, buyer)
+	buyerAuth, err := util.NewTransactOpts(client, secBuyer)
 	require.NoError(t, err)
 
 	// Create ZK proof system
@@ -223,7 +223,7 @@ func TestVulnerability_GarbageProofAccepted(t *testing.T) {
 	encryptedClue, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err)
 
-	minterAuth, err = util.NewTransactOpts(client, minter)
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
@@ -233,7 +233,7 @@ func TestVulnerability_GarbageProofAccepted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set sale price
-	minterAuth, err = util.NewTransactOpts(client, minter)
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	salePrice := big.NewInt(1000000000000000000)
 	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
 	require.NoError(t, err)
@@ -266,7 +266,7 @@ func TestVulnerability_GarbageProofAccepted(t *testing.T) {
 	copy(garbageHash[:], []byte("garbage hash"))
 
 	// Provide the garbage proof to the contract
-	minterAuth, err = util.NewTransactOpts(client, minter)
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	tx, err = contract.ProvideProof(minterAuth, transferId, garbageProof, garbageHash)
 
 	// VULNERABILITY: Contract accepts garbage proof without verification!
@@ -399,10 +399,8 @@ func TestVulnerability_ProofDoesntProveDecryption(t *testing.T) {
 	// We'll manually construct a Schnorr proof that just proves knowledge of seller's key
 
 	// Generate random k
-	k, err := ps.Curve.Params().N, nil
-	k, err = crypto.GenerateKey()
+	kInt, err := rand.Int(rand.Reader, ps.Curve.Params().N)
 	require.NoError(t, err)
-	kInt := k.D
 
 	// R1 = g^k
 	r1x, r1y := ps.Curve.ScalarBaseMult(kInt.Bytes())
