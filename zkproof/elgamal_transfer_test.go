@@ -1,4 +1,4 @@
-package tests
+package zkproof
 
 import (
 	"crypto/rand"
@@ -7,13 +7,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/deelawn/skavenge/zkproof"
 )
 
 // TestElGamalTransfer_HonestCase tests the complete verifiable transfer flow
 func TestElGamalTransfer_HonestCase(t *testing.T) {
-	ps := zkproof.NewProofSystem()
+	ps := NewProofSystem()
 
 	// Generate keys
 	sellerKey, err := ps.GenerateKeyPair()
@@ -82,7 +80,7 @@ func TestElGamalTransfer_HonestCase(t *testing.T) {
 
 // TestElGamalTransfer_BuyerCannotDecryptWithoutR verifies buyer needs r to decrypt
 func TestElGamalTransfer_BuyerCannotDecryptWithoutR(t *testing.T) {
-	ps := zkproof.NewProofSystem()
+	ps := NewProofSystem()
 
 	sellerKey, _ := ps.GenerateKeyPair()
 	buyerKey, _ := ps.GenerateKeyPair()
@@ -132,7 +130,7 @@ func TestElGamalTransfer_BuyerCannotDecryptWithoutR(t *testing.T) {
 
 // TestElGamalTransfer_ProofRejectsDifferentPlaintexts verifies DLEQ proof fails if plaintexts differ
 func TestElGamalTransfer_ProofRejectsDifferentPlaintexts(t *testing.T) {
-	ps := zkproof.NewProofSystem()
+	ps := NewProofSystem()
 
 	sellerKey, _ := ps.GenerateKeyPair()
 	buyerKey, _ := ps.GenerateKeyPair()
@@ -159,9 +157,9 @@ func TestElGamalTransfer_ProofRejectsDifferentPlaintexts(t *testing.T) {
 
 	// Try to verify with mismatched ciphertexts
 	valid := ps.VerifyElGamalTransfer(
-		transfer.SellerCipher,        // Real cipher
-		fakeTransfer.BuyerCipher,     // FAKE cipher (different plaintext)
-		transfer.DLEQProof,           // Original proof
+		transfer.SellerCipher,    // Real cipher
+		fakeTransfer.BuyerCipher, // FAKE cipher (different plaintext)
+		transfer.DLEQProof,       // Original proof
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
@@ -174,7 +172,7 @@ func TestElGamalTransfer_ProofRejectsDifferentPlaintexts(t *testing.T) {
 
 // TestElGamalTransfer_InvalidProofRejected verifies tampered proofs are rejected
 func TestElGamalTransfer_InvalidProofRejected(t *testing.T) {
-	ps := zkproof.NewProofSystem()
+	ps := NewProofSystem()
 
 	sellerKey, _ := ps.GenerateKeyPair()
 	buyerKey, _ := ps.GenerateKeyPair()
@@ -199,7 +197,7 @@ func TestElGamalTransfer_InvalidProofRejected(t *testing.T) {
 	require.True(t, valid, "Valid proof should verify")
 
 	// ATTACK: Tamper with proof
-	tamperedProof := &zkproof.DLEQProof{
+	tamperedProof := &DLEQProof{
 		A1: transfer.DLEQProof.A1,
 		A2: transfer.DLEQProof.A2,
 		Z:  new(big.Int).SetInt64(99999), // TAMPERED!
@@ -221,7 +219,7 @@ func TestElGamalTransfer_InvalidProofRejected(t *testing.T) {
 
 // TestElGamalTransfer_CommitmentVerification tests final commitment check
 func TestElGamalTransfer_CommitmentVerification(t *testing.T) {
-	ps := zkproof.NewProofSystem()
+	ps := NewProofSystem()
 
 	sellerKey, _ := ps.GenerateKeyPair()
 	buyerKey, _ := ps.GenerateKeyPair()
@@ -261,7 +259,7 @@ func TestElGamalTransfer_CommitmentVerification(t *testing.T) {
 
 // TestElGamalTransfer_CompleteFlow demonstrates the complete protocol
 func TestElGamalTransfer_CompleteFlow(t *testing.T) {
-	ps := zkproof.NewProofSystem()
+	ps := NewProofSystem()
 
 	sellerKey, _ := ps.GenerateKeyPair()
 	buyerKey, _ := ps.GenerateKeyPair()
@@ -357,7 +355,7 @@ func TestElGamalTransfer_CompleteFlow(t *testing.T) {
 
 // Benchmark the ElGamal operations
 func BenchmarkElGamalEncryption(b *testing.B) {
-	ps := zkproof.NewProofSystem()
+	ps := NewProofSystem()
 	key, _ := ps.GenerateKeyPair()
 	plaintext := []byte("Test message")
 	r, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
@@ -369,7 +367,7 @@ func BenchmarkElGamalEncryption(b *testing.B) {
 }
 
 func BenchmarkElGamalDecryption(b *testing.B) {
-	ps := zkproof.NewProofSystem()
+	ps := NewProofSystem()
 	key, _ := ps.GenerateKeyPair()
 	plaintext := []byte("Test message")
 	r, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
@@ -382,7 +380,7 @@ func BenchmarkElGamalDecryption(b *testing.B) {
 }
 
 func BenchmarkDLEQProofGeneration(b *testing.B) {
-	ps := zkproof.NewProofSystem()
+	ps := NewProofSystem()
 	seller, _ := ps.GenerateKeyPair()
 	buyer, _ := ps.GenerateKeyPair()
 	r, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
@@ -394,7 +392,7 @@ func BenchmarkDLEQProofGeneration(b *testing.B) {
 }
 
 func BenchmarkDLEQProofVerification(b *testing.B) {
-	ps := zkproof.NewProofSystem()
+	ps := NewProofSystem()
 	sellerKey, _ := ps.GenerateKeyPair()
 	buyerKey, _ := ps.GenerateKeyPair()
 	plaintext := []byte("Test")
