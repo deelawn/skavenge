@@ -249,7 +249,7 @@ func (ps *ProofSystem) VerifyElGamalTransfer(
 	sellerX, sellerY := elliptic.Unmarshal(ps.Curve, sellerPubKey)
 	buyerX, buyerY := elliptic.Unmarshal(ps.Curve, buyerPubKey)
 
-	if sellerX == nil || buyerX == nil {
+	if sellerX == nil || sellerY == nil || buyerX == nil || buyerY == nil {
 		return false
 	}
 
@@ -319,4 +319,16 @@ func (ps *ProofSystem) VerifyPlaintextMatchesCommitment(
 ) bool {
 	reconstructed := computeCommitment(plaintext, salt)
 	return reconstructed == commitment
+}
+
+// computeCommitment creates a hash commitment to plaintext with salt
+func computeCommitment(plaintext []byte, salt []byte) [32]byte {
+	h := sha3.NewLegacyKeccak256()
+	h.Write(plaintext)
+	h.Write(salt)
+	hash := h.Sum(nil)
+
+	var commitment [32]byte
+	copy(commitment[:], hash)
+	return commitment
 }
