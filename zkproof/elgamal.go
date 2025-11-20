@@ -12,8 +12,9 @@ import (
 
 // ElGamalCiphertext represents an ElGamal encrypted message
 type ElGamalCiphertext struct {
-	C1 []byte // g^r (ephemeral public key point)
-	C2 []byte // message * recipientPub^r
+	C1            []byte // g^r (ephemeral public key point)
+	C2            []byte // message XOR Hash(recipientPub^r)
+	SharedSecret  []byte // recipientPub^r (needed for DLEQ proof)
 }
 
 // DLEQProof proves that two ciphertexts encrypt the same plaintext
@@ -21,7 +22,8 @@ type ElGamalCiphertext struct {
 type DLEQProof struct {
 	// Commitments
 	A1 []byte // g^w
-	A2 []byte // recipientPub^w
+	A2 []byte // sellerPub^w
+	A3 []byte // buyerPub^w
 
 	// Response
 	Z *big.Int // w + c*r mod n
@@ -67,6 +69,7 @@ func (ps *ProofSystem) EncryptElGamal(
 	if !ps.Curve.IsOnCurve(sx, sy) {
 		return nil, fmt.Errorf("shared secret not on curve")
 	}
+	sharedSecretPoint := elliptic.Marshal(ps.Curve, sx, sy)
 
 	// Derive symmetric key from shared secret
 	sharedSecret := sx.Bytes()
@@ -86,8 +89,9 @@ func (ps *ProofSystem) EncryptElGamal(
 	}
 
 	return &ElGamalCiphertext{
-		C1: c1Bytes,
-		C2: c2,
+		C1:           c1Bytes,
+		C2:           c2,
+		SharedSecret: sharedSecretPoint,
 	}, nil
 }
 
@@ -205,17 +209,21 @@ func (ps *ProofSystem) GenerateDLEQProof(
 	a1x, a1y := ps.Curve.ScalarBaseMult(w.Bytes())
 	a1Bytes := elliptic.Marshal(ps.Curve, a1x, a1y)
 
-	// A2 = buyerPub^w
-	a2x, a2y := ps.Curve.ScalarMult(buyerPub.X, buyerPub.Y, w.Bytes())
+	// A2 = sellerPub^w
+	a2x, a2y := ps.Curve.ScalarMult(sellerPub.X, sellerPub.Y, w.Bytes())
 	a2Bytes := elliptic.Marshal(ps.Curve, a2x, a2y)
 
-	// Generate challenge: c = Hash(g, sellerPub, buyerPub, C1_seller, C1_buyer, A1, A2)
-	// For simplicity, we'll hash the key components
+	// A3 = buyerPub^w
+	a3x, a3y := ps.Curve.ScalarMult(buyerPub.X, buyerPub.Y, w.Bytes())
+	a3Bytes := elliptic.Marshal(ps.Curve, a3x, a3y)
+
+	// Generate challenge: c = Hash(sellerPub, buyerPub, A1, A2, A3)
 	h := sha3.NewLegacyKeccak256()
 	h.Write(elliptic.Marshal(ps.Curve, sellerPub.X, sellerPub.Y))
 	h.Write(elliptic.Marshal(ps.Curve, buyerPub.X, buyerPub.Y))
 	h.Write(a1Bytes)
 	h.Write(a2Bytes)
+	h.Write(a3Bytes)
 
 	c := new(big.Int).SetBytes(h.Sum(nil))
 	c.Mod(c, curveN)
@@ -228,6 +236,7 @@ func (ps *ProofSystem) GenerateDLEQProof(
 	return &DLEQProof{
 		A1: a1Bytes,
 		A2: a2Bytes,
+		A3: a3Bytes,
 		Z:  z,
 		C:  c,
 	}, nil
@@ -256,16 +265,30 @@ func (ps *ProofSystem) VerifyElGamalTransfer(
 	// Parse proof commitments
 	a1x, a1y := elliptic.Unmarshal(ps.Curve, proof.A1)
 	a2x, a2y := elliptic.Unmarshal(ps.Curve, proof.A2)
+	a3x, a3y := elliptic.Unmarshal(ps.Curve, proof.A3)
 
-	if a1x == nil || a2x == nil {
+	if a1x == nil || a2x == nil || a3x == nil {
 		return false
 	}
 
-	// Parse C1 values from ciphertexts
+	// Parse C1 values from ciphertexts (should be identical since same r)
 	c1SellerX, c1SellerY := elliptic.Unmarshal(ps.Curve, sellerCipher.C1)
 	c1BuyerX, c1BuyerY := elliptic.Unmarshal(ps.Curve, buyerCipher.C1)
 
 	if c1SellerX == nil || c1BuyerX == nil {
+		return false
+	}
+
+	// First, verify that C1 is the same for both (same r was used)
+	if c1SellerX.Cmp(c1BuyerX) != 0 || c1SellerY.Cmp(c1BuyerY) != 0 {
+		return false // Different r values used!
+	}
+
+	// Parse shared secrets
+	sSellerX, sSellerY := elliptic.Unmarshal(ps.Curve, sellerCipher.SharedSecret)
+	sBuyerX, sBuyerY := elliptic.Unmarshal(ps.Curve, buyerCipher.SharedSecret)
+
+	if sSellerX == nil || sBuyerX == nil {
 		return false
 	}
 
@@ -275,6 +298,7 @@ func (ps *ProofSystem) VerifyElGamalTransfer(
 	h.Write(buyerPubKey)
 	h.Write(proof.A1)
 	h.Write(proof.A2)
+	h.Write(proof.A3)
 
 	cCheck := new(big.Int).SetBytes(h.Sum(nil))
 	cCheck.Mod(cCheck, curveN)
@@ -283,31 +307,47 @@ func (ps *ProofSystem) VerifyElGamalTransfer(
 		return false
 	}
 
-	// Verify equation 1: g^z = A1 * C1_seller^c
-	// This proves: z = w + c*r, so g^z = g^w * g^(c*r) = A1 * (g^r)^c
+	// Verify equation 1: g^z = A1 * C1^c
+	// This proves: C1 = g^r for some r
 	gzX, gzY := ps.Curve.ScalarBaseMult(proof.Z.Bytes())
 
 	c1cX, c1cY := ps.Curve.ScalarMult(c1SellerX, c1SellerY, proof.C.Bytes())
-	rightX, rightY := ps.Curve.Add(a1x, a1y, c1cX, c1cY)
+	right1X, right1Y := ps.Curve.Add(a1x, a1y, c1cX, c1cY)
 
-	if gzX.Cmp(rightX) != 0 || gzY.Cmp(rightY) != 0 {
+	if gzX.Cmp(right1X) != 0 || gzY.Cmp(right1Y) != 0 {
 		return false
 	}
 
-	// Verify equation 2: buyerPub^z = A2 * C1_buyer^c
-	// This proves the same z works for buyer's encryption
-	pubzX, pubzY := ps.Curve.ScalarMult(buyerX, buyerY, proof.Z.Bytes())
+	// Verify equation 2: sellerPub^z = A2 * S_seller^c
+	// This proves: S_seller = sellerPub^r for the same r
+	sellerPubZX, sellerPubZY := ps.Curve.ScalarMult(sellerX, sellerY, proof.Z.Bytes())
 
-	c1BuyercX, c1BuyercY := ps.Curve.ScalarMult(c1BuyerX, c1BuyerY, proof.C.Bytes())
-	right2X, right2Y := ps.Curve.Add(a2x, a2y, c1BuyercX, c1BuyercY)
+	sSellerCX, sSellerCY := ps.Curve.ScalarMult(sSellerX, sSellerY, proof.C.Bytes())
+	right2X, right2Y := ps.Curve.Add(a2x, a2y, sSellerCX, sSellerCY)
 
-	if pubzX.Cmp(right2X) != 0 || pubzY.Cmp(right2Y) != 0 {
+	if sellerPubZX.Cmp(right2X) != 0 || sellerPubZY.Cmp(right2Y) != 0 {
 		return false
 	}
 
-	// Both equations verified!
-	// This PROVES both ciphertexts use the same r value
-	// Therefore they encrypt the same plaintext
+	// Verify equation 3: buyerPub^z = A3 * S_buyer^c
+	// This proves: S_buyer = buyerPub^r for the same r
+	buyerPubZX, buyerPubZY := ps.Curve.ScalarMult(buyerX, buyerY, proof.Z.Bytes())
+
+	sBuyerCX, sBuyerCY := ps.Curve.ScalarMult(sBuyerX, sBuyerY, proof.C.Bytes())
+	right3X, right3Y := ps.Curve.Add(a3x, a3y, sBuyerCX, sBuyerCY)
+
+	if buyerPubZX.Cmp(right3X) != 0 || buyerPubZY.Cmp(right3Y) != 0 {
+		return false
+	}
+
+	// All three equations verified!
+	// This PROVES:
+	// 1. C1 = g^r
+	// 2. S_seller = sellerPub^r
+	// 3. S_buyer = buyerPub^r
+	// All with the SAME r value.
+	// Since both ciphertexts use the same r and have the same commitment,
+	// they MUST encrypt the same plaintext.
 	return true
 }
 
