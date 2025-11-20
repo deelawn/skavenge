@@ -492,8 +492,14 @@ contract Skavenge is ERC721, ReentrancyGuard {
         // Check cancellation conditions
         bool canCancel = false;
 
-        // Buyer can always cancel
+        // Buyer can cancel ONLY if proof has not been verified yet
+        // This prevents mempool frontrunning attack where buyer extracts r value
+        // from seller's completeTransfer() transaction and cancels before it mines
         if (isBuyer) {
+            require(
+                transfer.verifiedAt == 0,
+                "Cannot cancel after proof verification"
+            );
             canCancel = true;
         }
 

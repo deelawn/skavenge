@@ -4,6 +4,7 @@ package tests
 import (
 	"crypto/rand"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -351,4 +352,319 @@ func TestSecurity_AttackPrevented_FakeRHashInProof(t *testing.T) {
 	t.Log("✅ DLEQ proof verification prevents fake rHash attack")
 	t.Log("   Seller cannot commit to fake r value in proof")
 	t.Log("   Challenge binding ensures rHash matches the r used in proof generation")
+}
+
+// TestSecurity_BuyerCannotCancelAfterVerification verifies that buyers cannot cancel
+// transfers after they have called verifyProof(), preventing frontrunning attacks.
+func TestSecurity_BuyerCannotCancelAfterVerification(t *testing.T) {
+	// Connect to Hardhat network
+	client, err := ethclient.Dial(util.GetHardhatURL())
+	require.NoError(t, err)
+
+	// Setup deployer account
+	deployerAuth, err := util.NewTransactOpts(client, secDeployer)
+	require.NoError(t, err)
+
+	// Deploy contract
+	contract, _, err := util.DeployContract(client, deployerAuth)
+	require.NoError(t, err)
+
+	// Setup minter account and keys
+	minterPrivKey, err := crypto.HexToECDSA(secMinter)
+	require.NoError(t, err)
+	minterAuth, err := util.NewTransactOpts(client, secMinter)
+	require.NoError(t, err)
+	minterAddr := minterAuth.From
+
+	// Update authorized minter
+	deployerAuth, err = util.NewTransactOpts(client, secDeployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Setup buyer account and keys
+	buyerPrivKey, err := crypto.HexToECDSA(secBuyer)
+	require.NoError(t, err)
+	buyerAddr := crypto.PubkeyToAddress(buyerPrivKey.PublicKey)
+	buyerAuth, err := util.NewTransactOpts(client, secBuyer)
+	require.NoError(t, err)
+
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
+
+	// Mint a clue
+	clueContent := []byte("The treasure is buried under the old oak tree")
+	solution := "Oak tree"
+	solutionHash := crypto.Keccak256Hash([]byte(solution))
+
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err)
+
+	// Encrypt using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
+	require.NoError(t, err)
+	encryptedClue := encryptedCipher.Marshal()
+
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
+
+	// Set sale price
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
+	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Buyer initiates purchase
+	buyerAuth.Value = salePrice
+	tx, err = contract.InitiatePurchase(buyerAuth, tokenId)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	transferId, err := contract.GenerateTransferId(nil, buyerAddr, tokenId)
+	require.NoError(t, err)
+
+	// TEST PHASE 1: Buyer CAN cancel before verification
+	t.Log("\n[Phase 1] Buyer can cancel BEFORE verification")
+	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
+	tx, err = contract.CancelTransfer(buyerAuth, transferId)
+	require.NoError(t, err, "Buyer should be able to cancel before verification")
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+	t.Log("✓ Buyer successfully canceled before verification")
+
+	// Re-initiate purchase for phase 2
+	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
+	buyerAuth.Value = salePrice
+	tx, err = contract.InitiatePurchase(buyerAuth, tokenId)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Generate verifiable transfer
+	transfer, err := ps.GenerateVerifiableElGamalTransfer(
+		clueContent,
+		minterPrivKey,
+		&buyerPrivKey.PublicKey,
+	)
+	require.NoError(t, err)
+
+	buyerCiphertextBytes := transfer.BuyerCipher.Marshal()
+	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
+
+	// Seller provides proof
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
+	require.NoError(t, err)
+	proofBytes := transfer.DLEQProof.Marshal()
+	tx, err = contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Buyer verifies proof (COMMITMENT POINT)
+	t.Log("\n[Phase 2] Buyer verifies proof (commitment)")
+	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
+	tx, err = contract.VerifyProof(buyerAuth, transferId)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+	t.Log("✓ Buyer committed by calling verifyProof()")
+
+	// TEST PHASE 2: Buyer CANNOT cancel after verification
+	t.Log("\n[Phase 3] Buyer attempts to cancel AFTER verification")
+	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
+	buyerAuth.GasLimit = 500000 // Higher gas limit for expected failure
+
+	_, err = contract.CancelTransfer(buyerAuth, transferId)
+
+	// ATTACK PREVENTED: Transaction should revert
+	require.Error(t, err, "✅ ATTACK PREVENTED: Buyer cannot cancel after verification")
+	require.Contains(t, err.Error(), "Cannot cancel after proof verification",
+		"Error should indicate cancellation blocked after verification")
+
+	t.Log("✅ Buyer CANNOT cancel after calling verifyProof()")
+	t.Log("   This prevents mempool frontrunning attack")
+	t.Log("   Buyer is committed once they verify the proof")
+}
+
+// TestSecurity_FrontrunningAttackPrevented demonstrates that the complete
+// frontrunning attack scenario is now prevented by the cancellation restriction.
+func TestSecurity_FrontrunningAttackPrevented(t *testing.T) {
+	// Connect to Hardhat network
+	client, err := ethclient.Dial(util.GetHardhatURL())
+	require.NoError(t, err)
+
+	// Setup deployer account
+	deployerAuth, err := util.NewTransactOpts(client, secDeployer)
+	require.NoError(t, err)
+
+	// Deploy contract
+	contract, _, err := util.DeployContract(client, deployerAuth)
+	require.NoError(t, err)
+
+	// Setup minter account and keys
+	minterPrivKey, err := crypto.HexToECDSA(secMinter)
+	require.NoError(t, err)
+	minterAuth, err := util.NewTransactOpts(client, secMinter)
+	require.NoError(t, err)
+	minterAddr := minterAuth.From
+
+	// Update authorized minter
+	deployerAuth, err = util.NewTransactOpts(client, secDeployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Setup buyer account and keys
+	buyerPrivKey, err := crypto.HexToECDSA(secBuyer)
+	require.NoError(t, err)
+	buyerAddr := crypto.PubkeyToAddress(buyerPrivKey.PublicKey)
+	buyerAuth, err := util.NewTransactOpts(client, secBuyer)
+	require.NoError(t, err)
+
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
+
+	// Mint a clue
+	clueContent := []byte("The secret treasure location is 40.7128°N, 74.0060°W")
+	solution := "New York City"
+	solutionHash := crypto.Keccak256Hash([]byte(solution))
+
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err)
+
+	// Encrypt using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
+	require.NoError(t, err)
+	encryptedClue := encryptedCipher.Marshal()
+
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
+
+	// Set sale price
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
+	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// === ATTACK SCENARIO ===
+	t.Log("\n" + strings.Repeat("=", 70))
+	t.Log("SIMULATING FRONTRUNNING ATTACK")
+	t.Log(strings.Repeat("=", 70))
+
+	// Step 1: Buyer initiates purchase
+	t.Log("\n[1] Buyer initiates purchase (1 ETH)")
+	buyerAuth.Value = salePrice
+	tx, err = contract.InitiatePurchase(buyerAuth, tokenId)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	transferId, err := contract.GenerateTransferId(nil, buyerAddr, tokenId)
+	require.NoError(t, err)
+
+	// Step 2: Seller generates and provides proof
+	t.Log("\n[2] Seller provides DLEQ proof")
+	transfer, err := ps.GenerateVerifiableElGamalTransfer(
+		clueContent,
+		minterPrivKey,
+		&buyerPrivKey.PublicKey,
+	)
+	require.NoError(t, err)
+
+	buyerCiphertextBytes := transfer.BuyerCipher.Marshal()
+	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
+
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
+	proofBytes := transfer.DLEQProof.Marshal()
+	tx, err = contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Step 3: Buyer verifies proof (commits to purchase)
+	t.Log("\n[3] Buyer verifies proof off-chain and commits on-chain")
+	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
+	tx, err = contract.VerifyProof(buyerAuth, transferId)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+	t.Log("✓ Buyer committed to purchase")
+
+	// Step 4: ATTACK - Malicious buyer tries to extract r and cancel
+	t.Log("\n[4] ATTACK: Seller submits completeTransfer() with r value")
+	t.Log("    Malicious buyer would normally:")
+	t.Log("    - Monitor mempool for completeTransfer transaction")
+	t.Log("    - Extract r value from calldata")
+	t.Log("    - Decrypt clue off-chain")
+	t.Log("    - Submit cancelTransfer with higher gas price")
+
+	// In a real attack, buyer would extract r from pending tx
+	extractedR := transfer.SharedR
+	t.Logf("    Extracted r value: %s", extractedR.String()[:20]+"...")
+
+	// Buyer tries to decrypt with extracted r (would succeed without fix)
+	decrypted, err := ps.DecryptElGamal(transfer.BuyerCipher, extractedR, buyerPrivKey)
+	require.NoError(t, err)
+	require.Equal(t, clueContent, decrypted)
+	t.Log("    ⚠️  Buyer successfully decrypted clue with extracted r!")
+
+	// Step 5: ATTACK ATTEMPT - Buyer tries to cancel and get refund
+	t.Log("\n[5] ATTACK ATTEMPT: Buyer tries to cancel with higher gas")
+	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
+	buyerAuth.GasLimit = 500000
+
+	_, err = contract.CancelTransfer(buyerAuth, transferId)
+
+	// ATTACK PREVENTED!
+	require.Error(t, err, "✅ ATTACK PREVENTED: Cancel transaction reverted")
+	require.Contains(t, err.Error(), "Cannot cancel after proof verification")
+	t.Log("    ✅ ATTACK PREVENTED: cancelTransfer() reverted")
+	t.Log("    ✅ Buyer cannot cancel after verifyProof() commitment")
+
+	// Step 6: Seller's completeTransfer succeeds
+	t.Log("\n[6] Seller completes transfer successfully")
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
+	tx, err = contract.CompleteTransfer(minterAuth, transferId, buyerCiphertextBytes, extractedR)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+	t.Log("    ✓ Transfer completed")
+	t.Log("    ✓ Ownership transferred to buyer")
+	t.Log("    ✓ Payment sent to seller")
+
+	// Verify final state
+	newOwner, err := contract.OwnerOf(nil, tokenId)
+	require.NoError(t, err)
+	require.Equal(t, buyerAddr, newOwner, "Buyer should own the token")
+
+	t.Log("\n" + strings.Repeat("=", 70))
+	t.Log("✅ FRONTRUNNING ATTACK PREVENTED")
+	t.Log(strings.Repeat("=", 70))
+	t.Log("\nSecurity guarantee restored:")
+	t.Log("  ✅ Buyer cannot extract r and cancel")
+	t.Log("  ✅ verifyProof() creates binding commitment")
+	t.Log("  ✅ Transfer completes atomically")
+	t.Log("  ✅ Seller receives payment")
+	t.Log("  ✅ Buyer receives NFT + decryption ability")
 }
