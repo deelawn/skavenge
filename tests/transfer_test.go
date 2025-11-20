@@ -12,15 +12,19 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
 
+	"github.com/deelawn/skavenge/eth/bindings"
 	"github.com/deelawn/skavenge/tests/util"
 	"github.com/deelawn/skavenge/zkproof"
 )
 
 var (
-	other = "7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"
+	deployer = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+	minter   = "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+	buyer    = "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
+	other    = "7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"
 )
 
-// TestSuccessfulTransfer tests the successful transfer of a clue.
+// TestSuccessfulTransfer tests the successful transfer of a clue using ElGamal encryption.
 func TestSuccessfulTransfer(t *testing.T) {
 	// Connect to Hardhat network
 	client, err := ethclient.Dial(util.GetHardhatURL())
@@ -65,16 +69,16 @@ func TestSuccessfulTransfer(t *testing.T) {
 	ps := zkproof.NewProofSystem()
 
 	// Sample data for the clue
-	clueContent := "Find the hidden treasure in the old oak tree"
+	clueContent := []byte("Find the hidden treasure in the old oak tree")
 	solution := "Oak tree"
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
-	// Encrypt the clue content for the minter
+	// Encrypt the clue content for the minter (seller's original clue)
 	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
-	// Mint a new clue using deployer as authorized minter
-	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	// Mint a new clue
+	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
 	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
@@ -90,7 +94,7 @@ func TestSuccessfulTransfer(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, crypto.PubkeyToAddress(minterPrivKey.PublicKey), owner, "Minter should be the owner")
 
-	// Set sale price in order to be able to initiate purchase.
+	// Set sale price
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
@@ -101,8 +105,7 @@ func TestSuccessfulTransfer(t *testing.T) {
 	require.Equal(t, uint64(1), salePriceReceipt.Status, "Set sale price transaction failed")
 
 	// Initiate purchase from buyer account
-	// Set value to 1 ETH
-	buyerAuth.Value = big.NewInt(1000000000000000000)
+	buyerAuth.Value = big.NewInt(1000000000000000000) // 1 ETH
 	buyTx, err := contract.InitiatePurchase(buyerAuth, tokenId)
 	require.NoError(t, err)
 	buyReceipt, err := util.WaitForTransaction(client, buyTx)
@@ -117,21 +120,29 @@ func TestSuccessfulTransfer(t *testing.T) {
 	transferId, err := contract.GenerateTransferId(nil, buyerAddr, tokenId)
 	require.NoError(t, err)
 
-	// Generate complete proof for buyer using GenerateProof
-	proofResult, err := ps.GenerateProof([]byte(clueContent), minterPrivKey, &buyerPrivKey.PublicKey, encryptedClueContent)
-	require.NoError(t, err, "Failed to generate proof")
+	// Generate ElGamal verifiable transfer
+	transfer, err := ps.GenerateVerifiableElGamalTransfer(
+		clueContent,
+		minterPrivKey,
+		&buyerPrivKey.PublicKey,
+	)
+	require.NoError(t, err, "Failed to generate verifiable transfer")
 
-	marshalRes := proofResult.Proof.Marshal()
+	// Marshal the buyer ciphertext for on-chain storage
+	buyerCiphertextBytes := transfer.BuyerCipher.Marshal()
+	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
 
-	// Provide proof to the contract
+	// Compute r value hash
+	rValueHash := crypto.Keccak256Hash(transfer.SharedR.Bytes())
+
+	// Provide proof to the contract (including r value hash commitment)
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	// Convert BuyerCipherHash to [32]byte
-	var buyerCipherHashArray [32]byte
-	copy(buyerCipherHashArray[:], proofResult.BuyerCipherHash)
+	// Marshal DLEQ proof
+	proofBytes := transfer.DLEQProof.Marshal()
 
-	proofTx, err := contract.ProvideProof(minterAuth, transferId, marshalRes, buyerCipherHashArray)
+	proofTx, err := contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash, rValueHash)
 	require.NoError(t, err)
 	proofReceipt, err := util.WaitForTransaction(client, proofTx)
 	require.NoError(t, err)
@@ -141,20 +152,33 @@ func TestSuccessfulTransfer(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, proofProvidedFound, "ProofProvided event not found")
 
-	transfer, err := contract.Transfers(&bind.CallOpts{}, transferId)
+	// Buyer verifies the proof off-chain
+	transferData, err := contract.Transfers(&bind.CallOpts{}, transferId)
 	require.NoError(t, err)
 
-	clue, err := contract.Clues(&bind.CallOpts{}, transfer.TokenId)
+	// Unmarshal and verify DLEQ proof
+	dleqProof := &zkproof.DLEQProof{}
+	err = dleqProof.Unmarshal(transferData.Proof)
 	require.NoError(t, err)
 
-	// Verify the proof using zkproof
-	verifyProof := zkproof.NewProof()
-	err = verifyProof.Unmarshal(transfer.Proof)
+	// For the buyer to verify, they need both ciphertexts
+	// The seller's ciphertext is the original encrypted clue, buyer's is in the transfer
+	sellerCipher := &zkproof.ElGamalCiphertext{}
+	err = sellerCipher.Unmarshal(encryptedClueContent)
 	require.NoError(t, err)
-	valid := ps.VerifyProof(verifyProof, clue.EncryptedContents)
-	require.True(t, valid, "Proof verification failed")
 
-	// Verify proof by buyer
+	buyerCipher := transfer.BuyerCipher
+
+	valid := ps.VerifyElGamalTransfer(
+		sellerCipher,
+		buyerCipher,
+		dleqProof,
+		transfer.SellerPubKey,
+		transfer.BuyerPubKey,
+	)
+	require.True(t, valid, "DLEQ proof verification failed")
+
+	// Buyer verifies proof by calling smart contract
 	buyerAuth, err = util.NewTransactOpts(client, buyer)
 	require.NoError(t, err)
 
@@ -168,11 +192,11 @@ func TestSuccessfulTransfer(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, proofVerifiedFound, "ProofVerified event not found")
 
-	// Complete transfer with new encrypted clue
+	// Complete transfer with new encrypted clue and r value
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	completeTx, err := contract.CompleteTransfer(minterAuth, transferId, proofResult.BuyerCipherText)
+	completeTx, err := contract.CompleteTransfer(minterAuth, transferId, buyerCiphertextBytes, transfer.SharedR)
 	require.NoError(t, err)
 	completeReceipt, err := util.WaitForTransaction(client, completeTx)
 	require.NoError(t, err)
@@ -190,12 +214,13 @@ func TestSuccessfulTransfer(t *testing.T) {
 	// Verify the clue content is updated
 	newClueContents, err := contract.GetClueContents(nil, tokenId)
 	require.NoError(t, err)
-	require.Equal(t, proofResult.BuyerCipherText, newClueContents, "Clue content should be updated for buyer")
+	require.Equal(t, buyerCiphertextBytes, newClueContents, "Clue content should be updated for buyer")
 
-	// Verify the buyer can decrypt the clue
-	decryptedClueBytes, err := ps.DecryptMessage(newClueContents, buyerPrivKey)
+	// Buyer can now decrypt the clue using the revealed r value
+	// In a real scenario, buyer would extract r from the TransferCompleted event
+	decryptedClueBytes, err := ps.DecryptElGamal(buyerCipher, transfer.SharedR, buyerPrivKey)
 	require.NoError(t, err, "Buyer should be able to decrypt the clue")
-	require.Equal(t, clueContent, string(decryptedClueBytes), "Decrypted content should match original")
+	require.Equal(t, string(clueContent), string(decryptedClueBytes), "Decrypted content should match original")
 }
 
 // TestInvalidProofVerification tests verification of an invalid proof.
@@ -243,7 +268,7 @@ func TestInvalidProofVerification(t *testing.T) {
 	ps := zkproof.NewProofSystem()
 
 	// Mint a clue
-	clueContent := "Find the hidden treasure in the forest"
+	clueContent := []byte("Find the hidden treasure in the forest")
 	solution := "Behind the waterfall"
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
@@ -251,8 +276,7 @@ func TestInvalidProofVerification(t *testing.T) {
 	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
-	// Mint the clue using deployer as authorized minter
-	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
 	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
@@ -263,7 +287,7 @@ func TestInvalidProofVerification(t *testing.T) {
 	tokenId, err := getLastMintedTokenID(contract)
 	require.NoError(t, err)
 
-	// Set sale price in order to be able to initiate purchase.
+	// Set sale price
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
@@ -284,40 +308,55 @@ func TestInvalidProofVerification(t *testing.T) {
 	transferId, err := contract.GenerateTransferId(nil, buyerAddr, tokenId)
 	require.NoError(t, err)
 
-	// Generate complete proof for buyer using GenerateProof
-	proofResult, err := ps.GenerateProof([]byte(clueContent), minterPrivKey, &buyerPrivKey.PublicKey, encryptedClueContent)
-	require.NoError(t, err, "Failed to generate proof")
+	// Generate valid transfer
+	transfer, err := ps.GenerateVerifiableElGamalTransfer(
+		clueContent,
+		minterPrivKey,
+		&buyerPrivKey.PublicKey,
+	)
+	require.NoError(t, err, "Failed to generate verifiable transfer")
 
-	marshalRes := proofResult.Proof.Marshal()
+	// Marshal the buyer ciphertext
+	buyerCiphertextBytes := transfer.BuyerCipher.Marshal()
+	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
+	rValueHash := crypto.Keccak256Hash(transfer.SharedR.Bytes())
 
-	// Modify proof to make it invalid (just corrupt the first byte)
-	invalidProof := append([]byte{'X'}, marshalRes[1:]...)
+	// Marshal proof and CORRUPT it
+	validProof := transfer.DLEQProof.Marshal()
+	invalidProof := append([]byte{0xFF}, validProof[1:]...) // Corrupt first byte
 
 	// Provide the invalid proof to the contract
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	// Convert BuyerCipherHash to [32]byte
-	var buyerCipherHashArray [32]byte
-	copy(buyerCipherHashArray[:], proofResult.BuyerCipherHash)
-
-	proofTx, err := contract.ProvideProof(minterAuth, transferId, []byte(invalidProof), buyerCipherHashArray)
+	proofTx, err := contract.ProvideProof(minterAuth, transferId, invalidProof, buyerCiphertextHash, rValueHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, proofTx)
 	require.NoError(t, err)
 
-	transfer, err := contract.Transfers(&bind.CallOpts{}, transferId)
+	// Buyer verifies the proof off-chain
+	transferData, err := contract.Transfers(&bind.CallOpts{}, transferId)
 	require.NoError(t, err)
 
-	clue, err := contract.Clues(&bind.CallOpts{}, transfer.TokenId)
-	require.NoError(t, err)
+	// Try to unmarshal and verify - should fail
+	dleqProof := &zkproof.DLEQProof{}
+	err = dleqProof.Unmarshal(transferData.Proof)
+	// Unmarshaling might fail or succeed depending on corruption
+	// If it succeeds, verification should fail
+	if err == nil {
+		sellerCipher := &zkproof.ElGamalCiphertext{}
+		err = sellerCipher.Unmarshal(encryptedClueContent)
+		require.NoError(t, err)
 
-	// Verify the proof using zkproof
-	verifyProof := zkproof.NewProof()
-	err = verifyProof.Unmarshal(transfer.Proof)
-	require.NoError(t, err)
-	valid := ps.VerifyProof(verifyProof, clue.EncryptedContents)
-	require.False(t, valid, "Proof verification didn't fail")
+		valid := ps.VerifyElGamalTransfer(
+			sellerCipher,
+			transfer.BuyerCipher,
+			dleqProof,
+			transfer.SellerPubKey,
+			transfer.BuyerPubKey,
+		)
+		require.False(t, valid, "Invalid proof should not verify")
+	}
 
 	// Cancel the transfer
 	buyerAuth, err = util.NewTransactOpts(client, buyer)
@@ -375,7 +414,7 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	ps := zkproof.NewProofSystem()
 
 	// Mint a clue
-	clueContent := "Find the hidden treasure in the forest"
+	clueContent := []byte("Find the hidden treasure in the forest")
 	solution := "Behind the waterfall"
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
@@ -391,7 +430,7 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	tokenId, err := getLastMintedTokenID(contract)
 	require.NoError(t, err)
 
-	// Set sale price in order to be able to initiate purchase.
+	// Set sale price
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
@@ -412,21 +451,24 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	transferId, err := contract.GenerateTransferId(nil, buyerAddr, tokenId)
 	require.NoError(t, err)
 
-	// Generate complete proof for buyer using GenerateProof
-	proofResult, err := ps.GenerateProof([]byte(clueContent), minterPrivKey, &buyerPrivKey.PublicKey, encryptedClueContent)
-	require.NoError(t, err, "Failed to generate proof")
+	// Generate verifiable transfer
+	transfer, err := ps.GenerateVerifiableElGamalTransfer(
+		clueContent,
+		minterPrivKey,
+		&buyerPrivKey.PublicKey,
+	)
+	require.NoError(t, err, "Failed to generate verifiable transfer")
 
-	marshalRes := proofResult.Proof.Marshal()
+	buyerCiphertextBytes := transfer.BuyerCipher.Marshal()
+	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
+	rValueHash := crypto.Keccak256Hash(transfer.SharedR.Bytes())
+	proofBytes := transfer.DLEQProof.Marshal()
 
 	// Provide proof to the contract
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	// Convert BuyerCipherHash to [32]byte
-	var buyerCipherHashArray [32]byte
-	copy(buyerCipherHashArray[:], proofResult.BuyerCipherHash)
-
-	proofTx, err := contract.ProvideProof(minterAuth, transferId, marshalRes, buyerCipherHashArray)
+	proofTx, err := contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash, rValueHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, proofTx)
 	require.NoError(t, err)
@@ -437,9 +479,8 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	require.NoError(t, err)
 	minterAuth.GasLimit = 300000 // Higher gas limit for failing transaction
 
-	_, err = contract.CompleteTransfer(minterAuth, transferId, proofResult.BuyerCipherText)
+	_, err = contract.CompleteTransfer(minterAuth, transferId, buyerCiphertextBytes, transfer.SharedR)
 	require.Error(t, err, "Transaction should fail")
-	// require.Contains(t, err.Error(), "execution reverted", "Transaction should revert")
 }
 
 // TestCancelTransfer tests cancelling a transfer.
@@ -499,8 +540,7 @@ func TestCancelTransfer(t *testing.T) {
 	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
-	// Mint the clue using deployer as authorized minter
-	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
 	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
@@ -511,7 +551,7 @@ func TestCancelTransfer(t *testing.T) {
 	tokenId, err := getLastMintedTokenID(contract)
 	require.NoError(t, err)
 
-	// Set sale price in order to be able to initiate purchase.
+	// Set sale price
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
@@ -547,8 +587,7 @@ func TestCancelTransfer(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, transferCancelledFound, "TransferCancelled event not found")
 
-	// Verify buyer received refund (checking balance increase is challenging due to gas costs,
-	// so we'll just check the transfer object is deleted)
+	// Verify buyer received refund
 	transferData, err := contract.Transfers(nil, transferId)
 	require.NoError(t, err)
 	require.Equal(t, common.Address{}, transferData.Buyer, "Transfer should be deleted after cancellation")
@@ -566,3 +605,12 @@ func TestCancelTransfer(t *testing.T) {
 	require.True(t, balanceDiff.Cmp(maxGasCost) < 0, "Balance difference should be small (just gas costs)")
 }
 
+// Helper function to get the last minted token ID
+func getLastMintedTokenID(contract *bindings.Skavenge) (*big.Int, error) {
+	tokenId, err := contract.GetCurrentTokenId(nil)
+	if err != nil {
+		return nil, err
+	}
+	// Subtract 1 because the counter has been incremented after minting
+	return new(big.Int).Sub(tokenId, big.NewInt(1)), nil
+}
