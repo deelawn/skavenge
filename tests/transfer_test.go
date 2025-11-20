@@ -3,6 +3,7 @@ package tests
 
 import (
 	"context"
+	"crypto/rand"
 	"math/big"
 	"testing"
 
@@ -73,15 +74,22 @@ func TestSuccessfulTransfer(t *testing.T) {
 	solution := "Oak tree"
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
-	// Encrypt the clue content for the minter (seller's original clue)
-	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err, "Failed to generate r value")
+
+	// Encrypt the clue content using ElGamal for the minter
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
-	// Mint a new clue
+	// Marshal to bytes for on-chain storage
+	encryptedClueContent := encryptedCipher.Marshal()
+
+	// Mint a new clue with ElGamal ciphertext and r value
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -161,12 +169,9 @@ func TestSuccessfulTransfer(t *testing.T) {
 	err = dleqProof.Unmarshal(transferData.Proof)
 	require.NoError(t, err)
 
-	// For the buyer to verify, they need both ciphertexts
-	// The seller's ciphertext is the original encrypted clue, buyer's is in the transfer
-	sellerCipher := &zkproof.ElGamalCiphertext{}
-	err = sellerCipher.Unmarshal(encryptedClueContent)
-	require.NoError(t, err)
-
+	// For the buyer to verify, they need both ciphertexts from the transfer
+	// Both come from GenerateVerifiableElGamalTransfer with same plaintext
+	sellerCipher := transfer.SellerCipher
 	buyerCipher := transfer.BuyerCipher
 
 	valid := ps.VerifyElGamalTransfer(
@@ -272,14 +277,21 @@ func TestInvalidProofVerification(t *testing.T) {
 	solution := "Behind the waterfall"
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
-	// Encrypt the clue content
-	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err, "Failed to generate r value")
+
+	// Encrypt the clue content using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
 	require.NoError(t, err, "Failed to encrypt clue content")
+
+	// Marshal to bytes for on-chain storage
+	encryptedClueContent := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -418,11 +430,18 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	solution := "Behind the waterfall"
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
-	// Encrypt the clue content
-	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err, "Failed to generate r value")
+
+	// Encrypt the clue content using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	// Marshal to bytes for on-chain storage
+	encryptedClueContent := encryptedCipher.Marshal()
+
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -532,18 +551,25 @@ func TestCancelTransfer(t *testing.T) {
 	require.NoError(t, err)
 
 	// Mint a clue
-	clueContent := "Find the hidden treasure in the forest"
+	clueContent := []byte("Find the hidden treasure in the forest")
 	solution := "Behind the waterfall"
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
-	// Encrypt the clue content
-	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err, "Failed to generate r value")
+
+	// Encrypt the clue content using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
 	require.NoError(t, err, "Failed to encrypt clue content")
+
+	// Marshal to bytes for on-chain storage
+	encryptedClueContent := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)

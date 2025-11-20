@@ -112,11 +112,19 @@ func TestSecurity_AttackPrevented_WrongRValue(t *testing.T) {
 	solution := "Oak tree"
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
-	encryptedClue, err := ps.EncryptMessage(clueContent, &minterPrivKey.PublicKey)
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err, "Failed to generate r value")
+
+	// Encrypt using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
 	require.NoError(t, err)
 
+	// Marshal to bytes for on-chain storage
+	encryptedClue := encryptedCipher.Marshal()
+
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
-	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash)
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
