@@ -2,6 +2,7 @@ package zkproof
 
 import (
 	"bytes"
+	"math/big"
 	"testing"
 )
 
@@ -127,4 +128,73 @@ func TestDLEQProofRejectsTampering(t *testing.T) {
 	}
 
 	t.Log("✅ Tampered proof correctly rejected")
+}
+
+// TestDecryptionRequiresCorrectR verifies buyer cannot decrypt without correct r
+func TestDecryptionRequiresCorrectR(t *testing.T) {
+	ps := NewProofSystem()
+
+	buyerKey, _ := ps.GenerateKeyPair()
+	plaintext := []byte("Secret message that requires r to decrypt")
+
+	// Generate transfer
+	transfer, err := ps.GenerateVerifiableElGamalTransfer(
+		plaintext,
+		buyerKey, // Seller is same as buyer for this test
+		&buyerKey.PublicKey,
+	)
+	if err != nil {
+		t.Fatalf("Failed to generate transfer: %v", err)
+	}
+
+	// Try to decrypt with WRONG r - should fail or produce garbage
+	wrongR := new(big.Int).SetInt64(99999)
+	wrongDecrypted, err := ps.DecryptElGamal(
+		transfer.BuyerCipher,
+		wrongR,
+		buyerKey,
+	)
+
+	if err == nil {
+		// Should NOT match original plaintext
+		if bytes.Equal(plaintext, wrongDecrypted) {
+			t.Fatal("❌ SECURITY FAILURE: Wrong r decrypted correctly!")
+		}
+		t.Logf("✅ Wrong r produced garbage: %x (expected)", wrongDecrypted[:min(16, len(wrongDecrypted))])
+	}
+
+	// Try to decrypt with nil r - should error
+	_, err = ps.DecryptElGamal(
+		transfer.BuyerCipher,
+		nil,
+		buyerKey,
+	)
+	if err == nil {
+		t.Fatal("❌ Should reject nil r value")
+	}
+	t.Log("✅ Nil r correctly rejected")
+
+	// Decrypt with correct r - should succeed
+	correctDecrypted, err := ps.DecryptElGamal(
+		transfer.BuyerCipher,
+		transfer.SharedR,
+		buyerKey,
+	)
+	if err != nil {
+		t.Fatalf("Failed to decrypt with correct r: %v", err)
+	}
+
+	if !bytes.Equal(plaintext, correctDecrypted) {
+		t.Fatal("❌ Correct r should decrypt successfully")
+	}
+
+	t.Log("✅ Correct r decrypted successfully")
+	t.Log("✅ SECURITY VERIFIED: Decryption requires correct r value")
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

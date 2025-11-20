@@ -64,20 +64,20 @@ func (ps *ProofSystem) EncryptElGamal(
 	}
 	c1Bytes := elliptic.Marshal(ps.Curve, c1x, c1y)
 
-	// Shared secret: S = recipientPub^r
+	// Shared secret: S = recipientPub^r (stored for DLEQ proof verification)
 	sx, sy := ps.Curve.ScalarMult(recipientPubKey.X, recipientPubKey.Y, r.Bytes())
 	if !ps.Curve.IsOnCurve(sx, sy) {
 		return nil, fmt.Errorf("shared secret not on curve")
 	}
 	sharedSecretPoint := elliptic.Marshal(ps.Curve, sx, sy)
 
-	// Derive symmetric key from shared secret
-	sharedSecret := sx.Bytes()
+	// Derive symmetric key from r and recipient public key directly
+	// This ensures buyer MUST know r to decrypt (can't use private key alone)
+	recipientPubBytes := elliptic.Marshal(ps.Curve, recipientPubKey.X, recipientPubKey.Y)
 
-	// XOR message with derived key (simplified for PoC)
-	// In production, use proper KDF + AES-GCM
 	keyHash := sha3.NewLegacyKeccak256()
-	keyHash.Write(sharedSecret)
+	keyHash.Write(r.Bytes())                // Key depends on r
+	keyHash.Write(recipientPubBytes)        // and recipient public key
 	key := keyHash.Sum(nil)
 
 	// For simplicity, we'll encode message as a curve point
@@ -95,32 +95,26 @@ func (ps *ProofSystem) EncryptElGamal(
 	}, nil
 }
 
-// DecryptElGamal decrypts an ElGamal ciphertext
+// DecryptElGamal decrypts an ElGamal ciphertext using the revealed r value
+// Buyer MUST have r (revealed by seller after payment) to decrypt
 func (ps *ProofSystem) DecryptElGamal(
 	ciphertext *ElGamalCiphertext,
-	r *big.Int, // Provided by seller after payment
+	r *big.Int, // Provided by seller after payment - REQUIRED!
 	recipientPrivKey *ecdsa.PrivateKey,
 ) ([]byte, error) {
 
-	// Parse C1
-	c1x, c1y := elliptic.Unmarshal(ps.Curve, ciphertext.C1)
-	if c1x == nil || c1y == nil {
-		return nil, fmt.Errorf("invalid C1")
+	if r == nil {
+		return nil, fmt.Errorf("r value is required for decryption")
 	}
 
-	// Compute shared secret: S = C1^privKey = (g^r)^privKey = g^(r*privKey)
-	// But we also have: S = recipientPub^r = (g^privKey)^r = g^(r*privKey)
-	// So they're the same!
-	sx, sy := ps.Curve.ScalarMult(c1x, c1y, recipientPrivKey.D.Bytes())
-	if !ps.Curve.IsOnCurve(sx, sy) {
-		return nil, fmt.Errorf("shared secret not on curve")
-	}
+	// Derive decryption key from r and recipient public key
+	// This is the SAME derivation used in encryption
+	recipientPubKey := &recipientPrivKey.PublicKey
+	recipientPubBytes := elliptic.Marshal(ps.Curve, recipientPubKey.X, recipientPubKey.Y)
 
-	sharedSecret := sx.Bytes()
-
-	// Derive same key
 	keyHash := sha3.NewLegacyKeccak256()
-	keyHash.Write(sharedSecret)
+	keyHash.Write(r.Bytes())         // Uses revealed r value
+	keyHash.Write(recipientPubBytes) // and buyer's public key
 	key := keyHash.Sum(nil)
 
 	// XOR to decrypt
