@@ -307,13 +307,13 @@ func TestMintMultipleClues(t *testing.T) {
 	require.Equal(t, secondSolutionHash, secondClueData.SolutionHash, "Second solution hash does not match")
 
 	// Verify we can decrypt both clues
-	decryptedFirstClueBytes, err := ps.DecryptMessage(firstEncryptedClueContent, minterPrivKey)
+	decryptedFirstClueBytes, err := ps.DecryptElGamal(firstEncryptedCipher, firstMintR, minterPrivKey)
 	require.NoError(t, err, "Failed to decrypt first clue")
-	require.Equal(t, firstClueContent, string(decryptedFirstClueBytes), "Decrypted first clue doesn't match original")
+	require.Equal(t, firstClueContent, decryptedFirstClueBytes, "Decrypted first clue doesn't match original")
 
-	decryptedSecondClueBytes, err := ps.DecryptMessage(secondEncryptedClueContent, minterPrivKey)
+	decryptedSecondClueBytes, err := ps.DecryptElGamal(secondEncryptedCipher, secondMintR, minterPrivKey)
 	require.NoError(t, err, "Failed to decrypt second clue")
-	require.Equal(t, secondClueContent, string(decryptedSecondClueBytes), "Decrypted second clue doesn't match original")
+	require.Equal(t, secondClueContent, decryptedSecondClueBytes, "Decrypted second clue doesn't match original")
 }
 
 // TestUpdateAuthorizedMinter tests the authorized minter update functionality
