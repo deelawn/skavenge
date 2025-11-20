@@ -759,8 +759,8 @@ func TestCorruptedRValueRejected(t *testing.T) {
 		sellerCipher,
 		buyerCipher,
 		dleqProof,
-		elliptic.Marshal(ps.Curve, &minterPrivKey.PublicKey.X, &minterPrivKey.PublicKey.Y),
-		elliptic.Marshal(ps.Curve, &buyerPrivKey.PublicKey.X, &buyerPrivKey.PublicKey.Y),
+		transfer.SellerPubKey,
+		transfer.BuyerPubKey,
 	)
 	require.True(t, valid, "DLEQ proof verification should succeed")
 
