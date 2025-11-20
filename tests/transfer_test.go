@@ -140,17 +140,14 @@ func TestSuccessfulTransfer(t *testing.T) {
 	buyerCiphertextBytes := transfer.BuyerCipher.Marshal()
 	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
 
-	// Compute r value hash
-	rValueHash := crypto.Keccak256Hash(transfer.SharedR.Bytes())
-
-	// Provide proof to the contract (including r value hash commitment)
+	// Provide proof to the contract (r value hash is extracted from proof)
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	// Marshal DLEQ proof
+	// Marshal DLEQ proof (includes rHash in last 32 bytes)
 	proofBytes := transfer.DLEQProof.Marshal()
 
-	proofTx, err := contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash, rValueHash)
+	proofTx, err := contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash)
 	require.NoError(t, err)
 	proofReceipt, err := util.WaitForTransaction(client, proofTx)
 	require.NoError(t, err)
@@ -343,7 +340,6 @@ func TestInvalidProofVerification(t *testing.T) {
 	// Marshal the buyer ciphertext
 	buyerCiphertextBytes := transfer.BuyerCipher.Marshal()
 	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
-	rValueHash := crypto.Keccak256Hash(transfer.SharedR.Bytes())
 
 	// Marshal proof and CORRUPT it
 	validProof := transfer.DLEQProof.Marshal()
@@ -353,7 +349,7 @@ func TestInvalidProofVerification(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	proofTx, err := contract.ProvideProof(minterAuth, transferId, invalidProof, buyerCiphertextHash, rValueHash)
+	proofTx, err := contract.ProvideProof(minterAuth, transferId, invalidProof, buyerCiphertextHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, proofTx)
 	require.NoError(t, err)
@@ -492,14 +488,13 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 
 	buyerCiphertextBytes := transfer.BuyerCipher.Marshal()
 	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
-	rValueHash := crypto.Keccak256Hash(transfer.SharedR.Bytes())
 	proofBytes := transfer.DLEQProof.Marshal()
 
 	// Provide proof to the contract
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	proofTx, err := contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash, rValueHash)
+	proofTx, err := contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, proofTx)
 	require.NoError(t, err)

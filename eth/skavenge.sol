@@ -356,15 +356,13 @@ contract Skavenge is ERC721, ReentrancyGuard {
     /**
      * @dev Provide proof for a clue transfer
      * @param transferId ID of the transfer
-     * @param proof DLEQ proof
+     * @param proof DLEQ proof (includes rHash in last 32 bytes)
      * @param newClueHash Hash of the new encrypted clue for the buyer
-     * @param rValueHash Hash commitment to r value
      */
     function provideProof(
         bytes32 transferId,
         bytes calldata proof,
-        bytes32 newClueHash,
-        bytes32 rValueHash
+        bytes32 newClueHash
     ) external nonReentrant {
         TokenTransfer storage transfer = transfers[transferId];
         require(transfer.buyer != address(0), "Transfer does not exist");
@@ -376,12 +374,17 @@ contract Skavenge is ERC721, ReentrancyGuard {
             "Transfer expired"
         );
 
+        // Extract rHash from the last 32 bytes of the proof
+        // This ensures the seller commits to a specific r value in the DLEQ proof
+        require(proof.length >= 32, "Proof too short");
+        bytes32 extractedRHash = bytes32(proof[proof.length - 32:]);
+
         transfer.proof = proof;
         transfer.newClueHash = newClueHash;
-        transfer.rValueHash = rValueHash;
+        transfer.rValueHash = extractedRHash;
         transfer.proofProvidedAt = block.timestamp;
 
-        emit ProofProvided(transferId, proof, newClueHash, rValueHash);
+        emit ProofProvided(transferId, proof, newClueHash, extractedRHash);
     }
 
     /**

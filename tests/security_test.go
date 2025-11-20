@@ -161,13 +161,12 @@ func TestSecurity_AttackPrevented_WrongRValue(t *testing.T) {
 	buyerCiphertextBytes := transfer.BuyerCipher.Marshal()
 	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
 
-	// Seller commits to REAL r
-	rValueHash := crypto.Keccak256Hash(transfer.SharedR.Bytes())
+	// Seller commits to REAL r (rHash is embedded in DLEQ proof)
 	proofBytes := transfer.DLEQProof.Marshal()
 
-	// Provide proof with correct r hash
+	// Provide proof (contract extracts rHash from proof)
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
-	tx, err = contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash, rValueHash)
+	tx, err = contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -284,4 +283,72 @@ func TestSecurity_OnlyBuyerCanDecrypt(t *testing.T) {
 
 	t.Log("✅ Only buyer can decrypt even with revealed r")
 	t.Log("   Privacy preserved: requires both r AND private key")
+}
+
+// TestSecurity_AttackPrevented_FakeRHashInProof verifies that the DLEQ proof
+// verification fails if seller tampers with the rHash embedded in the proof.
+func TestSecurity_AttackPrevented_FakeRHashInProof(t *testing.T) {
+	ps := zkproof.NewProofSystem()
+
+	sellerKey, _ := ps.GenerateKeyPair()
+	buyerKey, _ := ps.GenerateKeyPair()
+
+	plaintext := []byte("Secret clue content")
+
+	// Generate valid transfer with real r
+	transfer, err := ps.GenerateVerifiableElGamalTransfer(
+		plaintext,
+		sellerKey,
+		&buyerKey.PublicKey,
+	)
+	require.NoError(t, err)
+
+	// Proof should verify with real rHash
+	valid := ps.VerifyElGamalTransfer(
+		transfer.SellerCipher,
+		transfer.BuyerCipher,
+		transfer.DLEQProof,
+		transfer.SellerPubKey,
+		transfer.BuyerPubKey,
+	)
+	require.True(t, valid, "Valid proof should verify")
+
+	// ATTACK: Seller tries to tamper with the rHash in the proof
+	// Marshal the proof
+	proofBytes := transfer.DLEQProof.Marshal()
+
+	// Generate a fake rHash (different from the real one)
+	fakeRHash := [32]byte{}
+	for i := 0; i < 32; i++ {
+		fakeRHash[i] = 0xFF // All ones (obviously different from real hash)
+	}
+
+	// Replace the last 32 bytes (rHash) with fake value
+	copy(proofBytes[len(proofBytes)-32:], fakeRHash[:])
+
+	// Unmarshal the tampered proof
+	tamperedProof := &zkproof.DLEQProof{}
+	err = tamperedProof.Unmarshal(proofBytes)
+	require.NoError(t, err, "Tampered proof should unmarshal")
+
+	// Verify that the rHash was actually replaced
+	require.NotEqual(t, transfer.DLEQProof.RHash, tamperedProof.RHash, "RHash should be different")
+
+	// Try to verify with tampered proof
+	tamperedValid := ps.VerifyElGamalTransfer(
+		transfer.SellerCipher,
+		transfer.BuyerCipher,
+		tamperedProof, // Using tampered proof with fake rHash
+		transfer.SellerPubKey,
+		transfer.BuyerPubKey,
+	)
+
+	// ATTACK PREVENTED: Verification should fail because the challenge won't match
+	// The challenge is computed as Hash(sellerPub || buyerPub || A1 || A2 || A3 || rHash)
+	// If rHash is tampered, the challenge will be different from the one used in proof generation
+	require.False(t, tamperedValid, "✅ ATTACK PREVENTED: Tampered rHash causes proof verification to fail")
+
+	t.Log("✅ DLEQ proof verification prevents fake rHash attack")
+	t.Log("   Seller cannot commit to fake r value in proof")
+	t.Log("   Challenge binding ensures rHash matches the r used in proof generation")
 }

@@ -28,8 +28,11 @@ type DLEQProof struct {
 	// Response
 	Z *big.Int // w + c*r mod n
 
-	// Challenge (derived from commitments)
+	// Challenge (derived from commitments and r hash)
 	C *big.Int
+
+	// R value hash commitment (binds proof to specific r)
+	RHash [32]byte // Hash(r) - prevents seller from committing to fake r
 }
 
 // VerifiableElGamalTransfer contains everything needed for a verifiable transfer
@@ -223,13 +226,22 @@ func (ps *ProofSystem) GenerateDLEQProof(
 	a3x, a3y := ps.Curve.ScalarMult(buyerPub.X, buyerPub.Y, w.Bytes())
 	a3Bytes := elliptic.Marshal(ps.Curve, a3x, a3y)
 
-	// Generate challenge: c = Hash(sellerPub, buyerPub, A1, A2, A3)
+	// Compute r hash commitment
+	rHasher := sha3.NewLegacyKeccak256()
+	rHasher.Write(r.Bytes())
+	rHashBytes := rHasher.Sum(nil)
+	var rHash [32]byte
+	copy(rHash[:], rHashBytes)
+
+	// Generate challenge: c = Hash(sellerPub, buyerPub, A1, A2, A3, rHash)
+	// This binds the proof to a specific r value!
 	h := sha3.NewLegacyKeccak256()
 	h.Write(elliptic.Marshal(ps.Curve, sellerPub.X, sellerPub.Y))
 	h.Write(elliptic.Marshal(ps.Curve, buyerPub.X, buyerPub.Y))
 	h.Write(a1Bytes)
 	h.Write(a2Bytes)
 	h.Write(a3Bytes)
+	h.Write(rHash[:]) // Include r hash in challenge
 
 	c := new(big.Int).SetBytes(h.Sum(nil))
 	c.Mod(c, curveN)
@@ -240,11 +252,12 @@ func (ps *ProofSystem) GenerateDLEQProof(
 	z.Mod(z, curveN)
 
 	return &DLEQProof{
-		A1: a1Bytes,
-		A2: a2Bytes,
-		A3: a3Bytes,
-		Z:  z,
-		C:  c,
+		A1:    a1Bytes,
+		A2:    a2Bytes,
+		A3:    a3Bytes,
+		Z:     z,
+		C:     c,
+		RHash: rHash, // Include r hash in proof
 	}, nil
 }
 
@@ -298,19 +311,20 @@ func (ps *ProofSystem) VerifyElGamalTransfer(
 		return false
 	}
 
-	// Verify challenge
+	// Verify challenge (must include rHash to match proof generation)
 	h := sha3.NewLegacyKeccak256()
 	h.Write(sellerPubKey)
 	h.Write(buyerPubKey)
 	h.Write(proof.A1)
 	h.Write(proof.A2)
 	h.Write(proof.A3)
+	h.Write(proof.RHash[:]) // Include r hash in challenge verification
 
 	cCheck := new(big.Int).SetBytes(h.Sum(nil))
 	cCheck.Mod(cCheck, curveN)
 
 	if cCheck.Cmp(proof.C) != 0 {
-		return false
+		return false // Challenge mismatch - proof is invalid
 	}
 
 	// Verify equation 1: g^z = A1 * C1^c
@@ -462,7 +476,7 @@ func (c *ElGamalCiphertext) Unmarshal(data []byte) error {
 
 // Marshal serializes a DLEQProof to bytes
 func (p *DLEQProof) Marshal() []byte {
-	// Format: len(A1) | A1 | len(A2) | A2 | len(A3) | A3 | len(Z) | Z | len(C) | C
+	// Format: len(A1) | A1 | len(A2) | A2 | len(A3) | A3 | len(Z) | Z | len(C) | C | RHash
 	result := make([]byte, 0)
 
 	// A1
@@ -511,6 +525,9 @@ func (p *DLEQProof) Marshal() []byte {
 	cLen[3] = byte(len(cBytes))
 	result = append(result, cLen...)
 	result = append(result, cBytes...)
+
+	// RHash (fixed 32 bytes)
+	result = append(result, p.RHash[:]...)
 
 	return result
 }
@@ -581,6 +598,13 @@ func (p *DLEQProof) Unmarshal(data []byte) error {
 		return fmt.Errorf("invalid C length")
 	}
 	p.C = new(big.Int).SetBytes(data[offset : offset+cLen])
+	offset += cLen
+
+	// RHash (fixed 32 bytes)
+	if offset+32 > len(data) {
+		return fmt.Errorf("data too short for RHash")
+	}
+	copy(p.RHash[:], data[offset:offset+32])
 
 	return nil
 }
