@@ -24,8 +24,9 @@ contract Skavenge is ERC721, ReentrancyGuard {
         uint256 tokenId; // Token ID being transferred
         uint256 value; // Value sent with the transfer
         uint256 initiatedAt; // Timestamp when transfer was initiated
-        bytes proof; // ZK proof of knowledge of encrypted message
+        bytes proof; // DLEQ proof
         bytes32 newClueHash; // Hash of the new encrypted clue for the buyer
+        bytes32 rValueHash; // Hash commitment to r value
         bool proofVerified; // Whether the proof has been verified
         uint256 proofProvidedAt; // Timestamp when proof was provided
         uint256 verifiedAt; // Timestamp when proof was verified
@@ -36,6 +37,11 @@ contract Skavenge is ERC721, ReentrancyGuard {
 
     // Transfer timeout in seconds
     uint256 public constant TRANSFER_TIMEOUT = 180; // 3 minutes
+
+    // secp256k1 curve parameters (same curve used by Ethereum)
+    // Generator point G
+    uint256 private constant GX = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798;
+    uint256 private constant GY = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8;
 
     // Current token ID counter
     uint256 private _tokenIdCounter;
@@ -88,10 +94,11 @@ contract Skavenge is ERC721, ReentrancyGuard {
     event ProofProvided(
         bytes32 indexed transferId,
         bytes proof,
-        bytes32 newClueHash
+        bytes32 newClueHash,
+        bytes32 rValueHash
     );
     event ProofVerified(bytes32 indexed transferId);
-    event TransferCompleted(bytes32 indexed transferId);
+    event TransferCompleted(bytes32 indexed transferId, uint256 rValue);
     event TransferCancelled(bytes32 indexed transferId);
 
     // Event emitted when authorized minter is updated
@@ -317,6 +324,7 @@ contract Skavenge is ERC721, ReentrancyGuard {
             initiatedAt: block.timestamp,
             proof: new bytes(0),
             newClueHash: bytes32(0),
+            rValueHash: bytes32(0),
             proofVerified: false,
             proofProvidedAt: 0,
             verifiedAt: 0
@@ -340,13 +348,15 @@ contract Skavenge is ERC721, ReentrancyGuard {
     /**
      * @dev Provide proof for a clue transfer
      * @param transferId ID of the transfer
-     * @param proof ZK proof of knowledge of encrypted message
+     * @param proof DLEQ proof
      * @param newClueHash Hash of the new encrypted clue for the buyer
+     * @param rValueHash Hash commitment to r value
      */
     function provideProof(
         bytes32 transferId,
         bytes calldata proof,
-        bytes32 newClueHash
+        bytes32 newClueHash,
+        bytes32 rValueHash
     ) external nonReentrant {
         TokenTransfer storage transfer = transfers[transferId];
         require(transfer.buyer != address(0), "Transfer does not exist");
@@ -360,9 +370,10 @@ contract Skavenge is ERC721, ReentrancyGuard {
 
         transfer.proof = proof;
         transfer.newClueHash = newClueHash;
+        transfer.rValueHash = rValueHash;
         transfer.proofProvidedAt = block.timestamp;
 
-        emit ProofProvided(transferId, proof, newClueHash);
+        emit ProofProvided(transferId, proof, newClueHash, rValueHash);
     }
 
     /**
@@ -387,13 +398,15 @@ contract Skavenge is ERC721, ReentrancyGuard {
     }
 
     /**
-     * @dev Complete a clue transfer with new encrypted contents
+     * @dev Complete a clue transfer with new encrypted contents and r value
      * @param transferId ID of the transfer
      * @param newEncryptedContents New encrypted contents of the clue for the buyer
+     * @param rValue The r value used in ElGamal encryption
      */
     function completeTransfer(
         bytes32 transferId,
-        bytes calldata newEncryptedContents
+        bytes calldata newEncryptedContents,
+        uint256 rValue
     ) external nonReentrant {
         TokenTransfer storage transfer = transfers[transferId];
         require(transfer.buyer != address(0), "Transfer does not exist");
@@ -410,6 +423,18 @@ contract Skavenge is ERC721, ReentrancyGuard {
         require(
             keccak256(newEncryptedContents) == transfer.newClueHash,
             "Content hash mismatch"
+        );
+
+        // Verify r value matches commitment
+        require(
+            keccak256(abi.encodePacked(rValue)) == transfer.rValueHash,
+            "R value hash mismatch"
+        );
+
+        // Verify that g^r == C1 (proves r is the actual r used in the ciphertext)
+        require(
+            _verifyRMatchesC1(rValue, newEncryptedContents),
+            "R value does not match C1 - fraud detected"
         );
 
         // Check if the clue is solved
@@ -438,7 +463,7 @@ contract Skavenge is ERC721, ReentrancyGuard {
         // Clear the transfer
         delete transfers[transferId];
 
-        emit TransferCompleted(transferId);
+        emit TransferCompleted(transferId, rValue);
     }
 
     /**
@@ -553,5 +578,65 @@ contract Skavenge is ERC721, ReentrancyGuard {
             }
             clues[tokenId].salePrice = 0;
         }
+    }
+
+    /**
+     * @dev Verify that g^r == C1 from the ciphertext
+     * @param rValue The revealed r value
+     * @param ciphertext The ElGamal ciphertext containing C1
+     * @return bool True if g^r == C1, false otherwise
+     */
+    function _verifyRMatchesC1(
+        uint256 rValue,
+        bytes calldata ciphertext
+    ) private view returns (bool) {
+        // Extract C1 from the ciphertext
+        // ElGamal ciphertext format: C1 (65 bytes) || C2 (variable) || SharedSecret (65 bytes)
+        // C1 is the first 65 bytes (0x04 prefix + 32 bytes X + 32 bytes Y)
+        require(ciphertext.length >= 65, "Ciphertext too short");
+
+        // Parse C1 as (x, y) coordinates
+        uint256 c1x;
+        uint256 c1y;
+        assembly {
+            // Skip the 0x04 prefix byte
+            c1x := calldataload(add(ciphertext.offset, 1))
+            c1y := calldataload(add(ciphertext.offset, 33))
+        }
+
+        // Compute g^r using the ecmul precompile
+        (uint256 grx, uint256 gry) = _ecMul(GX, GY, rValue);
+
+        // Verify g^r == C1
+        return (grx == c1x && gry == c1y);
+    }
+
+    /**
+     * @dev Elliptic curve scalar multiplication using the ecmul precompile
+     * @param x X coordinate of the point
+     * @param y Y coordinate of the point
+     * @param scalar Scalar to multiply by
+     * @return (uint256, uint256) Resulting point coordinates
+     */
+    function _ecMul(
+        uint256 x,
+        uint256 y,
+        uint256 scalar
+    ) private view returns (uint256, uint256) {
+        uint256[3] memory input;
+        input[0] = x;
+        input[1] = y;
+        input[2] = scalar;
+
+        uint256[2] memory result;
+
+        // Call the ecmul precompile at address 0x07
+        assembly {
+            if iszero(staticcall(gas(), 0x07, input, 0x60, result, 0x40)) {
+                revert(0, 0)
+            }
+        }
+
+        return (result[0], result[1]);
     }
 }
