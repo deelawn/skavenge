@@ -39,11 +39,6 @@ contract Skavenge is ERC721, ReentrancyGuard {
     // Transfer timeout in seconds
     uint256 public constant TRANSFER_TIMEOUT = 180; // 3 minutes
 
-    // secp256k1 curve parameters (same curve used by Ethereum)
-    // Generator point G
-    uint256 private constant GX = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798;
-    uint256 private constant GY = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8;
-
     // Current token ID counter
     uint256 private _tokenIdCounter;
 
@@ -444,11 +439,11 @@ contract Skavenge is ERC721, ReentrancyGuard {
             "R value hash mismatch"
         );
 
-        // Verify that g^r == C1 (proves r is the actual r used in the ciphertext)
-        require(
-            _verifyRMatchesC1(rValue, newEncryptedContents),
-            "R value does not match C1 - fraud detected"
-        );
+        // Note: We don't verify g^r == C1 on-chain because:
+        // 1. The ecmul precompile (0x07) only supports alt_bn128, not secp256k1
+        // 2. The hash commitment already prevents r value tampering
+        // 3. The buyer verified the DLEQ proof off-chain before calling verifyProof()
+        // 4. Implementing secp256k1 multiplication in Solidity is prohibitively expensive
 
         // Check if the clue is solved
         if (clues[transfer.tokenId].isSolved) {
@@ -592,75 +587,5 @@ contract Skavenge is ERC721, ReentrancyGuard {
             }
             clues[tokenId].salePrice = 0;
         }
-    }
-
-    /**
-     * @dev Verify that g^r == C1 from the ciphertext
-     * @param rValue The revealed r value
-     * @param ciphertext The ElGamal ciphertext containing C1
-     * @return bool True if g^r == C1, false otherwise
-     */
-    function _verifyRMatchesC1(
-        uint256 rValue,
-        bytes calldata ciphertext
-    ) private view returns (bool) {
-        // Extract C1 from the ciphertext
-        // ElGamal ciphertext format: len(C1) | C1 | len(C2) | C2 | len(SharedSecret) | SharedSecret
-        // First 4 bytes are the length of C1, then C1 follows
-        require(ciphertext.length >= 8, "Ciphertext too short");
-
-        // Read C1 length (first 4 bytes)
-        uint32 c1Len;
-        assembly {
-            c1Len := shr(224, calldataload(ciphertext.offset))
-        }
-
-        require(c1Len == 65, "Invalid C1 length");
-        require(ciphertext.length >= 4 + c1Len, "Ciphertext too short for C1");
-
-        // Parse C1 as (x, y) coordinates
-        // C1 starts at offset 4, has format: 0x04 prefix + 32 bytes X + 32 bytes Y
-        uint256 c1x;
-        uint256 c1y;
-        assembly {
-            // Skip the length prefix (4 bytes) and the 0x04 prefix byte (1 byte)
-            c1x := calldataload(add(ciphertext.offset, 5))
-            c1y := calldataload(add(ciphertext.offset, 37))
-        }
-
-        // Compute g^r using the ecmul precompile
-        (uint256 grx, uint256 gry) = _ecMul(GX, GY, rValue);
-
-        // Verify g^r == C1
-        return (grx == c1x && gry == c1y);
-    }
-
-    /**
-     * @dev Elliptic curve scalar multiplication using the ecmul precompile
-     * @param x X coordinate of the point
-     * @param y Y coordinate of the point
-     * @param scalar Scalar to multiply by
-     * @return (uint256, uint256) Resulting point coordinates
-     */
-    function _ecMul(
-        uint256 x,
-        uint256 y,
-        uint256 scalar
-    ) private view returns (uint256, uint256) {
-        uint256[3] memory input;
-        input[0] = x;
-        input[1] = y;
-        input[2] = scalar;
-
-        uint256[2] memory result;
-
-        // Call the ecmul precompile at address 0x07
-        assembly {
-            if iszero(staticcall(gas(), 0x07, input, 0x60, result, 0x40)) {
-                revert(0, 0)
-            }
-        }
-
-        return (result[0], result[1]);
     }
 }
