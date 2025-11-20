@@ -11,11 +11,12 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 contract Skavenge is ERC721, ReentrancyGuard {
     // Clue structure
     struct Clue {
-        bytes encryptedContents; // Encrypted content of the clue
+        bytes encryptedContents; // ElGamal encrypted content of the clue
         bytes32 solutionHash; // Hash of the solution
         bool isSolved; // Whether the clue has been solved
         uint256 solveAttempts; // Number of attempts made to solve the clue
         uint256 salePrice; // Price in wei for which the clue is for sale
+        uint256 rValue; // ElGamal encryption r value (needed for decryption)
     }
 
     // TokenTransfer structure
@@ -24,8 +25,9 @@ contract Skavenge is ERC721, ReentrancyGuard {
         uint256 tokenId; // Token ID being transferred
         uint256 value; // Value sent with the transfer
         uint256 initiatedAt; // Timestamp when transfer was initiated
-        bytes proof; // ZK proof of knowledge of encrypted message
+        bytes proof; // DLEQ proof
         bytes32 newClueHash; // Hash of the new encrypted clue for the buyer
+        bytes32 rValueHash; // Hash commitment to r value
         bool proofVerified; // Whether the proof has been verified
         uint256 proofProvidedAt; // Timestamp when proof was provided
         uint256 verifiedAt; // Timestamp when proof was verified
@@ -88,10 +90,11 @@ contract Skavenge is ERC721, ReentrancyGuard {
     event ProofProvided(
         bytes32 indexed transferId,
         bytes proof,
-        bytes32 newClueHash
+        bytes32 newClueHash,
+        bytes32 rValueHash
     );
     event ProofVerified(bytes32 indexed transferId);
-    event TransferCompleted(bytes32 indexed transferId);
+    event TransferCompleted(bytes32 indexed transferId, uint256 rValue);
     event TransferCancelled(bytes32 indexed transferId);
 
     // Event emitted when authorized minter is updated
@@ -118,12 +121,14 @@ contract Skavenge is ERC721, ReentrancyGuard {
 
     /**
      * @dev Mint a new clue
-     * @param encryptedContents Encrypted content of the clue
+     * @param encryptedContents ElGamal encrypted content of the clue
      * @param solutionHash Hash of the solution
+     * @param rValue ElGamal encryption r value
      */
     function mintClue(
         bytes calldata encryptedContents,
-        bytes32 solutionHash
+        bytes32 solutionHash,
+        uint256 rValue
     ) external returns (uint256 tokenId) {
         if (msg.sender != authorizedMinter) {
             revert UnauthorizedMinter();
@@ -135,7 +140,8 @@ contract Skavenge is ERC721, ReentrancyGuard {
             solutionHash: solutionHash,
             isSolved: false,
             solveAttempts: 0,
-            salePrice: 0
+            salePrice: 0,
+            rValue: rValue
         });
 
         _mint(msg.sender, tokenId);
@@ -154,6 +160,15 @@ contract Skavenge is ERC721, ReentrancyGuard {
     ) external view returns (bytes memory) {
         ownerOf(tokenId); // Will revert if token doesn't exist
         return clues[tokenId].encryptedContents;
+    }
+
+    /**
+     * @dev Get the r value for a clue (needed for decryption along with private key)
+     * @param tokenId Token ID of the clue
+     */
+    function getRValue(uint256 tokenId) external view returns (uint256) {
+        require(ownerOf(tokenId) == msg.sender, "Not token owner");
+        return clues[tokenId].rValue;
     }
 
     /**
@@ -317,6 +332,7 @@ contract Skavenge is ERC721, ReentrancyGuard {
             initiatedAt: block.timestamp,
             proof: new bytes(0),
             newClueHash: bytes32(0),
+            rValueHash: bytes32(0),
             proofVerified: false,
             proofProvidedAt: 0,
             verifiedAt: 0
@@ -340,7 +356,7 @@ contract Skavenge is ERC721, ReentrancyGuard {
     /**
      * @dev Provide proof for a clue transfer
      * @param transferId ID of the transfer
-     * @param proof ZK proof of knowledge of encrypted message
+     * @param proof DLEQ proof (includes rHash in last 32 bytes)
      * @param newClueHash Hash of the new encrypted clue for the buyer
      */
     function provideProof(
@@ -358,11 +374,17 @@ contract Skavenge is ERC721, ReentrancyGuard {
             "Transfer expired"
         );
 
+        // Extract rHash from the last 32 bytes of the proof
+        // This ensures the seller commits to a specific r value in the DLEQ proof
+        require(proof.length >= 32, "Proof too short");
+        bytes32 extractedRHash = bytes32(proof[proof.length - 32:]);
+
         transfer.proof = proof;
         transfer.newClueHash = newClueHash;
+        transfer.rValueHash = extractedRHash;
         transfer.proofProvidedAt = block.timestamp;
 
-        emit ProofProvided(transferId, proof, newClueHash);
+        emit ProofProvided(transferId, proof, newClueHash, extractedRHash);
     }
 
     /**
@@ -387,13 +409,15 @@ contract Skavenge is ERC721, ReentrancyGuard {
     }
 
     /**
-     * @dev Complete a clue transfer with new encrypted contents
+     * @dev Complete a clue transfer with new encrypted contents and r value
      * @param transferId ID of the transfer
      * @param newEncryptedContents New encrypted contents of the clue for the buyer
+     * @param rValue The r value used in ElGamal encryption
      */
     function completeTransfer(
         bytes32 transferId,
-        bytes calldata newEncryptedContents
+        bytes calldata newEncryptedContents,
+        uint256 rValue
     ) external nonReentrant {
         TokenTransfer storage transfer = transfers[transferId];
         require(transfer.buyer != address(0), "Transfer does not exist");
@@ -412,13 +436,26 @@ contract Skavenge is ERC721, ReentrancyGuard {
             "Content hash mismatch"
         );
 
+        // Verify r value matches commitment
+        require(
+            keccak256(abi.encodePacked(rValue)) == transfer.rValueHash,
+            "R value hash mismatch"
+        );
+
+        // Note: We don't verify g^r == C1 on-chain because:
+        // 1. The ecmul precompile (0x07) only supports alt_bn128, not secp256k1
+        // 2. The hash commitment already prevents r value tampering
+        // 3. The buyer verified the DLEQ proof off-chain before calling verifyProof()
+        // 4. Implementing secp256k1 multiplication in Solidity is prohibitively expensive
+
         // Check if the clue is solved
         if (clues[transfer.tokenId].isSolved) {
             revert SolvedClueTransferNotAllowed();
         }
 
-        // Update the clue contents
+        // Update the clue contents and r value
         clues[transfer.tokenId].encryptedContents = newEncryptedContents;
+        clues[transfer.tokenId].rValue = rValue;
         clues[transfer.tokenId].solveAttempts = 0;
 
         // Transfer ownership
@@ -438,7 +475,7 @@ contract Skavenge is ERC721, ReentrancyGuard {
         // Clear the transfer
         delete transfers[transferId];
 
-        emit TransferCompleted(transferId);
+        emit TransferCompleted(transferId, rValue);
     }
 
     /**

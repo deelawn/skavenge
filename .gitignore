@@ -1,3 +1,7 @@
 eth/node_modules
 eth/build
 node_modules
+
+# Go build artifacts
+*.test
+*.out

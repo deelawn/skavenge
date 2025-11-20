@@ -2,6 +2,7 @@
 package tests
 
 import (
+	"crypto/rand"
 	"math/big"
 	"testing"
 	"time"
@@ -10,12 +11,9 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
 
-	"github.com/deelawn/skavenge/eth/bindings"
 	"github.com/deelawn/skavenge/tests/util"
 	"github.com/deelawn/skavenge/zkproof"
 )
-
-var buyer string = "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
 
 // TestSuccessfulSolve tests the successful solving of a clue.
 func TestSuccessfulSolve(t *testing.T) {
@@ -55,19 +53,26 @@ func TestSuccessfulSolve(t *testing.T) {
 	ps := zkproof.NewProofSystem()
 
 	// Mint a clue with a known solution
-	clueContent := "Find the hidden treasure in the forest"
+	clueContent := []byte("Find the hidden treasure in the forest")
 	solution := "Behind the waterfall"
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
-	// Encrypt the clue content
-	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err, "Failed to generate r value")
+
+	// Encrypt the clue content using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
 	require.NoError(t, err, "Failed to encrypt clue content")
+
+	// Marshal to bytes for on-chain storage
+	encryptedClueContent := encryptedCipher.Marshal()
 
 	// Mint the clue using deployer as authorized minter
 	deployerAuth, err = util.NewTransactOpts(client, deployer)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -181,19 +186,26 @@ func TestFailedSolveAttempt(t *testing.T) {
 	ps := zkproof.NewProofSystem()
 
 	// Mint a clue with a known solution
-	clueContent := "Find the hidden treasure in the forest"
+	clueContent := []byte("Find the hidden treasure in the forest")
 	solution := "Behind the waterfall"
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
-	// Encrypt the clue content
-	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err, "Failed to generate r value")
+
+	// Encrypt the clue content using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
 	require.NoError(t, err, "Failed to encrypt clue content")
+
+	// Marshal to bytes for on-chain storage
+	encryptedClueContent := encryptedCipher.Marshal()
 
 	// Mint the clue using deployer as authorized minter
 	deployerAuth, err = util.NewTransactOpts(client, deployer)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -295,19 +307,26 @@ func TestSetSalePriceOnSolvedClue(t *testing.T) {
 	ps := zkproof.NewProofSystem()
 
 	// Mint a clue with a known solution
-	clueContent := "Find the hidden treasure in the forest"
+	clueContent := []byte("Find the hidden treasure in the forest")
 	solution := "Behind the waterfall"
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
-	// Encrypt the clue content
-	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err, "Failed to generate r value")
+
+	// Encrypt the clue content using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
 	require.NoError(t, err, "Failed to encrypt clue content")
+
+	// Marshal to bytes for on-chain storage
+	encryptedClueContent := encryptedCipher.Marshal()
 
 	// Mint the clue using deployer as authorized minter
 	deployerAuth, err = util.NewTransactOpts(client, deployer)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -383,16 +402,23 @@ func TestRemoveSalePrice(t *testing.T) {
 	ps := zkproof.NewProofSystem()
 
 	// Mint a clue
-	clueContent := "Find the hidden treasure in the forest"
+	clueContent := []byte("Find the hidden treasure in the forest")
 	solution := "Behind the waterfall"
 	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
-	// Encrypt the clue content
-	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err, "Failed to generate r value")
+
+	// Encrypt the clue content using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
 	require.NoError(t, err, "Failed to encrypt clue content")
 
+	// Marshal to bytes for on-chain storage
+	encryptedClueContent := encryptedCipher.Marshal()
+
 	// Mint the clue
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
 	require.NoError(t, err)
 	receipt, err := util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -444,14 +470,4 @@ func TestRemoveSalePrice(t *testing.T) {
 	isForSale, err = contract.CluesForSale(nil, tokenId)
 	require.NoError(t, err)
 	require.False(t, isForSale, "Clue should no longer be marked for sale")
-}
-
-func getLastMintedTokenID(contract *bindings.Skavenge) (*big.Int, error) {
-	tokenId, err := contract.GetCurrentTokenId(nil)
-	if err != nil {
-		return nil, err
-	}
-
-	tokenId.Sub(tokenId, big.NewInt(1))
-	return tokenId, nil
 }

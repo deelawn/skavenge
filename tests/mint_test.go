@@ -2,21 +2,18 @@
 package tests
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
 
 	"github.com/deelawn/skavenge/tests/util"
 	"github.com/deelawn/skavenge/zkproof"
-)
-
-var (
-	deployer = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-	minter   = "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 )
 
 // TestSuccessfulMint tests the successful minting of a new clue.
@@ -55,13 +52,20 @@ func TestSuccessfulMint(t *testing.T) {
 	ps := zkproof.NewProofSystem()
 
 	// Sample data for the clue
-	clueContent := "Find the hidden treasure in the old oak tree"
+	clueContent := []byte("Find the hidden treasure in the old oak tree")
 	solution := "Oak tree"
 	solutionHash := sha256.Sum256([]byte(solution))
 
-	// Encrypt the clue content using the ZK proof system
-	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err, "Failed to generate r value")
+
+	// Encrypt the clue content using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
 	require.NoError(t, err, "Failed to encrypt clue content")
+
+	// Marshal to bytes for on-chain storage
+	encryptedClueContent := encryptedCipher.Marshal()
 	require.NotEmpty(t, encryptedClueContent, "Encrypted clue content should not be empty")
 
 	// Since deployer is the authorized minter in our test setup, we need to use deployer account to mint
@@ -69,7 +73,7 @@ func TestSuccessfulMint(t *testing.T) {
 	require.NoError(t, err)
 
 	// Mint a new clue with the encrypted content, but to the minter address
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -102,10 +106,23 @@ func TestSuccessfulMint(t *testing.T) {
 	require.False(t, clueData.IsSolved, "Clue should not be marked as solved")
 	require.Equal(t, uint64(0), clueData.SolveAttempts.Uint64(), "Solve attempts should be 0")
 
+	// Verify the owner can retrieve the r value from the contract
+	minterAuth, err = util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+	storedRValue, err := contract.GetRValue(&bind.CallOpts{From: minterAuth.From}, tokenId)
+	require.NoError(t, err, "Owner should be able to get r value")
+	require.Equal(t, mintR, storedRValue, "Stored r value should match the one used during minting")
+
 	// Decrypt the clue to verify it matches the original content
-	decryptedClueBytes, err := ps.DecryptMessage(encryptedClueContent, minterPrivKey)
+	// Unmarshal the ElGamal ciphertext
+	cipher := &zkproof.ElGamalCiphertext{}
+	err = cipher.Unmarshal(encryptedClueContent)
+	require.NoError(t, err, "Failed to unmarshal ciphertext")
+
+	// Decrypt using ElGamal with the r value retrieved from the contract
+	decryptedClueBytes, err := ps.DecryptElGamal(cipher, storedRValue, minterPrivKey)
 	require.NoError(t, err, "Failed to decrypt clue content")
-	require.Equal(t, clueContent, string(decryptedClueBytes), "Decrypted content does not match original")
+	require.Equal(t, clueContent, decryptedClueBytes, "Decrypted content does not match original")
 }
 
 // TestMintWithEmptySolutionHash tests minting a clue with empty solution hash.
@@ -143,19 +160,26 @@ func TestMintWithEmptySolutionHash(t *testing.T) {
 	ps := zkproof.NewProofSystem()
 
 	// Sample data for the clue
-	clueContent := "Find the hidden treasure in the old oak tree"
+	clueContent := []byte("Find the hidden treasure in the old oak tree")
 	var emptySolutionHash [32]byte
 
-	// Encrypt the clue content using the ZK proof system
-	encryptedClueContent, err := ps.EncryptMessage([]byte(clueContent), &minterPrivKey.PublicKey)
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err, "Failed to generate r value")
+
+	// Encrypt the clue content using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
 	require.NoError(t, err, "Failed to encrypt clue content")
+
+	// Marshal to bytes for on-chain storage
+	encryptedClueContent := encryptedCipher.Marshal()
 
 	// Get deployer auth for minting
 	deployerAuth, err = util.NewTransactOpts(client, deployer)
 	require.NoError(t, err)
 
 	// Try to mint with empty solution hash
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, emptySolutionHash)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, emptySolutionHash, mintR)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -218,36 +242,48 @@ func TestMintMultipleClues(t *testing.T) {
 	expTokenId := startTokenId.Add(startTokenId, big.NewInt(2))
 
 	// Mint first clue
-	firstClueContent := "First clue content"
+	firstClueContent := []byte("First clue content")
 	firstSolution := "First solution"
 	firstSolutionHash := sha256.Sum256([]byte(firstSolution))
 
-	// Encrypt the first clue content
-	// Pass the ECDSA public key directly to the API client
-	firstEncryptedClueContent, err := ps.EncryptMessage([]byte(firstClueContent), &minterPrivKey.PublicKey)
+	// Generate random r value for first ElGamal encryption
+	firstMintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err, "Failed to generate r value")
+
+	// Encrypt the first clue content using ElGamal
+	firstEncryptedCipher, err := ps.EncryptElGamal(firstClueContent, &minterPrivKey.PublicKey, firstMintR)
 	require.NoError(t, err, "Failed to encrypt first clue content")
 
-	tx1, err := contract.MintClue(minterAuth, firstEncryptedClueContent, firstSolutionHash)
+	// Marshal to bytes for on-chain storage
+	firstEncryptedClueContent := firstEncryptedCipher.Marshal()
+
+	tx1, err := contract.MintClue(minterAuth, firstEncryptedClueContent, firstSolutionHash, firstMintR)
 	require.NoError(t, err)
 	receipt1, err := util.WaitForTransaction(client, tx1)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), receipt1.Status, "First transaction should succeed")
 
 	// Mint second clue
-	secondClueContent := "Second clue content"
+	secondClueContent := []byte("Second clue content")
 	secondSolution := "Second solution"
 	secondSolutionHash := sha256.Sum256([]byte(secondSolution))
 
-	// Encrypt the second clue content
-	// Pass the ECDSA public key directly to the API client
-	secondEncryptedClueContent, err := ps.EncryptMessage([]byte(secondClueContent), &minterPrivKey.PublicKey)
+	// Generate random r value for second ElGamal encryption
+	secondMintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err, "Failed to generate r value")
+
+	// Encrypt the second clue content using ElGamal
+	secondEncryptedCipher, err := ps.EncryptElGamal(secondClueContent, &minterPrivKey.PublicKey, secondMintR)
 	require.NoError(t, err, "Failed to encrypt second clue content")
+
+	// Marshal to bytes for on-chain storage
+	secondEncryptedClueContent := secondEncryptedCipher.Marshal()
 
 	// Need to use deployer for second mint as well
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx2, err := contract.MintClue(minterAuth, secondEncryptedClueContent, secondSolutionHash)
+	tx2, err := contract.MintClue(minterAuth, secondEncryptedClueContent, secondSolutionHash, secondMintR)
 	require.NoError(t, err)
 	receipt2, err := util.WaitForTransaction(client, tx2)
 	require.NoError(t, err)
@@ -271,13 +307,13 @@ func TestMintMultipleClues(t *testing.T) {
 	require.Equal(t, secondSolutionHash, secondClueData.SolutionHash, "Second solution hash does not match")
 
 	// Verify we can decrypt both clues
-	decryptedFirstClueBytes, err := ps.DecryptMessage(firstEncryptedClueContent, minterPrivKey)
+	decryptedFirstClueBytes, err := ps.DecryptElGamal(firstEncryptedCipher, firstMintR, minterPrivKey)
 	require.NoError(t, err, "Failed to decrypt first clue")
-	require.Equal(t, firstClueContent, string(decryptedFirstClueBytes), "Decrypted first clue doesn't match original")
+	require.Equal(t, firstClueContent, decryptedFirstClueBytes, "Decrypted first clue doesn't match original")
 
-	decryptedSecondClueBytes, err := ps.DecryptMessage(secondEncryptedClueContent, minterPrivKey)
+	decryptedSecondClueBytes, err := ps.DecryptElGamal(secondEncryptedCipher, secondMintR, minterPrivKey)
 	require.NoError(t, err, "Failed to decrypt second clue")
-	require.Equal(t, secondClueContent, string(decryptedSecondClueBytes), "Decrypted second clue doesn't match original")
+	require.Equal(t, secondClueContent, decryptedSecondClueBytes, "Decrypted second clue doesn't match original")
 }
 
 // TestUpdateAuthorizedMinter tests the authorized minter update functionality
@@ -341,14 +377,14 @@ func TestUpdateAuthorizedMinter(t *testing.T) {
 	require.NoError(t, err)
 	deployerAuth.GasLimit = 300000 // Higher gas limit for failing transaction
 
-	_, err = contract.MintClue(deployerAuth, []byte{1, 2, 3}, [32]byte{})
+	_, err = contract.MintClue(deployerAuth, []byte{1, 2, 3}, [32]byte{}, big.NewInt(1))
 	require.Error(t, err, "Non-authorized account should not be able to mint")
 
 	// Mint a clue with the new authorized minter
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	mintTx, err := contract.MintClue(minterAuth, []byte{1, 2, 3}, [32]byte{})
+	mintTx, err := contract.MintClue(minterAuth, []byte{1, 2, 3}, [32]byte{}, big.NewInt(1))
 	require.NoError(t, err)
 
 	_, err = util.WaitForTransaction(client, mintTx)
