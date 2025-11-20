@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
@@ -105,10 +106,23 @@ func TestSuccessfulMint(t *testing.T) {
 	require.False(t, clueData.IsSolved, "Clue should not be marked as solved")
 	require.Equal(t, uint64(0), clueData.SolveAttempts.Uint64(), "Solve attempts should be 0")
 
+	// Verify the owner can retrieve the r value from the contract
+	minterAuth, err = util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+	storedRValue, err := contract.GetRValue(&bind.CallOpts{From: minterAuth.From}, tokenId)
+	require.NoError(t, err, "Owner should be able to get r value")
+	require.Equal(t, mintR, storedRValue, "Stored r value should match the one used during minting")
+
 	// Decrypt the clue to verify it matches the original content
-	decryptedClueBytes, err := ps.DecryptMessage(encryptedClueContent, minterPrivKey)
+	// Unmarshal the ElGamal ciphertext
+	cipher := &zkproof.ElGamalCiphertext{}
+	err = cipher.Unmarshal(encryptedClueContent)
+	require.NoError(t, err, "Failed to unmarshal ciphertext")
+
+	// Decrypt using ElGamal with the r value retrieved from the contract
+	decryptedClueBytes, err := ps.DecryptElGamal(cipher, storedRValue, minterPrivKey)
 	require.NoError(t, err, "Failed to decrypt clue content")
-	require.Equal(t, clueContent, string(decryptedClueBytes), "Decrypted content does not match original")
+	require.Equal(t, clueContent, decryptedClueBytes, "Decrypted content does not match original")
 }
 
 // TestMintWithEmptySolutionHash tests minting a clue with empty solution hash.
