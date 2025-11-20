@@ -221,10 +221,22 @@ func TestSuccessfulTransfer(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, buyerCiphertextBytes, newClueContents, "Clue content should be updated for buyer")
 
-	// Buyer can now decrypt the clue using the revealed r value
-	// In a real scenario, buyer would extract r from the TransferCompleted event
-	decryptedClueBytes, err := ps.DecryptElGamal(buyerCipher, transfer.SharedR, buyerPrivKey)
-	require.NoError(t, err, "Buyer should be able to decrypt the clue")
+	// Verify the r value is updated on-chain
+	buyerAuth, err = util.NewTransactOpts(client, buyer)
+	require.NoError(t, err)
+	storedRValue, err := contract.GetRValue(&bind.CallOpts{From: buyerAuth.From}, tokenId)
+	require.NoError(t, err, "Buyer should be able to retrieve r value as new owner")
+	require.Equal(t, transfer.SharedR, storedRValue, "Stored r value should match the revealed r")
+
+	// Buyer can now decrypt the clue using the r value from the contract
+	// Unmarshal the ciphertext from contract storage
+	retrievedCipher := &zkproof.ElGamalCiphertext{}
+	err = retrievedCipher.Unmarshal(newClueContents)
+	require.NoError(t, err, "Should be able to unmarshal stored ciphertext")
+
+	// Decrypt using stored r value and buyer's private key
+	decryptedClueBytes, err := ps.DecryptElGamal(retrievedCipher, storedRValue, buyerPrivKey)
+	require.NoError(t, err, "Buyer should be able to decrypt using on-chain r value")
 	require.Equal(t, string(clueContent), string(decryptedClueBytes), "Decrypted content should match original")
 }
 

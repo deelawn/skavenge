@@ -189,12 +189,11 @@ func TestSecurity_AttackPrevented_WrongRValue(t *testing.T) {
 	_, err = contract.CompleteTransfer(minterAuth, transferId, buyerCiphertextBytes, wrongR)
 
 	// ATTACK PREVENTED: Transaction should revert because:
-	// 1. Hash(wrongR) != rValueHash, OR
-	// 2. g^wrongR != C1
+	// Hash(wrongR) != rValueHash (committed during provideProof)
 	require.Error(t, err, "✅ ATTACK PREVENTED: Wrong r value rejected by contract")
 
 	t.Log("✅ Contract prevents seller from revealing wrong r value")
-	t.Log("   Two-layer verification: hash commitment + cryptographic proof")
+	t.Log("   Hash commitment ensures r cannot be changed after buyer verification")
 }
 
 // TestSecurity_BuyerCannotDecryptEarly verifies that buyer cannot decrypt
