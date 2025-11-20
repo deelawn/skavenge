@@ -14,11 +14,6 @@ import (
 	"github.com/deelawn/skavenge/zkproof"
 )
 
-var (
-	deployer = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-	minter   = "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
-)
-
 // TestSuccessfulMint tests the successful minting of a new clue.
 func TestSuccessfulMint(t *testing.T) {
 	// Connect to Hardhat network

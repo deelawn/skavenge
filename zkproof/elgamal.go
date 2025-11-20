@@ -378,3 +378,209 @@ func computeCommitment(plaintext []byte, salt []byte) [32]byte {
 	copy(commitment[:], hash)
 	return commitment
 }
+
+// Marshal serializes an ElGamalCiphertext to bytes
+func (c *ElGamalCiphertext) Marshal() []byte {
+	// Format: len(C1) | C1 | len(C2) | C2 | len(SharedSecret) | SharedSecret
+	result := make([]byte, 0)
+
+	// C1
+	c1Len := make([]byte, 4)
+	c1Len[0] = byte(len(c.C1) >> 24)
+	c1Len[1] = byte(len(c.C1) >> 16)
+	c1Len[2] = byte(len(c.C1) >> 8)
+	c1Len[3] = byte(len(c.C1))
+	result = append(result, c1Len...)
+	result = append(result, c.C1...)
+
+	// C2
+	c2Len := make([]byte, 4)
+	c2Len[0] = byte(len(c.C2) >> 24)
+	c2Len[1] = byte(len(c.C2) >> 16)
+	c2Len[2] = byte(len(c.C2) >> 8)
+	c2Len[3] = byte(len(c.C2))
+	result = append(result, c2Len...)
+	result = append(result, c.C2...)
+
+	// SharedSecret
+	ssLen := make([]byte, 4)
+	ssLen[0] = byte(len(c.SharedSecret) >> 24)
+	ssLen[1] = byte(len(c.SharedSecret) >> 16)
+	ssLen[2] = byte(len(c.SharedSecret) >> 8)
+	ssLen[3] = byte(len(c.SharedSecret))
+	result = append(result, ssLen...)
+	result = append(result, c.SharedSecret...)
+
+	return result
+}
+
+// Unmarshal deserializes bytes into an ElGamalCiphertext
+func (c *ElGamalCiphertext) Unmarshal(data []byte) error {
+	if len(data) < 12 {
+		return fmt.Errorf("data too short")
+	}
+
+	offset := 0
+
+	// C1
+	c1Len := int(data[offset])<<24 | int(data[offset+1])<<16 | int(data[offset+2])<<8 | int(data[offset+3])
+	offset += 4
+	if offset+c1Len > len(data) {
+		return fmt.Errorf("invalid C1 length")
+	}
+	c.C1 = make([]byte, c1Len)
+	copy(c.C1, data[offset:offset+c1Len])
+	offset += c1Len
+
+	// C2
+	if offset+4 > len(data) {
+		return fmt.Errorf("data too short for C2 length")
+	}
+	c2Len := int(data[offset])<<24 | int(data[offset+1])<<16 | int(data[offset+2])<<8 | int(data[offset+3])
+	offset += 4
+	if offset+c2Len > len(data) {
+		return fmt.Errorf("invalid C2 length")
+	}
+	c.C2 = make([]byte, c2Len)
+	copy(c.C2, data[offset:offset+c2Len])
+	offset += c2Len
+
+	// SharedSecret
+	if offset+4 > len(data) {
+		return fmt.Errorf("data too short for SharedSecret length")
+	}
+	ssLen := int(data[offset])<<24 | int(data[offset+1])<<16 | int(data[offset+2])<<8 | int(data[offset+3])
+	offset += 4
+	if offset+ssLen > len(data) {
+		return fmt.Errorf("invalid SharedSecret length")
+	}
+	c.SharedSecret = make([]byte, ssLen)
+	copy(c.SharedSecret, data[offset:offset+ssLen])
+
+	return nil
+}
+
+// Marshal serializes a DLEQProof to bytes
+func (p *DLEQProof) Marshal() []byte {
+	// Format: len(A1) | A1 | len(A2) | A2 | len(A3) | A3 | len(Z) | Z | len(C) | C
+	result := make([]byte, 0)
+
+	// A1
+	a1Len := make([]byte, 4)
+	a1Len[0] = byte(len(p.A1) >> 24)
+	a1Len[1] = byte(len(p.A1) >> 16)
+	a1Len[2] = byte(len(p.A1) >> 8)
+	a1Len[3] = byte(len(p.A1))
+	result = append(result, a1Len...)
+	result = append(result, p.A1...)
+
+	// A2
+	a2Len := make([]byte, 4)
+	a2Len[0] = byte(len(p.A2) >> 24)
+	a2Len[1] = byte(len(p.A2) >> 16)
+	a2Len[2] = byte(len(p.A2) >> 8)
+	a2Len[3] = byte(len(p.A2))
+	result = append(result, a2Len...)
+	result = append(result, p.A2...)
+
+	// A3
+	a3Len := make([]byte, 4)
+	a3Len[0] = byte(len(p.A3) >> 24)
+	a3Len[1] = byte(len(p.A3) >> 16)
+	a3Len[2] = byte(len(p.A3) >> 8)
+	a3Len[3] = byte(len(p.A3))
+	result = append(result, a3Len...)
+	result = append(result, p.A3...)
+
+	// Z
+	zBytes := p.Z.Bytes()
+	zLen := make([]byte, 4)
+	zLen[0] = byte(len(zBytes) >> 24)
+	zLen[1] = byte(len(zBytes) >> 16)
+	zLen[2] = byte(len(zBytes) >> 8)
+	zLen[3] = byte(len(zBytes))
+	result = append(result, zLen...)
+	result = append(result, zBytes...)
+
+	// C
+	cBytes := p.C.Bytes()
+	cLen := make([]byte, 4)
+	cLen[0] = byte(len(cBytes) >> 24)
+	cLen[1] = byte(len(cBytes) >> 16)
+	cLen[2] = byte(len(cBytes) >> 8)
+	cLen[3] = byte(len(cBytes))
+	result = append(result, cLen...)
+	result = append(result, cBytes...)
+
+	return result
+}
+
+// Unmarshal deserializes bytes into a DLEQProof
+func (p *DLEQProof) Unmarshal(data []byte) error {
+	if len(data) < 20 {
+		return fmt.Errorf("data too short")
+	}
+
+	offset := 0
+
+	// A1
+	a1Len := int(data[offset])<<24 | int(data[offset+1])<<16 | int(data[offset+2])<<8 | int(data[offset+3])
+	offset += 4
+	if offset+a1Len > len(data) {
+		return fmt.Errorf("invalid A1 length")
+	}
+	p.A1 = make([]byte, a1Len)
+	copy(p.A1, data[offset:offset+a1Len])
+	offset += a1Len
+
+	// A2
+	if offset+4 > len(data) {
+		return fmt.Errorf("data too short for A2 length")
+	}
+	a2Len := int(data[offset])<<24 | int(data[offset+1])<<16 | int(data[offset+2])<<8 | int(data[offset+3])
+	offset += 4
+	if offset+a2Len > len(data) {
+		return fmt.Errorf("invalid A2 length")
+	}
+	p.A2 = make([]byte, a2Len)
+	copy(p.A2, data[offset:offset+a2Len])
+	offset += a2Len
+
+	// A3
+	if offset+4 > len(data) {
+		return fmt.Errorf("data too short for A3 length")
+	}
+	a3Len := int(data[offset])<<24 | int(data[offset+1])<<16 | int(data[offset+2])<<8 | int(data[offset+3])
+	offset += 4
+	if offset+a3Len > len(data) {
+		return fmt.Errorf("invalid A3 length")
+	}
+	p.A3 = make([]byte, a3Len)
+	copy(p.A3, data[offset:offset+a3Len])
+	offset += a3Len
+
+	// Z
+	if offset+4 > len(data) {
+		return fmt.Errorf("data too short for Z length")
+	}
+	zLen := int(data[offset])<<24 | int(data[offset+1])<<16 | int(data[offset+2])<<8 | int(data[offset+3])
+	offset += 4
+	if offset+zLen > len(data) {
+		return fmt.Errorf("invalid Z length")
+	}
+	p.Z = new(big.Int).SetBytes(data[offset : offset+zLen])
+	offset += zLen
+
+	// C
+	if offset+4 > len(data) {
+		return fmt.Errorf("data too short for C length")
+	}
+	cLen := int(data[offset])<<24 | int(data[offset+1])<<16 | int(data[offset+2])<<8 | int(data[offset+3])
+	offset += 4
+	if offset+cLen > len(data) {
+		return fmt.Errorf("invalid C length")
+	}
+	p.C = new(big.Int).SetBytes(data[offset : offset+cLen])
+
+	return nil
+}

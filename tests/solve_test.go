@@ -10,12 +10,9 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
 
-	"github.com/deelawn/skavenge/eth/bindings"
 	"github.com/deelawn/skavenge/tests/util"
 	"github.com/deelawn/skavenge/zkproof"
 )
-
-var buyer string = "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
 
 // TestSuccessfulSolve tests the successful solving of a clue.
 func TestSuccessfulSolve(t *testing.T) {
@@ -444,14 +441,4 @@ func TestRemoveSalePrice(t *testing.T) {
 	isForSale, err = contract.CluesForSale(nil, tokenId)
 	require.NoError(t, err)
 	require.False(t, isForSale, "Clue should no longer be marked for sale")
-}
-
-func getLastMintedTokenID(contract *bindings.Skavenge) (*big.Int, error) {
-	tokenId, err := contract.GetCurrentTokenId(nil)
-	if err != nil {
-		return nil, err
-	}
-
-	tokenId.Sub(tokenId, big.NewInt(1))
-	return tokenId, nil
 }
