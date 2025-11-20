@@ -192,6 +192,65 @@ func TestDecryptionRequiresCorrectR(t *testing.T) {
 	t.Log("✅ SECURITY VERIFIED: Decryption requires correct r value")
 }
 
+// TestDecryptionRequiresPrivateKey verifies that even with r, you need the private key
+func TestDecryptionRequiresPrivateKey(t *testing.T) {
+	ps := NewProofSystem()
+
+	buyerKey, _ := ps.GenerateKeyPair()
+	attackerKey, _ := ps.GenerateKeyPair() // Different private key
+	plaintext := []byte("Secret message only buyer should decrypt")
+
+	// Generate transfer for buyer
+	transfer, err := ps.GenerateVerifiableElGamalTransfer(
+		plaintext,
+		buyerKey, // Seller is same as buyer for this test
+		&buyerKey.PublicKey,
+	)
+	if err != nil {
+		t.Fatalf("Failed to generate transfer: %v", err)
+	}
+
+	// Attacker has access to:
+	// 1. The buyer's ciphertext (public)
+	// 2. The revealed r value (revealed on-chain)
+	// 3. The buyer's public key (public)
+	// But attacker does NOT have buyer's private key
+
+	// Try to decrypt with correct r but WRONG private key
+	attackerDecrypted, err := ps.DecryptElGamal(
+		transfer.BuyerCipher,
+		transfer.SharedR, // Correct r (revealed on-chain)
+		attackerKey,      // Wrong private key!
+	)
+
+	if err == nil {
+		// Should NOT match original plaintext
+		if bytes.Equal(plaintext, attackerDecrypted) {
+			t.Fatal("❌ PRIVACY FAILURE: Attacker decrypted with wrong private key!")
+		}
+		t.Logf("✅ Wrong private key produced garbage: %x (expected)", attackerDecrypted[:min(16, len(attackerDecrypted))])
+	} else {
+		t.Logf("✅ Decryption with wrong private key failed: %v", err)
+	}
+
+	// Verify buyer CAN decrypt with correct r and correct private key
+	buyerDecrypted, err := ps.DecryptElGamal(
+		transfer.BuyerCipher,
+		transfer.SharedR,
+		buyerKey, // Correct private key
+	)
+	if err != nil {
+		t.Fatalf("Buyer should be able to decrypt: %v", err)
+	}
+
+	if !bytes.Equal(plaintext, buyerDecrypted) {
+		t.Fatal("❌ Buyer with correct private key should decrypt successfully")
+	}
+
+	t.Log("✅ Buyer with correct private key decrypted successfully")
+	t.Log("✅ PRIVACY VERIFIED: Decryption requires buyer's private key")
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
