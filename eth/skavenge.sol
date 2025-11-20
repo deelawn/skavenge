@@ -57,6 +57,9 @@ contract Skavenge is ERC721, ReentrancyGuard {
     // Array to store token IDs that are for sale (for pagination)
     uint256[] private _cluesForSaleList;
 
+    // Mapping to track tokens with active transfers (prevents concurrent purchases)
+    mapping(uint256 => bool) public transferInProgress;
+
     // Error for attempting to transfer a solved clue
     error SolvedClueTransferNotAllowed();
 
@@ -74,6 +77,9 @@ contract Skavenge is ERC721, ReentrancyGuard {
 
     // Error for unauthorized minter update
     error UnauthorizedMinterUpdate();
+
+    // Error for attempting to purchase a clue with an active transfer
+    error TransferAlreadyInProgress();
 
     // Events
     event ClueMinted(uint256 indexed tokenId, address minter);
@@ -317,12 +323,21 @@ contract Skavenge is ERC721, ReentrancyGuard {
             revert SolvedClueTransferNotAllowed();
         }
 
-        // Check if transfer already initiated
+        // Check if token already has an active transfer
+        // Prevents multiple buyers from initiating concurrent purchases for same token
+        if (transferInProgress[tokenId]) {
+            revert TransferAlreadyInProgress();
+        }
+
+        // Check if transfer already initiated by this buyer
         bytes32 transferId = generateTransferId(msg.sender, tokenId);
         require(
             transfers[transferId].buyer == address(0),
             "Transfer already initiated"
         );
+
+        // Mark token as having an active transfer
+        transferInProgress[tokenId] = true;
 
         // Create transfer record
         transfers[transferId] = TokenTransfer({
@@ -472,6 +487,9 @@ contract Skavenge is ERC721, ReentrancyGuard {
             emit SalePriceRemoved(transfer.tokenId);
         }
 
+        // Clear the transfer in progress flag
+        transferInProgress[transfer.tokenId] = false;
+
         // Clear the transfer
         delete transfers[transferId];
 
@@ -536,6 +554,9 @@ contract Skavenge is ERC721, ReentrancyGuard {
             );
             require(sent, "Failed to send Ether");
         }
+
+        // Clear the transfer in progress flag
+        transferInProgress[transfer.tokenId] = false;
 
         emit TransferCancelled(transferId);
 

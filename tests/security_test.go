@@ -668,3 +668,217 @@ func TestSecurity_FrontrunningAttackPrevented(t *testing.T) {
 	t.Log("  ✅ Seller receives payment")
 	t.Log("  ✅ Buyer receives NFT + decryption ability")
 }
+
+// TestSecurity_ConcurrentPurchasePrevention verifies that multiple buyers cannot
+// initiate concurrent purchases for the same token.
+func TestSecurity_ConcurrentPurchasePrevention(t *testing.T) {
+	// These test accounts are from Hardhat's default accounts
+	const (
+		testDeployer = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+		testMinter   = "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+		testBuyer1   = "5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
+		testBuyer2   = "7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"
+	)
+
+	// Connect to Hardhat network
+	client, err := ethclient.Dial(util.GetHardhatURL())
+	require.NoError(t, err)
+
+	// Setup deployer account
+	deployerAuth, err := util.NewTransactOpts(client, testDeployer)
+	require.NoError(t, err)
+
+	// Deploy contract
+	contract, _, err := util.DeployContract(client, deployerAuth)
+	require.NoError(t, err)
+
+	// Setup minter account and keys
+	minterPrivKey, err := crypto.HexToECDSA(testMinter)
+	require.NoError(t, err)
+	minterAuth, err := util.NewTransactOpts(client, testMinter)
+	require.NoError(t, err)
+	minterAddr := minterAuth.From
+
+	// Update authorized minter
+	deployerAuth, err = util.NewTransactOpts(client, testDeployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Setup buyer 1
+	buyer1PrivKey, err := crypto.HexToECDSA(testBuyer1)
+	require.NoError(t, err)
+	buyer1Auth, err := util.NewTransactOpts(client, testBuyer1)
+	require.NoError(t, err)
+
+	// Setup buyer 2
+	buyer2PrivKey, err := crypto.HexToECDSA(testBuyer2)
+	require.NoError(t, err)
+	buyer2Addr := crypto.PubkeyToAddress(buyer2PrivKey.PublicKey)
+	buyer2Auth, err := util.NewTransactOpts(client, testBuyer2)
+	require.NoError(t, err)
+
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
+
+	// Mint a clue
+	clueContent := []byte("The treasure is at the end of the rainbow")
+	solution := "Rainbow end"
+	solutionHash := crypto.Keccak256Hash([]byte(solution))
+
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err)
+
+	// Encrypt using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
+	require.NoError(t, err)
+	encryptedClue := encryptedCipher.Marshal()
+
+	minterAuth, err = util.NewTransactOpts(client, testMinter)
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
+
+	// Set sale price
+	minterAuth, err = util.NewTransactOpts(client, testMinter)
+	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	t.Log("\n" + strings.Repeat("=", 70))
+	t.Log("TESTING CONCURRENT PURCHASE PREVENTION")
+	t.Log(strings.Repeat("=", 70))
+
+	// TEST PHASE 1: Buyer 1 initiates purchase
+	t.Log("\n[1] Buyer 1 initiates purchase for token", tokenId)
+	buyer1Auth.Value = salePrice
+	tx, err = contract.InitiatePurchase(buyer1Auth, tokenId)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+	t.Log("✓ Buyer 1 successfully initiated purchase")
+
+	// Verify transferInProgress flag is set
+	transferInProgress, err := contract.TransferInProgress(nil, tokenId)
+	require.NoError(t, err)
+	require.True(t, transferInProgress, "transferInProgress should be true after buyer 1 initiates")
+	t.Log("✓ transferInProgress flag is set to true")
+
+	// TEST PHASE 2: Buyer 2 tries to initiate purchase for same token
+	t.Log("\n[2] Buyer 2 attempts to initiate purchase for same token", tokenId)
+	buyer2Auth.Value = salePrice
+	buyer2Auth.GasLimit = 500000 // Higher gas limit for expected failure
+
+	_, err = contract.InitiatePurchase(buyer2Auth, tokenId)
+
+	// SHOULD FAIL - Transfer already in progress
+	require.Error(t, err, "✅ PREVENTED: Buyer 2 cannot initiate concurrent purchase")
+	require.Contains(t, err.Error(), "TransferAlreadyInProgress",
+		"Error should indicate transfer already in progress")
+	t.Log("✅ Buyer 2's purchase attempt was blocked")
+	t.Log("   Error: TransferAlreadyInProgress")
+
+	// TEST PHASE 3: Verify flag persists
+	transferInProgress, err = contract.TransferInProgress(nil, tokenId)
+	require.NoError(t, err)
+	require.True(t, transferInProgress, "transferInProgress should still be true")
+	t.Log("✓ transferInProgress flag still set (buyer 1's transfer active)")
+
+	// TEST PHASE 4: Buyer 1 cancels, then buyer 2 can purchase
+	t.Log("\n[3] Buyer 1 cancels their purchase")
+	transferId1, err := contract.GenerateTransferId(nil, crypto.PubkeyToAddress(buyer1PrivKey.PublicKey), tokenId)
+	require.NoError(t, err)
+
+	buyer1Auth, err = util.NewTransactOpts(client, testBuyer1)
+	tx, err = contract.CancelTransfer(buyer1Auth, transferId1)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+	t.Log("✓ Buyer 1 canceled transfer")
+
+	// Verify flag is cleared after cancellation
+	transferInProgress, err = contract.TransferInProgress(nil, tokenId)
+	require.NoError(t, err)
+	require.False(t, transferInProgress, "transferInProgress should be false after cancellation")
+	t.Log("✓ transferInProgress flag cleared after cancellation")
+
+	// TEST PHASE 5: Now buyer 2 can purchase
+	t.Log("\n[4] Buyer 2 initiates purchase (should succeed now)")
+	buyer2Auth, err = util.NewTransactOpts(client, testBuyer2)
+	buyer2Auth.Value = salePrice
+	tx, err = contract.InitiatePurchase(buyer2Auth, tokenId)
+	require.NoError(t, err, "Buyer 2 should be able to purchase after buyer 1 canceled")
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+	t.Log("✓ Buyer 2 successfully initiated purchase")
+
+	// Verify flag is set again
+	transferInProgress, err = contract.TransferInProgress(nil, tokenId)
+	require.NoError(t, err)
+	require.True(t, transferInProgress, "transferInProgress should be true for buyer 2")
+	t.Log("✓ transferInProgress flag set for buyer 2's transfer")
+
+	// TEST PHASE 6: Complete the transfer to verify flag clears
+	t.Log("\n[5] Complete transfer to verify flag clears")
+
+	// Generate verifiable transfer
+	transfer, err := ps.GenerateVerifiableElGamalTransfer(
+		clueContent,
+		minterPrivKey,
+		&buyer2PrivKey.PublicKey,
+	)
+	require.NoError(t, err)
+
+	buyerCiphertextBytes := transfer.BuyerCipher.Marshal()
+	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
+
+	// Seller provides proof
+	transferId2, err := contract.GenerateTransferId(nil, buyer2Addr, tokenId)
+	require.NoError(t, err)
+
+	minterAuth, err = util.NewTransactOpts(client, testMinter)
+	proofBytes := transfer.DLEQProof.Marshal()
+	tx, err = contract.ProvideProof(minterAuth, transferId2, proofBytes, buyerCiphertextHash)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Buyer 2 verifies proof
+	buyer2Auth, err = util.NewTransactOpts(client, testBuyer2)
+	tx, err = contract.VerifyProof(buyer2Auth, transferId2)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Seller completes transfer
+	minterAuth, err = util.NewTransactOpts(client, testMinter)
+	tx, err = contract.CompleteTransfer(minterAuth, transferId2, buyerCiphertextBytes, transfer.SharedR)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+	t.Log("✓ Transfer completed successfully")
+
+	// Verify flag is cleared after completion
+	transferInProgress, err = contract.TransferInProgress(nil, tokenId)
+	require.NoError(t, err)
+	require.False(t, transferInProgress, "transferInProgress should be false after completion")
+	t.Log("✓ transferInProgress flag cleared after transfer completion")
+
+	t.Log("\n" + strings.Repeat("=", 70))
+	t.Log("✅ CONCURRENT PURCHASE PREVENTION VERIFIED")
+	t.Log(strings.Repeat("=", 70))
+	t.Log("\nSecurity guarantees:")
+	t.Log("  ✅ Only one buyer can initiate purchase at a time")
+	t.Log("  ✅ transferInProgress flag prevents concurrent purchases")
+	t.Log("  ✅ Flag is cleared on cancellation")
+	t.Log("  ✅ Flag is cleared on transfer completion")
+	t.Log("  ✅ New purchases possible after previous transfer ends")
+}
