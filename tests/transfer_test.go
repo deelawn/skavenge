@@ -638,6 +638,160 @@ func TestCancelTransfer(t *testing.T) {
 	require.True(t, balanceDiff.Cmp(maxGasCost) < 0, "Balance difference should be small (just gas costs)")
 }
 
+// TestCorruptedRValueRejected tests that seller cannot complete transfer with wrong r value.
+// This demonstrates that the rHash commitment prevents seller from providing fake r.
+func TestCorruptedRValueRejected(t *testing.T) {
+	// Connect to Hardhat network
+	client, err := ethclient.Dial(util.GetHardhatURL())
+	require.NoError(t, err)
+
+	// Setup deployer account
+	deployerAuth, err := util.NewTransactOpts(client, deployer)
+	require.NoError(t, err)
+
+	// Deploy contract
+	contract, _, err := util.DeployContract(client, deployerAuth)
+	require.NoError(t, err)
+
+	// Setup minter account and keys
+	minterPrivKey, err := crypto.HexToECDSA(minter)
+	require.NoError(t, err)
+	minterAuth, err := util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+	minterAddr := minterAuth.From
+
+	// Update authorized minter
+	deployerAuth, err = util.NewTransactOpts(client, deployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Setup buyer account and keys
+	buyerPrivKey, err := crypto.HexToECDSA(buyer)
+	require.NoError(t, err)
+	buyerAddr := crypto.PubkeyToAddress(buyerPrivKey.PublicKey)
+	buyerAuth, err := util.NewTransactOpts(client, buyer)
+	require.NoError(t, err)
+
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
+
+	// Mint a clue
+	clueContent := []byte("The treasure is buried under the old oak tree")
+	solution := "Oak tree"
+	solutionHash := crypto.Keccak256Hash([]byte(solution))
+
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err)
+
+	// Encrypt using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
+	require.NoError(t, err)
+	encryptedClueContent := encryptedCipher.Marshal()
+
+	// Mint clue
+	minterAuth, err = util.NewTransactOpts(client, minter)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
+
+	// Set sale price
+	minterAuth, err = util.NewTransactOpts(client, minter)
+	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Buyer initiates purchase
+	buyerAuth.Value = salePrice
+	tx, err = contract.InitiatePurchase(buyerAuth, tokenId)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	transferId, err := contract.GenerateTransferId(nil, buyerAddr, tokenId)
+	require.NoError(t, err)
+
+	// Generate verifiable transfer with REAL r
+	transfer, err := ps.GenerateVerifiableElGamalTransfer(
+		clueContent,
+		minterPrivKey,
+		&buyerPrivKey.PublicKey,
+	)
+	require.NoError(t, err, "Failed to generate verifiable transfer")
+
+	// Marshal the buyer ciphertext
+	buyerCiphertextBytes := transfer.BuyerCipher.Marshal()
+	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
+
+	// Provide proof to the contract (includes Hash(r_real) in DLEQ proof)
+	minterAuth, err = util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+
+	proofBytes := transfer.DLEQProof.Marshal()
+	proofTx, err := contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, proofTx)
+	require.NoError(t, err)
+
+	// Buyer verifies the proof off-chain
+	transferData, err := contract.Transfers(&bind.CallOpts{}, transferId)
+	require.NoError(t, err)
+
+	// Unmarshal and verify DLEQ proof
+	dleqProof := &zkproof.DLEQProof{}
+	err = dleqProof.Unmarshal(transferData.Proof)
+	require.NoError(t, err)
+
+	// For the buyer to verify, they need both ciphertexts from the transfer
+	sellerCipher := transfer.SellerCipher
+	buyerCipher := transfer.BuyerCipher
+
+	// Verify the DLEQ proof
+	valid := ps.VerifyElGamalTransfer(
+		sellerCipher,
+		buyerCipher,
+		dleqProof,
+		elliptic.Marshal(ps.Curve, &minterPrivKey.PublicKey.X, &minterPrivKey.PublicKey.Y),
+		elliptic.Marshal(ps.Curve, &buyerPrivKey.PublicKey.X, &buyerPrivKey.PublicKey.Y),
+	)
+	require.True(t, valid, "DLEQ proof verification should succeed")
+
+	// Buyer calls verifyProof on contract
+	buyerAuth, err = util.NewTransactOpts(client, buyer)
+	verifyTx, err := contract.VerifyProof(buyerAuth, transferId)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, verifyTx)
+	require.NoError(t, err)
+
+	// ATTACK: Seller tries to complete transfer with CORRUPTED r value
+	corruptedR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err)
+	require.NotEqual(t, transfer.SharedR, corruptedR, "Corrupted r should be different from real r")
+
+	// Attempt to complete transfer with corrupted r
+	minterAuth, err = util.NewTransactOpts(client, minter)
+	require.NoError(t, err)
+	minterAuth.GasLimit = 500000 // Higher gas limit for failing transaction
+
+	_, err = contract.CompleteTransfer(minterAuth, transferId, buyerCiphertextBytes, corruptedR)
+
+	// ATTACK PREVENTED: Transaction should fail because Hash(corruptedR) != rValueHash
+	// The contract stored rValueHash = Hash(r_real) extracted from the DLEQ proof
+	require.Error(t, err, "CompleteTransfer should fail with corrupted r value")
+	require.Contains(t, err.Error(), "R value hash mismatch", "Error should indicate r value hash mismatch")
+
+	t.Log("✅ Contract prevents seller from completing transfer with corrupted r value")
+	t.Log("   The rHash commitment (embedded in DLEQ proof) ensures seller cannot change r")
+}
+
 // Helper function to get the last minted token ID
 func getLastMintedTokenID(contract *bindings.Skavenge) (*big.Int, error) {
 	tokenId, err := contract.GetCurrentTokenId(nil)
