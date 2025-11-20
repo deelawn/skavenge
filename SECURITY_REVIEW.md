@@ -91,52 +91,6 @@ Add on-chain verification using `ecrecover` and precompile tricks, or accept hig
 
 ## Medium Severity Issues
 
-### 🟡 MEDIUM: Griefing Attack via Multiple Concurrent Purchases
-
-**Severity:** MEDIUM
-**Component:** Smart Contract - Purchase Initiation
-**Location:** `eth/skavenge.sol:302-342`
-
-#### Description
-
-The contract allows multiple buyers to initiate purchases for the same token simultaneously. Each buyer locks up funds (1 ETH in tests), but only one can successfully complete the transfer. Other buyers must wait for timeout (180 seconds) before canceling and recovering funds.
-
-#### Attack Scenario
-
-1. Attacker creates 100 addresses
-2. Each address initiates purchase for the same clue (100 ETH locked)
-3. Seller provides proof and completes transfer with one buyer
-4. Other 99 buyers have funds locked for 180 seconds
-5. During high gas prices, recovering funds becomes expensive
-
-#### Impact
-
-- Temporary DoS on buyer funds
-- Wasted gas for legitimate buyers
-- Poor UX (funds locked unexpectedly)
-
-#### Recommended Fix
-
-**Option 1: First-Come-First-Served**
-
-```solidity
-mapping(uint256 => bool) public transferInProgress;
-
-function initiatePurchase(uint256 tokenId) external payable nonReentrant {
-    // ...existing checks...
-    require(!transferInProgress[tokenId], "Transfer already in progress");
-
-    transferInProgress[tokenId] = true;
-    // ...rest of function...
-}
-```
-
-**Option 2: Dutch Auction / Priority Queue**
-
-Allow multiple buyers but prioritize by bid amount or timestamp.
-
----
-
 ### 🟡 MEDIUM: Unbounded Array Iteration in _removeFromForSaleList
 
 **Severity:** MEDIUM
