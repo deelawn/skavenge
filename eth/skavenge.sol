@@ -11,11 +11,12 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 contract Skavenge is ERC721, ReentrancyGuard {
     // Clue structure
     struct Clue {
-        bytes encryptedContents; // Encrypted content of the clue
+        bytes encryptedContents; // ElGamal encrypted content of the clue
         bytes32 solutionHash; // Hash of the solution
         bool isSolved; // Whether the clue has been solved
         uint256 solveAttempts; // Number of attempts made to solve the clue
         uint256 salePrice; // Price in wei for which the clue is for sale
+        uint256 rValue; // ElGamal encryption r value (needed for decryption)
     }
 
     // TokenTransfer structure
@@ -125,12 +126,14 @@ contract Skavenge is ERC721, ReentrancyGuard {
 
     /**
      * @dev Mint a new clue
-     * @param encryptedContents Encrypted content of the clue
+     * @param encryptedContents ElGamal encrypted content of the clue
      * @param solutionHash Hash of the solution
+     * @param rValue ElGamal encryption r value
      */
     function mintClue(
         bytes calldata encryptedContents,
-        bytes32 solutionHash
+        bytes32 solutionHash,
+        uint256 rValue
     ) external returns (uint256 tokenId) {
         if (msg.sender != authorizedMinter) {
             revert UnauthorizedMinter();
@@ -142,7 +145,8 @@ contract Skavenge is ERC721, ReentrancyGuard {
             solutionHash: solutionHash,
             isSolved: false,
             solveAttempts: 0,
-            salePrice: 0
+            salePrice: 0,
+            rValue: rValue
         });
 
         _mint(msg.sender, tokenId);
@@ -161,6 +165,15 @@ contract Skavenge is ERC721, ReentrancyGuard {
     ) external view returns (bytes memory) {
         ownerOf(tokenId); // Will revert if token doesn't exist
         return clues[tokenId].encryptedContents;
+    }
+
+    /**
+     * @dev Get the r value for a clue (needed for decryption along with private key)
+     * @param tokenId Token ID of the clue
+     */
+    function getRValue(uint256 tokenId) external view returns (uint256) {
+        require(ownerOf(tokenId) == msg.sender, "Not token owner");
+        return clues[tokenId].rValue;
     }
 
     /**
@@ -442,8 +455,9 @@ contract Skavenge is ERC721, ReentrancyGuard {
             revert SolvedClueTransferNotAllowed();
         }
 
-        // Update the clue contents
+        // Update the clue contents and r value
         clues[transfer.tokenId].encryptedContents = newEncryptedContents;
+        clues[transfer.tokenId].rValue = rValue;
         clues[transfer.tokenId].solveAttempts = 0;
 
         // Transfer ownership
@@ -591,17 +605,27 @@ contract Skavenge is ERC721, ReentrancyGuard {
         bytes calldata ciphertext
     ) private view returns (bool) {
         // Extract C1 from the ciphertext
-        // ElGamal ciphertext format: C1 (65 bytes) || C2 (variable) || SharedSecret (65 bytes)
-        // C1 is the first 65 bytes (0x04 prefix + 32 bytes X + 32 bytes Y)
-        require(ciphertext.length >= 65, "Ciphertext too short");
+        // ElGamal ciphertext format: len(C1) | C1 | len(C2) | C2 | len(SharedSecret) | SharedSecret
+        // First 4 bytes are the length of C1, then C1 follows
+        require(ciphertext.length >= 8, "Ciphertext too short");
+
+        // Read C1 length (first 4 bytes)
+        uint32 c1Len;
+        assembly {
+            c1Len := shr(224, calldataload(ciphertext.offset))
+        }
+
+        require(c1Len == 65, "Invalid C1 length");
+        require(ciphertext.length >= 4 + c1Len, "Ciphertext too short for C1");
 
         // Parse C1 as (x, y) coordinates
+        // C1 starts at offset 4, has format: 0x04 prefix + 32 bytes X + 32 bytes Y
         uint256 c1x;
         uint256 c1y;
         assembly {
-            // Skip the 0x04 prefix byte
-            c1x := calldataload(add(ciphertext.offset, 1))
-            c1y := calldataload(add(ciphertext.offset, 33))
+            // Skip the length prefix (4 bytes) and the 0x04 prefix byte (1 byte)
+            c1x := calldataload(add(ciphertext.offset, 5))
+            c1y := calldataload(add(ciphertext.offset, 37))
         }
 
         // Compute g^r using the ecmul precompile
