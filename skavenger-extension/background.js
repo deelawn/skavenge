@@ -469,19 +469,26 @@ async function handleMessage(request, isInternal = true) {
       }
 
       case 'requestLink': {
-        // Set badge to notify user to open extension
+        // Open the extension popup
         try {
-          await chrome.action.setBadgeText({ text: '!' });
-          await chrome.action.setBadgeBackgroundColor({ color: '#667eea' });
-          // Clear badge after 30 seconds
-          setTimeout(async () => {
-            await chrome.action.setBadgeText({ text: '' });
-          }, 30000);
+          await chrome.action.openPopup();
+          return { success: true, message: 'Extension popup opened' };
         } catch (error) {
-          // Badge API might not be available, that's okay
-          console.log('Could not set badge:', error);
+          // If openPopup fails (e.g., popup already open or user interaction required),
+          // fall back to setting a badge to notify the user
+          console.log('Could not open popup, setting badge instead:', error);
+          try {
+            await chrome.action.setBadgeText({ text: '!' });
+            await chrome.action.setBadgeBackgroundColor({ color: '#667eea' });
+            // Clear badge after 30 seconds
+            setTimeout(async () => {
+              await chrome.action.setBadgeText({ text: '' });
+            }, 30000);
+          } catch (badgeError) {
+            console.log('Could not set badge:', badgeError);
+          }
+          return { success: true, message: 'Please click the Skavenger extension icon to set up or unlock your account' };
         }
-        return { success: true, message: 'Please open the Skavenger extension to set up or unlock your account' };
       }
 
       case 'getExtensionId': {

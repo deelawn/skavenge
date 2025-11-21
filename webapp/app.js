@@ -367,20 +367,28 @@ async function showDashboard() {
 
 // Event handlers
 linkSkavengerBtn.addEventListener('click', async () => {
-    // Show instructions
-    linkInstructions.classList.remove('hidden');
-    skavengerStatusText.textContent = 'Waiting for you to set up Skavenger extension...';
+    // Update UI to show we're waiting
+    skavengerStatusText.textContent = 'Opening extension...';
     skavengerIndicator.classList.add('pending');
-    
-    // Request link from extension (this may fail if extension not found, but that's okay)
+
+    // Request extension to open its popup
     try {
-        await requestSkavengerLink();
-        showToast('Please open the Skavenger extension to set up or unlock your account', 'info');
+        const response = await requestSkavengerLink();
+
+        // Show appropriate message based on response
+        if (response) {
+            showToast('Extension opened. Please generate keys or enter your password.', 'info');
+            skavengerStatusText.textContent = 'Waiting for you to complete setup in the extension...';
+        }
     } catch (error) {
-        // Extension might not be found, but show instructions anyway
-        showToast('Please open the Skavenger extension icon in your browser toolbar', 'info');
+        // Extension might not be found
+        linkInstructions.classList.remove('hidden');
+        skavengerStatusText.textContent = 'Extension not found';
+        showToast('Please install the Skavenger extension and try again', 'error');
+        skavengerIndicator.classList.remove('pending');
+        return;
     }
-    
+
     // Start polling for keys
     startKeyPolling();
 });
