@@ -228,7 +228,7 @@ function startKeyPolling() {
     
     keyPollInterval = setInterval(async () => {
         pollCount++;
-        
+
         try {
             const hasKeys = await checkSkavengerKeys();
             if (hasKeys) {
@@ -238,23 +238,27 @@ function startKeyPolling() {
                     clearInterval(keyPollInterval);
                     keyPollInterval = null;
                     skavengerPublicKey = publicKey;
+                    skavengerIndicator.classList.remove('pending');
                     skavengerIndicator.classList.add('connected');
                     skavengerStatusText.textContent = 'Keys found';
                     linkSkavengerBtn.classList.add('hidden');
                     linkInstructions.classList.add('hidden');
                     showToast('Skavenger account linked successfully', 'success');
-                    
+
                     // Check if MetaMask is also connected
                     if (metamaskAddress) {
                         showDashboard();
                     }
                 }
             }
-            
+
             // Stop polling after max attempts
             if (pollCount >= maxPolls) {
                 clearInterval(keyPollInterval);
                 keyPollInterval = null;
+                skavengerIndicator.classList.remove('pending');
+                skavengerStatusText.textContent = 'Link timed out. Please try again.';
+                showToast('Could not detect keys. Please try again.', 'error');
             }
         } catch (error) {
             // Continue polling on error

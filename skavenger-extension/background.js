@@ -369,9 +369,8 @@ async function handleMessage(request, isInternal = true) {
           publicKey: bufferToHex(publicKeyRaw)
         }, password);
 
-        if (!isInternal) {
-          await createSession(password);
-        }
+        // Always create session so webapp can access the public key
+        await createSession(password);
 
         return { success: true, publicKey: bufferToHex(publicKeyRaw) };
       }
@@ -435,6 +434,9 @@ async function handleMessage(request, isInternal = true) {
           publicKey: keyData.publicKey
         }, password);
 
+        // Always create session so webapp can access the public key
+        await createSession(password);
+
         return { success: true };
       }
 
@@ -456,8 +458,8 @@ async function handleMessage(request, isInternal = true) {
         }
 
         const keys = await retrieveKeys(request.password);
-        if (keys && !isInternal) {
-          // Create session for external requests
+        if (keys) {
+          // Always create/update session so webapp can access the public key
           await createSession(request.password);
         }
         return { success: !!keys };
