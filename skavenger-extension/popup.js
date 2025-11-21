@@ -14,6 +14,9 @@ const resetBtn = document.getElementById('reset-btn');
 
 const keyIndicator = document.getElementById('key-indicator');
 const keyStatusText = document.getElementById('key-status-text');
+const publicKeySection = document.getElementById('public-key-section');
+const publicKeyDisplay = document.getElementById('public-key-display');
+const copyPublicKeyBtn = document.getElementById('copy-public-key-btn');
 
 const generateBtn = document.getElementById('generate-btn');
 const exportBtn = document.getElementById('export-btn');
@@ -60,16 +63,30 @@ function showScreen(screen) {
   screen.classList.remove('hidden');
 }
 
-function updateKeyStatus(keysExist) {
+async function updateKeyStatus(keysExist, publicKey = null) {
   hasKeys = keysExist;
   if (keysExist) {
     keyIndicator.classList.add('active');
     keyStatusText.textContent = 'Keys loaded';
     exportBtn.disabled = false;
+
+    if (publicKey) {
+      publicKeyDisplay.value = publicKey;
+      publicKeySection.classList.remove('hidden');
+    } else {
+      // Fetch public key if not provided
+      const result = await sendMessage({ action: 'exportPublicKey', password: currentPassword });
+      if (result.success) {
+        publicKeyDisplay.value = result.publicKey;
+        publicKeySection.classList.remove('hidden');
+      }
+    }
   } else {
     keyIndicator.classList.remove('active');
     keyStatusText.textContent = 'No keys generated';
     exportBtn.disabled = true;
+    publicKeySection.classList.add('hidden');
+    publicKeyDisplay.value = '';
   }
 }
 
@@ -142,7 +159,7 @@ unlockBtn.addEventListener('click', async () => {
   if (result.success) {
     currentPassword = password;
     showScreen(mainScreen);
-    updateKeyStatus(true);
+    await updateKeyStatus(true);
     loginPasswordInput.value = '';
   } else {
     showToast('Invalid password', true);
@@ -177,7 +194,7 @@ generateBtn.addEventListener('click', async () => {
   const result = await sendMessage({ action: 'generateKeys', password: currentPassword });
 
   if (result.success) {
-    updateKeyStatus(true);
+    await updateKeyStatus(true, result.publicKey);
     showToast('Keys generated');
   } else {
     showToast(result.error || 'Failed to generate keys', true);
@@ -257,12 +274,17 @@ confirmImportBtn.addEventListener('click', async () => {
   });
 
   if (result.success) {
-    updateKeyStatus(true);
+    await updateKeyStatus(true);
     importModal.classList.add('hidden');
     showToast('Keys imported');
   } else {
     showToast(result.error || 'Invalid keys format', true);
   }
+});
+
+copyPublicKeyBtn.addEventListener('click', () => {
+  navigator.clipboard.writeText(publicKeyDisplay.value);
+  showToast('Public key copied');
 });
 
 closeImportBtn.addEventListener('click', () => {

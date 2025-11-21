@@ -187,6 +187,20 @@ button.danger-text:hover {
   color: #aaa;
 }
 
+.public-key-section {
+  margin-bottom: 16px;
+}
+
+.public-key-section.hidden {
+  display: none;
+}
+
+.public-key-section textarea {
+  min-height: 60px;
+  font-size: 9px;
+  word-break: break-all;
+}
+
 .actions {
   display: flex;
   flex-direction: column;
