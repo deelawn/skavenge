@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Skavenge Web App</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      border-radius: 8px;
+      padding: 30px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+    h1 {
+      color: #333;
+      margin-top: 0;
+    }
+    .info {
+      background: #e3f2fd;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 20px 0;
+      border-left: 4px solid #2196f3;
+    }
+    .info code {
+      background: #fff;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+    button {
+      background: #2196f3;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 5px;
+    }
+    button:hover {
+      background: #1976d2;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .output {
+      background: #f5f5f5;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 15px;
+      margin-top: 20px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .error {
+      color: #d32f2f;
+    }
+    .success {
+      color: #388e3c;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Skavenge Web App</h1>
+
+    <div class="info">
+      <strong>Extension ID:</strong> <code id="extension-id">hnbligdjmpihmhhgajlfjmckcnmnofbn</code>
+      <br><br>
+      This web app communicates with the Skavenger Chrome Extension to manage cryptographic keys for the Skavenge NFT Scavenger Hunt game.
+    </div>
+
+    <h2>Extension Communication Test</h2>
+    <button id="check-extension">Check Extension</button>
+    <button id="check-keys">Check for Keys</button>
+    <button id="get-public-key" disabled>Get Public Key</button>
+
+    <div id="output" class="output">
+Ready to communicate with extension...
+    </div>
+  </div>
+
+  <script>
+    // Hardcoded Skavenger Extension ID
+    const SKAVENGER_EXTENSION_ID = 'hnbligdjmpihmhhgajlfjmckcnmnofbn';
+
+    const output = document.getElementById('output');
+    const checkExtensionBtn = document.getElementById('check-extension');
+    const checkKeysBtn = document.getElementById('check-keys');
+    const getPublicKeyBtn = document.getElementById('get-public-key');
+
+    function log(message, type = 'info') {
+      const timestamp = new Date().toLocaleTimeString();
+      const className = type === 'error' ? 'error' : type === 'success' ? 'success' : '';
+      output.innerHTML += `\n[${timestamp}] <span class="${className}">${message}</span>`;
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function clearOutput() {
+      output.textContent = '';
+    }
+
+    // Send message to extension
+    async function sendMessageToExtension(message) {
+      return new Promise((resolve, reject) => {
+        if (!chrome.runtime) {
+          reject(new Error('Chrome runtime not available. This page must be served over http://localhost or https://'));
+          return;
+        }
+
+        chrome.runtime.sendMessage(SKAVENGER_EXTENSION_ID, message, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(response);
+          }
+        });
+      });
+    }
+
+    // Check if extension is installed and accessible
+    checkExtensionBtn.addEventListener('click', async () => {
+      clearOutput();
+      log('Checking extension connection...');
+      log(`Extension ID: ${SKAVENGER_EXTENSION_ID}`);
+
+      try {
+        const response = await sendMessageToExtension({ action: 'hasKeys' });
+        log('Extension is installed and accessible!', 'success');
+        log(`Response: ${JSON.stringify(response, null, 2)}`);
+
+        if (response.success) {
+          checkKeysBtn.disabled = false;
+        }
+      } catch (error) {
+        log(`Error: ${error.message}`, 'error');
+        log('Make sure the Skavenger extension is installed and this page is served from localhost or https://*.skavenge.io', 'error');
+      }
+    });
+
+    // Check if keys exist in extension
+    checkKeysBtn.addEventListener('click', async () => {
+      clearOutput();
+      log('Checking for stored keys...');
+
+      try {
+        const response = await sendMessageToExtension({ action: 'hasKeys' });
+
+        if (response.success) {
+          if (response.hasKeys) {
+            log('Keys found in extension!', 'success');
+            getPublicKeyBtn.disabled = false;
+          } else {
+            log('No keys found. Generate keys using the extension popup first.', 'error');
+          }
+        } else {
+          log(`Error: ${response.error}`, 'error');
+        }
+      } catch (error) {
+        log(`Error: ${error.message}`, 'error');
+      }
+    });
+
+    // Get public key from extension (requires password in real implementation)
+    getPublicKeyBtn.addEventListener('click', async () => {
+      clearOutput();
+      log('Getting public key...');
+      log('Note: In a real implementation, the user would need to unlock the extension first.', 'info');
+
+      // This is a simplified example. In production, the extension would need to be unlocked
+      // and the user would provide their password through the extension popup.
+      log('Please unlock the extension popup to access keys.', 'info');
+    });
+
+    // Initialize
+    log('Web app loaded. Extension ID: ' + SKAVENGER_EXTENSION_ID, 'success');
+    log('Click "Check Extension" to verify connection.');
+  </script>
+</body>
+</html>
