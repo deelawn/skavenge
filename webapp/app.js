@@ -431,18 +431,38 @@ copyMetamaskBtn.addEventListener('click', () => {
     }
 });
 
-disconnectBtn.addEventListener('click', () => {
+disconnectBtn.addEventListener('click', async () => {
     // Stop any polling
     if (keyPollInterval) {
         clearInterval(keyPollInterval);
         keyPollInterval = null;
     }
-    
-    // Clear in-memory state (but not localStorage - we're not storing keys there)
+
+    // Clear Skavenger session in extension
+    try {
+        await sendToExtension({ action: 'clearSession' });
+    } catch (error) {
+        console.error('Error clearing session:', error);
+    }
+
+    // Clear in-memory state
     metamaskAddress = null;
     skavengerPublicKey = null;
+
+    // Reset Skavenger UI to disconnected state
+    skavengerIndicator.classList.remove('connected', 'pending');
+    skavengerStatusText.textContent = 'Not connected';
+    linkSkavengerBtn.classList.remove('hidden');
+    linkInstructions.classList.add('hidden');
+
+    // Reset MetaMask UI to disconnected state
+    metamaskIndicator.classList.remove('connected');
+    metamaskStatusText.textContent = 'Not connected';
+    connectMetamaskBtn.textContent = 'Connect MetaMask';
+
+    // Show onboarding screen
     showScreen(onboardingScreen);
-    initOnboarding();
+    showToast('Disconnected. Please reconnect to continue.', 'info');
 });
 
 // Handle MetaMask account changes
