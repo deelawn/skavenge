@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Skavenger</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Skavenger</h1>
+      <p class="subtitle">Key Management</p>
+    </header>
+
+    <!-- Initial Setup / Unlock Screen -->
+    <div id="unlock-screen" class="screen">
+      <div id="setup-section" class="section hidden">
+        <h2>Create Password</h2>
+        <p class="info">This password encrypts your keys locally.</p>
+        <input type="password" id="new-password" placeholder="Enter password" autocomplete="new-password">
+        <input type="password" id="confirm-password" placeholder="Confirm password" autocomplete="new-password">
+        <button id="create-password-btn" class="primary">Create</button>
+      </div>
+
+      <div id="login-section" class="section hidden">
+        <h2>Unlock</h2>
+        <input type="password" id="login-password" placeholder="Enter password" autocomplete="current-password">
+        <button id="unlock-btn" class="primary">Unlock</button>
+        <button id="reset-btn" class="danger-text">Reset Extension</button>
+      </div>
+    </div>
+
+    <!-- Main Screen -->
+    <div id="main-screen" class="screen hidden">
+      <div class="key-status">
+        <span id="key-indicator" class="indicator"></span>
+        <span id="key-status-text">No keys generated</span>
+      </div>
+
+      <div id="public-key-section" class="public-key-section hidden">
+        <label>Public Key</label>
+        <textarea id="public-key-display" readonly></textarea>
+        <button id="copy-public-key-btn" class="secondary">Copy Public Key</button>
+      </div>
+
+      <div class="actions">
+        <button id="generate-btn" class="primary">Generate New Keys</button>
+        <button id="export-btn" class="secondary" disabled>Export Keys</button>
+        <button id="import-btn" class="secondary">Import Keys</button>
+        <button id="lock-btn" class="text">Lock</button>
+      </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div id="export-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2>Export Keys</h2>
+        <p class="info warning">Warning: This contains your private key. Keep it secure.</p>
+        <textarea id="export-output" readonly placeholder="Keys will appear here..."></textarea>
+        <div class="modal-actions">
+          <button id="copy-export-btn" class="secondary">Copy to Clipboard</button>
+          <button id="download-export-btn" class="secondary">Download</button>
+          <button id="close-export-btn" class="text">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div id="import-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2>Import Keys</h2>
+        <p class="info">Paste your keys JSON below.</p>
+        <textarea id="import-keys" placeholder='{"privateKey":"...","publicKey":"..."}'></textarea>
+        <div class="modal-actions">
+          <button id="confirm-import-btn" class="primary">Import</button>
+          <button id="close-import-btn" class="text">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div id="confirm-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2 id="confirm-title">Confirm</h2>
+        <p id="confirm-message"></p>
+        <div class="modal-actions">
+          <button id="confirm-yes-btn" class="danger">Confirm</button>
+          <button id="confirm-no-btn" class="text">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
