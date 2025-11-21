@@ -3,9 +3,16 @@
   "name": "Skavenger",
   "version": "1.0.0",
   "description": "Secure key management for Skavenge proof generation and verification",
+  "extension_id": "replace-with-your-extension-id",
   "permissions": [
     "storage"
   ],
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:*/*",
+      "http://127.0.0.1:*/*"
+    ]
+  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {

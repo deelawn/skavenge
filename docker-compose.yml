@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   hardhat:
@@ -27,6 +27,16 @@ services:
         condition: service_healthy
     environment:
       - HARDHAT_URL=http://hardhat:8545
+    networks:
+      - skavenge-network
+
+  webapp:
+    build:
+      context: ./webapp
+      dockerfile: Dockerfile
+    container_name: skavenge-webapp
+    ports:
+      - "8080:80"
     networks:
       - skavenge-network
 
