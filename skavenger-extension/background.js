@@ -2,7 +2,9 @@
 // Handles key generation, storage, import, and export
 
 const STORAGE_KEY = 'skavenger_encrypted_keys';
+const SESSION_KEY = 'skavenger_session';
 const KEYSTORE_VERSION = 1;
+const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
 // Generate UUID v4
 function generateUUID() {
@@ -262,18 +264,102 @@ async function hasStoredKeys() {
 // Clear stored keys
 async function clearKeys() {
   await chrome.storage.local.remove(STORAGE_KEY);
+  await chrome.storage.local.remove(SESSION_KEY);
 }
 
-// Message handler
+// Session management
+async function createSession(password) {
+  const session = {
+    password: password,
+    timestamp: Date.now()
+  };
+  await chrome.storage.local.set({ [SESSION_KEY]: session });
+  return session;
+}
+
+async function getSession() {
+  const result = await chrome.storage.local.get(SESSION_KEY);
+  if (!result[SESSION_KEY]) {
+    return null;
+  }
+  const session = result[SESSION_KEY];
+  const now = Date.now();
+
+  // Check if session expired
+  if (now - session.timestamp > SESSION_TIMEOUT_MS) {
+    await chrome.storage.local.remove(SESSION_KEY);
+    return null;
+  }
+
+  return session;
+}
+
+async function clearSession() {
+  await chrome.storage.local.remove(SESSION_KEY);
+}
+
+async function getPasswordFromSession(request) {
+  // If password is provided in request, use it (for popup)
+  if (request.password) {
+    // Verify password is correct and create/update session
+    const keys = await retrieveKeys(request.password);
+    if (keys) {
+      await createSession(request.password);
+      return request.password;
+    }
+    return null;
+  }
+
+  // Try to get password from session
+  const session = await getSession();
+  if (session) {
+    return session.password;
+  }
+
+  return null;
+}
+
+// Internal message handler (from popup)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  handleMessage(request).then(sendResponse);
+  handleMessage(request, true).then(sendResponse);
   return true; // Keep channel open for async response
 });
 
-async function handleMessage(request) {
+// External message handler (from web pages)
+chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
+  handleMessage(request, false).then(sendResponse);
+  return true; // Keep channel open for async response
+});
+
+async function handleMessage(request, isInternal = true) {
   try {
+    // Get password - from request for internal (popup), from session for external
+    let password = null;
+    if (isInternal) {
+      // Internal messages (from popup) can provide password directly
+      password = request.password || (await getSession())?.password;
+    } else {
+      // External messages (from web pages) must use session
+      password = await getPasswordFromSession(request);
+
+      // For some actions, we need password from request to establish session
+      if (!password && (request.action === 'verifyPassword' || request.action === 'generateKeys')) {
+        if (request.password) {
+          const keys = await retrieveKeys(request.password);
+          if (keys) {
+            await createSession(request.password);
+            password = request.password;
+          }
+        }
+      }
+    }
+
     switch (request.action) {
       case 'generateKeys': {
+        if (!password) {
+          return { success: false, error: 'Password required or session expired' };
+        }
+
         const keyPair = await generateKeyPair();
         const privateKeyRaw = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
         const publicKeyRaw = await crypto.subtle.exportKey('spki', keyPair.publicKey);
@@ -281,13 +367,21 @@ async function handleMessage(request) {
         await storeKeys({
           privateKey: bufferToHex(privateKeyRaw),
           publicKey: bufferToHex(publicKeyRaw)
-        }, request.password);
+        }, password);
+
+        if (!isInternal) {
+          await createSession(password);
+        }
 
         return { success: true, publicKey: bufferToHex(publicKeyRaw) };
       }
 
       case 'exportKeys': {
-        const keys = await retrieveKeys(request.password);
+        if (!password) {
+          return { success: false, error: 'Password required or session expired' };
+        }
+
+        const keys = await retrieveKeys(password);
         if (!keys) {
           return { success: false, error: 'Invalid password or no keys found' };
         }
@@ -302,7 +396,11 @@ async function handleMessage(request) {
       }
 
       case 'exportPublicKey': {
-        const keys = await retrieveKeys(request.password);
+        if (!password) {
+          return { success: false, error: 'Password required or session expired' };
+        }
+
+        const keys = await retrieveKeys(password);
         if (!keys) {
           return { success: false, error: 'Invalid password or no keys found' };
         }
@@ -310,6 +408,10 @@ async function handleMessage(request) {
       }
 
       case 'importKeys': {
+        if (!password) {
+          return { success: false, error: 'Password required or session expired' };
+        }
+
         const keyData = JSON.parse(request.keyData);
 
         // Validate keys by importing them as CryptoKey objects
@@ -331,7 +433,7 @@ async function handleMessage(request) {
         await storeKeys({
           privateKey: keyData.privateKey,
           publicKey: keyData.publicKey
-        }, request.password);
+        }, password);
 
         return { success: true };
       }
@@ -347,8 +449,44 @@ async function handleMessage(request) {
       }
 
       case 'verifyPassword': {
+        if (!request.password) {
+          // Check if session is valid
+          const session = await getSession();
+          return { success: !!session };
+        }
+
         const keys = await retrieveKeys(request.password);
+        if (keys && !isInternal) {
+          // Create session for external requests
+          await createSession(request.password);
+        }
         return { success: !!keys };
+      }
+
+      case 'clearSession': {
+        await clearSession();
+        return { success: true };
+      }
+
+      case 'requestLink': {
+        // Set badge to notify user to open extension
+        try {
+          await chrome.action.setBadgeText({ text: '!' });
+          await chrome.action.setBadgeBackgroundColor({ color: '#667eea' });
+          // Clear badge after 30 seconds
+          setTimeout(async () => {
+            await chrome.action.setBadgeText({ text: '' });
+          }, 30000);
+        } catch (error) {
+          // Badge API might not be available, that's okay
+          console.log('Could not set badge:', error);
+        }
+        return { success: true, message: 'Please open the Skavenger extension to set up or unlock your account' };
+      }
+
+      case 'getExtensionId': {
+        // Return extension ID for webapp discovery
+        return { success: true, extensionId: chrome.runtime.id };
       }
 
       default:

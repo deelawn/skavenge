@@ -11,9 +11,36 @@ compile:
 docker-build:
 	docker compose build
 
+.PHONY: rebuild-webapp
+rebuild-webapp:
+	docker compose build webapp
+	@echo "Webapp image rebuilt"
+
+.PHONY: rebuild-webapp-no-cache
+rebuild-webapp-no-cache:
+	docker compose build --no-cache webapp
+	@echo "Webapp image rebuilt (no cache)"
+
 .PHONY: docker-up
 docker-up:
 	docker compose up -d hardhat
+
+.PHONY: start
+start: start-services
+
+.PHONY: start-services
+start-services:
+	docker compose up -d hardhat webapp
+	@echo "Services starting..."
+	@echo "Hardhat: http://localhost:8545"
+	@echo "Webapp: http://localhost:8080"
+
+.PHONY: stop
+stop: stop-services
+
+.PHONY: stop-services
+stop-services:
+	docker compose stop hardhat webapp
 
 .PHONY: docker-test
 docker-test:

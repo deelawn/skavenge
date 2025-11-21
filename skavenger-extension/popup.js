@@ -117,6 +117,13 @@ async function showConfirmDialog(title, message) {
 
 // Initialize
 async function init() {
+  // Clear badge when popup opens
+  try {
+    await chrome.action.setBadgeText({ text: '' });
+  } catch (error) {
+    // Ignore if badge API is not available
+  }
+
   const result = await sendMessage({ action: 'hasKeys' });
 
   if (result.hasKeys) {
@@ -291,7 +298,8 @@ closeImportBtn.addEventListener('click', () => {
   importModal.classList.add('hidden');
 });
 
-lockBtn.addEventListener('click', () => {
+lockBtn.addEventListener('click', async () => {
+  await sendMessage({ action: 'clearSession' });
   currentPassword = null;
   hasKeys = false;
   loginPasswordInput.value = '';
