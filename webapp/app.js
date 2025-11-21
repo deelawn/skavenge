@@ -5,7 +5,7 @@
 // This must match the extension_id field in skavenger-extension/manifest.json
 // For unpacked extensions: find the ID in chrome://extensions and update both files
 // For production: this will be the published Chrome Web Store extension ID
-const SKAVENGER_EXTENSION_ID = "replace-with-your-extension-id"; // Must match manifest.json extension_id
+const SKAVENGER_EXTENSION_ID = "hnbligdjmpihmhhgajlfjmckcnmnofbn"; // Must match manifest.json extension_id
 
 let extensionId = SKAVENGER_EXTENSION_ID;
 
