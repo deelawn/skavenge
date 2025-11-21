@@ -21,16 +21,13 @@ const importBtn = document.getElementById('import-btn');
 const lockBtn = document.getElementById('lock-btn');
 
 const exportModal = document.getElementById('export-modal');
-const exportPasswordInput = document.getElementById('export-password');
-const generateExportBtn = document.getElementById('generate-export-btn');
 const exportOutput = document.getElementById('export-output');
 const copyExportBtn = document.getElementById('copy-export-btn');
 const downloadExportBtn = document.getElementById('download-export-btn');
 const closeExportBtn = document.getElementById('close-export-btn');
 
 const importModal = document.getElementById('import-modal');
-const importKeystoreInput = document.getElementById('import-keystore');
-const importKeystorePasswordInput = document.getElementById('import-keystore-password');
+const importKeysInput = document.getElementById('import-keys');
 const confirmImportBtn = document.getElementById('confirm-import-btn');
 const closeImportBtn = document.getElementById('close-import-btn');
 
@@ -190,27 +187,14 @@ generateBtn.addEventListener('click', async () => {
 exportBtn.addEventListener('click', async () => {
   if (!hasKeys) return;
 
-  exportPasswordInput.value = '';
-  exportOutput.value = '';
-  exportModal.classList.remove('hidden');
-});
-
-generateExportBtn.addEventListener('click', async () => {
-  const exportPassword = exportPasswordInput.value;
-
-  if (exportPassword.length < 8) {
-    showToast('Export password must be at least 8 characters', true);
-    return;
-  }
-
   const result = await sendMessage({
     action: 'exportKeys',
-    password: currentPassword,
-    exportPassword: exportPassword
+    password: currentPassword
   });
 
   if (result.success) {
-    exportOutput.value = result.keystore;
+    exportOutput.value = result.keyData;
+    exportModal.classList.remove('hidden');
   } else {
     showToast(result.error || 'Failed to export keys', true);
   }
@@ -234,7 +218,7 @@ downloadExportBtn.addEventListener('click', () => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'skavenger-keystore.json';
+  a.download = 'skavenger-keys.json';
   a.click();
   URL.revokeObjectURL(url);
   showToast('Downloaded');
@@ -243,26 +227,18 @@ downloadExportBtn.addEventListener('click', () => {
 closeExportBtn.addEventListener('click', () => {
   exportModal.classList.add('hidden');
   exportOutput.value = '';
-  exportPasswordInput.value = '';
 });
 
 importBtn.addEventListener('click', () => {
-  importKeystoreInput.value = '';
-  importKeystorePasswordInput.value = '';
+  importKeysInput.value = '';
   importModal.classList.remove('hidden');
 });
 
 confirmImportBtn.addEventListener('click', async () => {
-  const keystore = importKeystoreInput.value.trim();
-  const keystorePassword = importKeystorePasswordInput.value;
+  const keyData = importKeysInput.value.trim();
 
-  if (!keystore) {
-    showToast('Keystore JSON is required', true);
-    return;
-  }
-
-  if (!keystorePassword) {
-    showToast('Keystore password is required', true);
+  if (!keyData) {
+    showToast('Keys JSON is required', true);
     return;
   }
 
@@ -276,8 +252,7 @@ confirmImportBtn.addEventListener('click', async () => {
 
   const result = await sendMessage({
     action: 'importKeys',
-    keystore,
-    keystorePassword,
+    keyData,
     password: currentPassword
   });
 
@@ -286,7 +261,7 @@ confirmImportBtn.addEventListener('click', async () => {
     importModal.classList.add('hidden');
     showToast('Keys imported');
   } else {
-    showToast(result.error || 'Invalid keystore or password', true);
+    showToast(result.error || 'Invalid keys format', true);
   }
 });
 

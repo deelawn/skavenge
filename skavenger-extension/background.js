@@ -292,14 +292,13 @@ async function handleMessage(request) {
           return { success: false, error: 'Invalid password or no keys found' };
         }
 
-        // Export as JSON keystore
-        const keystore = await exportToKeystore(
-          hexToBuffer(keys.privateKey),
-          hexToBuffer(keys.publicKey),
-          request.exportPassword || request.password
-        );
-
-        return { success: true, keystore: JSON.stringify(keystore, null, 2) };
+        return {
+          success: true,
+          keyData: JSON.stringify({
+            privateKey: keys.privateKey,
+            publicKey: keys.publicKey
+          }, null, 2)
+        };
       }
 
       case 'exportPublicKey': {
@@ -311,29 +310,27 @@ async function handleMessage(request) {
       }
 
       case 'importKeys': {
-        // Parse and import from JSON keystore
-        const keystore = JSON.parse(request.keystore);
-        const importedKeys = await importFromKeystore(keystore, request.keystorePassword);
+        const keyData = JSON.parse(request.keyData);
 
         // Validate keys by importing them as CryptoKey objects
         await crypto.subtle.importKey(
           'pkcs8',
-          importedKeys.privateKey,
+          hexToBuffer(keyData.privateKey),
           { name: 'ECDSA', namedCurve: 'P-256' },
           true,
           ['sign']
         );
         await crypto.subtle.importKey(
           'spki',
-          importedKeys.publicKey,
+          hexToBuffer(keyData.publicKey),
           { name: 'ECDSA', namedCurve: 'P-256' },
           true,
           ['verify']
         );
 
         await storeKeys({
-          privateKey: bufferToHex(importedKeys.privateKey),
-          publicKey: bufferToHex(importedKeys.publicKey)
+          privateKey: keyData.privateKey,
+          publicKey: keyData.publicKey
         }, request.password);
 
         return { success: true };

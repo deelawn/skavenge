@@ -50,11 +50,8 @@
     <div id="export-modal" class="modal hidden">
       <div class="modal-content">
         <h2>Export Keys</h2>
-        <p class="info">Set a password to encrypt the exported keystore.</p>
-        <label>Export Password</label>
-        <input type="password" id="export-password" placeholder="Password for exported keystore">
-        <button id="generate-export-btn" class="secondary">Generate Keystore</button>
-        <textarea id="export-output" readonly placeholder="Keystore JSON will appear here..."></textarea>
+        <p class="info warning">Warning: This contains your private key. Keep it secure.</p>
+        <textarea id="export-output" readonly placeholder="Keys will appear here..."></textarea>
         <div class="modal-actions">
           <button id="copy-export-btn" class="secondary">Copy to Clipboard</button>
           <button id="download-export-btn" class="secondary">Download</button>
@@ -67,11 +64,8 @@
     <div id="import-modal" class="modal hidden">
       <div class="modal-content">
         <h2>Import Keys</h2>
-        <p class="info">Paste your JSON keystore below.</p>
-        <label>Keystore JSON</label>
-        <textarea id="import-keystore" placeholder='{"version":1,"id":"...","crypto":{...}}'></textarea>
-        <label>Keystore Password</label>
-        <input type="password" id="import-keystore-password" placeholder="Password used to encrypt the keystore">
+        <p class="info">Paste your keys JSON below.</p>
+        <textarea id="import-keys" placeholder='{"privateKey":"...","publicKey":"..."}'></textarea>
         <div class="modal-actions">
           <button id="confirm-import-btn" class="primary">Import</button>
           <button id="close-import-btn" class="text">Cancel</button>
