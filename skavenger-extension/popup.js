@@ -21,15 +21,16 @@ const importBtn = document.getElementById('import-btn');
 const lockBtn = document.getElementById('lock-btn');
 
 const exportModal = document.getElementById('export-modal');
-const exportPrivateCheckbox = document.getElementById('export-private');
+const exportPasswordInput = document.getElementById('export-password');
+const generateExportBtn = document.getElementById('generate-export-btn');
 const exportOutput = document.getElementById('export-output');
 const copyExportBtn = document.getElementById('copy-export-btn');
 const downloadExportBtn = document.getElementById('download-export-btn');
 const closeExportBtn = document.getElementById('close-export-btn');
 
 const importModal = document.getElementById('import-modal');
-const importPrivateInput = document.getElementById('import-private');
-const importPublicInput = document.getElementById('import-public');
+const importKeystoreInput = document.getElementById('import-keystore');
+const importKeystorePasswordInput = document.getElementById('import-keystore-password');
 const confirmImportBtn = document.getElementById('confirm-import-btn');
 const closeImportBtn = document.getElementById('close-import-btn');
 
@@ -43,7 +44,7 @@ const toast = document.getElementById('toast');
 
 // State
 let currentPassword = null;
-let currentKeys = null;
+let hasKeys = false;
 
 // Utility functions
 function showToast(message, isError = false) {
@@ -62,8 +63,9 @@ function showScreen(screen) {
   screen.classList.remove('hidden');
 }
 
-function updateKeyStatus(hasKeys) {
-  if (hasKeys) {
+function updateKeyStatus(keysExist) {
+  hasKeys = keysExist;
+  if (keysExist) {
     keyIndicator.classList.add('active');
     keyStatusText.textContent = 'Keys loaded';
     exportBtn.disabled = false;
@@ -142,12 +144,8 @@ unlockBtn.addEventListener('click', async () => {
 
   if (result.success) {
     currentPassword = password;
-    const keysResult = await sendMessage({ action: 'exportKeys', password });
-    if (keysResult.success) {
-      currentKeys = { privateKey: keysResult.privateKey, publicKey: keysResult.publicKey };
-    }
     showScreen(mainScreen);
-    updateKeyStatus(!!currentKeys);
+    updateKeyStatus(true);
     loginPasswordInput.value = '';
   } else {
     showToast('Invalid password', true);
@@ -163,7 +161,7 @@ resetBtn.addEventListener('click', async () => {
   if (confirmed) {
     await sendMessage({ action: 'clearKeys' });
     currentPassword = null;
-    currentKeys = null;
+    hasKeys = false;
     setupSection.classList.remove('hidden');
     loginSection.classList.add('hidden');
     showToast('Extension reset');
@@ -171,7 +169,7 @@ resetBtn.addEventListener('click', async () => {
 });
 
 generateBtn.addEventListener('click', async () => {
-  if (currentKeys) {
+  if (hasKeys) {
     const confirmed = await showConfirmDialog(
       'Generate New Keys',
       'This will replace your existing keys. Make sure you have exported them first.'
@@ -182,11 +180,6 @@ generateBtn.addEventListener('click', async () => {
   const result = await sendMessage({ action: 'generateKeys', password: currentPassword });
 
   if (result.success) {
-    currentKeys = { publicKey: result.publicKey };
-    const keysResult = await sendMessage({ action: 'exportKeys', password: currentPassword });
-    if (keysResult.success) {
-      currentKeys = { privateKey: keysResult.privateKey, publicKey: keysResult.publicKey };
-    }
     updateKeyStatus(true);
     showToast('Keys generated');
   } else {
@@ -195,38 +188,53 @@ generateBtn.addEventListener('click', async () => {
 });
 
 exportBtn.addEventListener('click', async () => {
-  if (!currentKeys) return;
+  if (!hasKeys) return;
 
-  exportPrivateCheckbox.checked = true;
-  updateExportOutput();
+  exportPasswordInput.value = '';
+  exportOutput.value = '';
   exportModal.classList.remove('hidden');
 });
 
-exportPrivateCheckbox.addEventListener('change', updateExportOutput);
+generateExportBtn.addEventListener('click', async () => {
+  const exportPassword = exportPasswordInput.value;
 
-function updateExportOutput() {
-  if (!currentKeys) return;
-
-  let output = '';
-  if (exportPrivateCheckbox.checked && currentKeys.privateKey) {
-    output += currentKeys.privateKey + '\n\n';
+  if (exportPassword.length < 8) {
+    showToast('Export password must be at least 8 characters', true);
+    return;
   }
-  output += currentKeys.publicKey;
 
-  exportOutput.value = output;
-}
+  const result = await sendMessage({
+    action: 'exportKeys',
+    password: currentPassword,
+    exportPassword: exportPassword
+  });
+
+  if (result.success) {
+    exportOutput.value = result.keystore;
+  } else {
+    showToast(result.error || 'Failed to export keys', true);
+  }
+});
 
 copyExportBtn.addEventListener('click', () => {
+  if (!exportOutput.value) {
+    showToast('Generate keystore first', true);
+    return;
+  }
   navigator.clipboard.writeText(exportOutput.value);
   showToast('Copied to clipboard');
 });
 
 downloadExportBtn.addEventListener('click', () => {
-  const blob = new Blob([exportOutput.value], { type: 'text/plain' });
+  if (!exportOutput.value) {
+    showToast('Generate keystore first', true);
+    return;
+  }
+  const blob = new Blob([exportOutput.value], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = exportPrivateCheckbox.checked ? 'skavenger-keypair.pem' : 'skavenger-public.pem';
+  a.download = 'skavenger-keystore.json';
   a.click();
   URL.revokeObjectURL(url);
   showToast('Downloaded');
@@ -235,24 +243,30 @@ downloadExportBtn.addEventListener('click', () => {
 closeExportBtn.addEventListener('click', () => {
   exportModal.classList.add('hidden');
   exportOutput.value = '';
+  exportPasswordInput.value = '';
 });
 
 importBtn.addEventListener('click', () => {
-  importPrivateInput.value = '';
-  importPublicInput.value = '';
+  importKeystoreInput.value = '';
+  importKeystorePasswordInput.value = '';
   importModal.classList.remove('hidden');
 });
 
 confirmImportBtn.addEventListener('click', async () => {
-  const privateKey = importPrivateInput.value.trim();
-  const publicKey = importPublicInput.value.trim();
+  const keystore = importKeystoreInput.value.trim();
+  const keystorePassword = importKeystorePasswordInput.value;
 
-  if (!privateKey || !publicKey) {
-    showToast('Both keys are required', true);
+  if (!keystore) {
+    showToast('Keystore JSON is required', true);
     return;
   }
 
-  if (currentKeys) {
+  if (!keystorePassword) {
+    showToast('Keystore password is required', true);
+    return;
+  }
+
+  if (hasKeys) {
     const confirmed = await showConfirmDialog(
       'Import Keys',
       'This will replace your existing keys. Make sure you have exported them first.'
@@ -262,18 +276,17 @@ confirmImportBtn.addEventListener('click', async () => {
 
   const result = await sendMessage({
     action: 'importKeys',
-    privateKey,
-    publicKey,
+    keystore,
+    keystorePassword,
     password: currentPassword
   });
 
   if (result.success) {
-    currentKeys = { privateKey, publicKey };
     updateKeyStatus(true);
     importModal.classList.add('hidden');
     showToast('Keys imported');
   } else {
-    showToast(result.error || 'Invalid key format', true);
+    showToast(result.error || 'Invalid keystore or password', true);
   }
 });
 
@@ -283,7 +296,7 @@ closeImportBtn.addEventListener('click', () => {
 
 lockBtn.addEventListener('click', () => {
   currentPassword = null;
-  currentKeys = null;
+  hasKeys = false;
   loginPasswordInput.value = '';
   loginSection.classList.remove('hidden');
   setupSection.classList.add('hidden');

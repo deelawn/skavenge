@@ -26,16 +26,26 @@ Secure key management for Skavenge proof generation and verification.
 
 ## Key Format
 
-Keys are exported/imported in PEM format:
+Keys are exported/imported in encrypted JSON keystore format (similar to Ethereum's keystore):
 
-```
------BEGIN PRIVATE KEY-----
-MIGHAgEAMB...
------END PRIVATE KEY-----
-
------BEGIN PUBLIC KEY-----
-MFkwEwYHKo...
------END PUBLIC KEY-----
+```json
+{
+  "version": 1,
+  "id": "uuid-v4",
+  "crypto": {
+    "cipher": "aes-256-gcm",
+    "ciphertext": "hex-encoded",
+    "cipherparams": { "iv": "hex-encoded" },
+    "kdf": "pbkdf2",
+    "kdfparams": {
+      "dklen": 32,
+      "salt": "hex-encoded",
+      "c": 100000,
+      "prf": "hmac-sha256"
+    },
+    "mac": "hex-encoded"
+  }
+}
 ```
 
 The keys use ECDSA with the P-256 curve (equivalent to Go's `ecdsa.GenerateKey` with `elliptic.P256()`).

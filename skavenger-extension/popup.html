@@ -50,13 +50,11 @@
     <div id="export-modal" class="modal hidden">
       <div class="modal-content">
         <h2>Export Keys</h2>
-        <div class="export-options">
-          <label>
-            <input type="checkbox" id="export-private" checked>
-            Include Private Key
-          </label>
-        </div>
-        <textarea id="export-output" readonly placeholder="Keys will appear here..."></textarea>
+        <p class="info">Set a password to encrypt the exported keystore.</p>
+        <label>Export Password</label>
+        <input type="password" id="export-password" placeholder="Password for exported keystore">
+        <button id="generate-export-btn" class="secondary">Generate Keystore</button>
+        <textarea id="export-output" readonly placeholder="Keystore JSON will appear here..."></textarea>
         <div class="modal-actions">
           <button id="copy-export-btn" class="secondary">Copy to Clipboard</button>
           <button id="download-export-btn" class="secondary">Download</button>
@@ -69,11 +67,11 @@
     <div id="import-modal" class="modal hidden">
       <div class="modal-content">
         <h2>Import Keys</h2>
-        <p class="info">Paste your PEM-formatted keys below.</p>
-        <label>Private Key (PEM)</label>
-        <textarea id="import-private" placeholder="-----BEGIN PRIVATE KEY-----..."></textarea>
-        <label>Public Key (PEM)</label>
-        <textarea id="import-public" placeholder="-----BEGIN PUBLIC KEY-----..."></textarea>
+        <p class="info">Paste your JSON keystore below.</p>
+        <label>Keystore JSON</label>
+        <textarea id="import-keystore" placeholder='{"version":1,"id":"...","crypto":{...}}'></textarea>
+        <label>Keystore Password</label>
+        <input type="password" id="import-keystore-password" placeholder="Password used to encrypt the keystore">
         <div class="modal-actions">
           <button id="confirm-import-btn" class="primary">Import</button>
           <button id="close-import-btn" class="text">Cancel</button>

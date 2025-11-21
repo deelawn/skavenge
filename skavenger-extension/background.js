@@ -2,9 +2,35 @@
 // Handles key generation, storage, import, and export
 
 const STORAGE_KEY = 'skavenger_encrypted_keys';
+const KEYSTORE_VERSION = 1;
+
+// Generate UUID v4
+function generateUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = crypto.getRandomValues(new Uint8Array(1))[0] % 16;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+// Convert ArrayBuffer to hex string
+function bufferToHex(buffer) {
+  return Array.from(new Uint8Array(buffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+// Convert hex string to ArrayBuffer
+function hexToBuffer(hex) {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+  }
+  return bytes.buffer;
+}
 
 // Derive encryption key from password using PBKDF2
-async function deriveKey(password, salt) {
+async function deriveKey(password, salt, iterations = 100000) {
   const encoder = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
@@ -18,7 +44,7 @@ async function deriveKey(password, salt) {
     {
       name: 'PBKDF2',
       salt: salt,
-      iterations: 100000,
+      iterations: iterations,
       hash: 'SHA-256'
     },
     keyMaterial,
@@ -26,6 +52,37 @@ async function deriveKey(password, salt) {
     false,
     ['encrypt', 'decrypt']
   );
+}
+
+// Derive key bytes for MAC calculation
+async function deriveKeyBytes(password, salt, iterations = 100000) {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+
+  return crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: salt,
+      iterations: iterations,
+      hash: 'SHA-256'
+    },
+    keyMaterial,
+    256
+  );
+}
+
+// Calculate MAC (SHA-256 of derived key + ciphertext)
+async function calculateMAC(derivedKeyBytes, ciphertext) {
+  const macInput = new Uint8Array(derivedKeyBytes.byteLength + ciphertext.byteLength);
+  macInput.set(new Uint8Array(derivedKeyBytes), 0);
+  macInput.set(new Uint8Array(ciphertext), derivedKeyBytes.byteLength);
+  return crypto.subtle.digest('SHA-256', macInput);
 }
 
 // Encrypt data with AES-GCM
@@ -99,52 +156,95 @@ function base64ToArrayBuffer(base64) {
   return bytes.buffer;
 }
 
-// Export key to PEM format
-async function exportKeyToPEM(key, isPrivate) {
-  const format = isPrivate ? 'pkcs8' : 'spki';
-  const exported = await crypto.subtle.exportKey(format, key);
-  const base64 = arrayBufferToBase64(exported);
+// Export keys to JSON keystore format
+async function exportToKeystore(privateKeyRaw, publicKeyRaw, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(32));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const iterations = 100000;
 
-  const type = isPrivate ? 'PRIVATE KEY' : 'PUBLIC KEY';
-  const lines = base64.match(/.{1,64}/g) || [];
+  const key = await deriveKey(password, salt, iterations);
+  const derivedKeyBytes = await deriveKeyBytes(password, salt, iterations);
 
-  return `-----BEGIN ${type}-----\n${lines.join('\n')}\n-----END ${type}-----`;
-}
+  // Combine private and public keys
+  const keyData = JSON.stringify({
+    privateKey: bufferToHex(privateKeyRaw),
+    publicKey: bufferToHex(publicKeyRaw)
+  });
 
-// Import key from PEM format
-async function importKeyFromPEM(pem, isPrivate) {
-  const pemHeader = isPrivate ? '-----BEGIN PRIVATE KEY-----' : '-----BEGIN PUBLIC KEY-----';
-  const pemFooter = isPrivate ? '-----END PRIVATE KEY-----' : '-----END PUBLIC KEY-----';
-
-  const pemContents = pem
-    .replace(pemHeader, '')
-    .replace(pemFooter, '')
-    .replace(/\s/g, '');
-
-  const binaryDer = base64ToArrayBuffer(pemContents);
-
-  const format = isPrivate ? 'pkcs8' : 'spki';
-  const keyUsages = isPrivate ? ['sign'] : ['verify'];
-
-  return crypto.subtle.importKey(
-    format,
-    binaryDer,
-    {
-      name: 'ECDSA',
-      namedCurve: 'P-256'
-    },
-    true,
-    keyUsages
+  const encoder = new TextEncoder();
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: iv },
+    key,
+    encoder.encode(keyData)
   );
+
+  const mac = await calculateMAC(derivedKeyBytes, ciphertext);
+
+  return {
+    version: KEYSTORE_VERSION,
+    id: generateUUID(),
+    crypto: {
+      cipher: 'aes-256-gcm',
+      ciphertext: bufferToHex(ciphertext),
+      cipherparams: {
+        iv: bufferToHex(iv)
+      },
+      kdf: 'pbkdf2',
+      kdfparams: {
+        dklen: 32,
+        salt: bufferToHex(salt),
+        c: iterations,
+        prf: 'hmac-sha256'
+      },
+      mac: bufferToHex(mac)
+    }
+  };
 }
 
-// Store encrypted keys
+// Import keys from JSON keystore format
+async function importFromKeystore(keystore, password) {
+  if (keystore.version !== KEYSTORE_VERSION) {
+    throw new Error('Unsupported keystore version');
+  }
+
+  const cryptoData = keystore.crypto;
+  const salt = new Uint8Array(hexToBuffer(cryptoData.kdfparams.salt));
+  const iv = new Uint8Array(hexToBuffer(cryptoData.cipherparams.iv));
+  const ciphertext = hexToBuffer(cryptoData.ciphertext);
+  const iterations = cryptoData.kdfparams.c;
+
+  // Verify MAC
+  const derivedKeyBytes = await deriveKeyBytes(password, salt, iterations);
+  const calculatedMAC = await calculateMAC(derivedKeyBytes, ciphertext);
+
+  if (bufferToHex(calculatedMAC) !== cryptoData.mac) {
+    throw new Error('Invalid password or corrupted keystore');
+  }
+
+  // Decrypt
+  const key = await deriveKey(password, salt, iterations);
+  const decrypted = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: iv },
+    key,
+    ciphertext
+  );
+
+  const decoder = new TextDecoder();
+  const keyData = JSON.parse(decoder.decode(decrypted));
+
+  return {
+    privateKey: hexToBuffer(keyData.privateKey),
+    publicKey: hexToBuffer(keyData.publicKey)
+  };
+}
+
+// Store encrypted keys (internal storage format)
 async function storeKeys(keyData, password) {
   const encrypted = await encryptData(keyData, password);
   await chrome.storage.local.set({ [STORAGE_KEY]: encrypted });
 }
 
-// Retrieve and decrypt keys
+// Retrieve and decrypt keys (internal storage format)
 async function retrieveKeys(password) {
   const result = await chrome.storage.local.get(STORAGE_KEY);
   if (!result[STORAGE_KEY]) {
@@ -175,12 +275,15 @@ async function handleMessage(request) {
     switch (request.action) {
       case 'generateKeys': {
         const keyPair = await generateKeyPair();
-        const privateKeyPEM = await exportKeyToPEM(keyPair.privateKey, true);
-        const publicKeyPEM = await exportKeyToPEM(keyPair.publicKey, false);
+        const privateKeyRaw = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
+        const publicKeyRaw = await crypto.subtle.exportKey('spki', keyPair.publicKey);
 
-        await storeKeys({ privateKey: privateKeyPEM, publicKey: publicKeyPEM }, request.password);
+        await storeKeys({
+          privateKey: bufferToHex(privateKeyRaw),
+          publicKey: bufferToHex(publicKeyRaw)
+        }, request.password);
 
-        return { success: true, publicKey: publicKeyPEM };
+        return { success: true, publicKey: bufferToHex(publicKeyRaw) };
       }
 
       case 'exportKeys': {
@@ -188,7 +291,15 @@ async function handleMessage(request) {
         if (!keys) {
           return { success: false, error: 'Invalid password or no keys found' };
         }
-        return { success: true, privateKey: keys.privateKey, publicKey: keys.publicKey };
+
+        // Export as JSON keystore
+        const keystore = await exportToKeystore(
+          hexToBuffer(keys.privateKey),
+          hexToBuffer(keys.publicKey),
+          request.exportPassword || request.password
+        );
+
+        return { success: true, keystore: JSON.stringify(keystore, null, 2) };
       }
 
       case 'exportPublicKey': {
@@ -200,11 +311,30 @@ async function handleMessage(request) {
       }
 
       case 'importKeys': {
-        // Validate the keys by attempting to import them
-        await importKeyFromPEM(request.privateKey, true);
-        await importKeyFromPEM(request.publicKey, false);
+        // Parse and import from JSON keystore
+        const keystore = JSON.parse(request.keystore);
+        const importedKeys = await importFromKeystore(keystore, request.keystorePassword);
 
-        await storeKeys({ privateKey: request.privateKey, publicKey: request.publicKey }, request.password);
+        // Validate keys by importing them as CryptoKey objects
+        await crypto.subtle.importKey(
+          'pkcs8',
+          importedKeys.privateKey,
+          { name: 'ECDSA', namedCurve: 'P-256' },
+          true,
+          ['sign']
+        );
+        await crypto.subtle.importKey(
+          'spki',
+          importedKeys.publicKey,
+          { name: 'ECDSA', namedCurve: 'P-256' },
+          true,
+          ['verify']
+        );
+
+        await storeKeys({
+          privateKey: bufferToHex(importedKeys.privateKey),
+          publicKey: bufferToHex(importedKeys.publicKey)
+        }, request.password);
 
         return { success: true };
       }
