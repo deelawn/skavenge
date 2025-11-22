@@ -95,7 +95,6 @@ const skavengerPublicKeyDisplay = document.getElementById('skavenger-public-key-
 const metamaskAddressDisplay = document.getElementById('metamask-address-display');
 const copySkavengerBtn = document.getElementById('copy-skavenger-btn');
 const copyMetamaskBtn = document.getElementById('copy-metamask-btn');
-const disconnectBtn = document.getElementById('disconnect-btn');
 const toast = document.getElementById('toast');
 
 // Utility functions
@@ -422,40 +421,6 @@ copyMetamaskBtn.addEventListener('click', () => {
         navigator.clipboard.writeText(metamaskAddress);
         showToast('MetaMask address copied', 'success');
     }
-});
-
-disconnectBtn.addEventListener('click', async () => {
-    // Stop any polling
-    if (keyPollInterval) {
-        clearInterval(keyPollInterval);
-        keyPollInterval = null;
-    }
-
-    // Clear Skavenger session in extension
-    try {
-        await sendToExtension({ action: 'clearSession' });
-    } catch (error) {
-        console.error('Error clearing session:', error);
-    }
-
-    // Clear in-memory state
-    metamaskAddress = null;
-    skavengerPublicKey = null;
-
-    // Reset Skavenger UI to disconnected state
-    skavengerIndicator.classList.remove('connected', 'pending');
-    skavengerStatusText.textContent = 'Not connected';
-    linkSkavengerBtn.classList.remove('hidden');
-    linkInstructions.classList.add('hidden');
-
-    // Reset MetaMask UI to disconnected state
-    metamaskIndicator.classList.remove('connected');
-    metamaskStatusText.textContent = 'Not connected';
-    connectMetamaskBtn.textContent = 'Connect MetaMask';
-
-    // Show onboarding screen
-    showScreen(onboardingScreen);
-    showToast('Disconnected. Please reconnect to continue.', 'info');
 });
 
 // Handle MetaMask account changes
