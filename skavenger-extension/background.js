@@ -483,6 +483,15 @@ async function handleMessage(request, isInternal = true) {
         if (keys) {
           // Always create/update session so webapp can access the public key
           await createSession(request.password);
+
+          // Migration: Store public key separately if not already stored
+          // This handles keys that were created before we added separate public key storage
+          const existingPublicKey = await getPublicKey();
+          if (!existingPublicKey && keys.publicKey) {
+            await chrome.storage.local.set({
+              [PUBLIC_KEY_STORAGE]: keys.publicKey
+            });
+          }
         }
         return { success: !!keys };
       }
