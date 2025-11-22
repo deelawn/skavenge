@@ -275,10 +275,10 @@ async function initOnboarding() {
                 linkSkavengerBtn.classList.add('hidden');
                 linkInstructions.classList.add('hidden');
             } else {
-                // Keys exist but public key not accessible - needs migration
-                // This happens with keys created before public key separation feature
+                // Keys exist but public key not in separate storage
+                // User needs to generate new keys or re-import existing keys
                 skavengerIndicator.classList.remove('connected');
-                skavengerStatusText.textContent = 'Keys found - click to connect';
+                skavengerStatusText.textContent = 'Please generate or import keys';
                 linkSkavengerBtn.classList.remove('hidden');
                 linkInstructions.classList.add('hidden');
             }

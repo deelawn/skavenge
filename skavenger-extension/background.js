@@ -257,15 +257,7 @@ async function retrieveKeys(password) {
   if (!result[STORAGE_KEY]) {
     return null;
   }
-  const keys = await decryptData(result[STORAGE_KEY], password);
-
-  // Always ensure public key is migrated to separate storage when keys are decrypted
-  // This guarantees webapp can access public key without session
-  if (keys && keys.publicKey) {
-    await migratePublicKeyIfNeeded(keys);
-  }
-
-  return keys;
+  return decryptData(result[STORAGE_KEY], password);
 }
 
 // Check if keys exist
@@ -278,19 +270,6 @@ async function hasStoredKeys() {
 async function getPublicKey() {
   const result = await chrome.storage.local.get(PUBLIC_KEY_STORAGE);
   return result[PUBLIC_KEY_STORAGE] || null;
-}
-
-// Migrate public key to separate storage if needed
-async function migratePublicKeyIfNeeded(keys) {
-  if (!keys || !keys.publicKey) return;
-
-  const existingPublicKey = await getPublicKey();
-  if (!existingPublicKey) {
-    // Public key not in separate storage - migrate it
-    await chrome.storage.local.set({
-      [PUBLIC_KEY_STORAGE]: keys.publicKey
-    });
-  }
 }
 
 // Clear stored keys
