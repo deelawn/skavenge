@@ -74,8 +74,8 @@ async function updateKeyStatus(keysExist, publicKey = null) {
       publicKeyDisplay.value = publicKey;
       publicKeySection.classList.remove('hidden');
     } else {
-      // Fetch public key if not provided
-      const result = await sendMessage({ action: 'exportPublicKey', password: currentPassword });
+      // Fetch public key if not provided (no password required - public keys are public)
+      const result = await sendMessage({ action: 'getPublicKey' });
       if (result.success) {
         publicKeyDisplay.value = result.publicKey;
         publicKeySection.classList.remove('hidden');
