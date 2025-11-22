@@ -263,11 +263,11 @@ async function initOnboarding() {
     // Check Skavenger extension
     try {
         const hasKeys = await checkSkavengerKeys();
-        
+
         if (hasKeys) {
-            // Try to get public key (may need password if session expired)
+            // Get public key (always accessible - no session required)
             const publicKey = await getSkavengerPublicKey();
-            
+
             if (publicKey) {
                 skavengerPublicKey = publicKey;
                 skavengerIndicator.classList.add('connected');
@@ -275,9 +275,9 @@ async function initOnboarding() {
                 linkSkavengerBtn.classList.add('hidden');
                 linkInstructions.classList.add('hidden');
             } else {
-                // Session expired, need to link again
+                // Keys exist but public key not accessible - likely a storage issue
                 skavengerIndicator.classList.remove('connected');
-                skavengerStatusText.textContent = 'Session expired - please link again';
+                skavengerStatusText.textContent = 'Error accessing public key';
                 linkSkavengerBtn.classList.remove('hidden');
                 linkInstructions.classList.add('hidden');
             }
