@@ -2,6 +2,7 @@
 // Handles key generation, storage, import, and export
 
 const STORAGE_KEY = 'skavenger_encrypted_keys';
+const PUBLIC_KEY_STORAGE = 'skavenger_public_key';
 const SESSION_KEY = 'skavenger_session';
 const KEYSTORE_VERSION = 1;
 const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
@@ -243,7 +244,11 @@ async function importFromKeystore(keystore, password) {
 // Store encrypted keys (internal storage format)
 async function storeKeys(keyData, password) {
   const encrypted = await encryptData(keyData, password);
-  await chrome.storage.local.set({ [STORAGE_KEY]: encrypted });
+  // Also store public key separately (unencrypted) for webapp access
+  await chrome.storage.local.set({
+    [STORAGE_KEY]: encrypted,
+    [PUBLIC_KEY_STORAGE]: keyData.publicKey
+  });
 }
 
 // Retrieve and decrypt keys (internal storage format)
@@ -261,9 +266,16 @@ async function hasStoredKeys() {
   return !!result[STORAGE_KEY];
 }
 
+// Get public key (no password required - public keys are meant to be public)
+async function getPublicKey() {
+  const result = await chrome.storage.local.get(PUBLIC_KEY_STORAGE);
+  return result[PUBLIC_KEY_STORAGE] || null;
+}
+
 // Clear stored keys
 async function clearKeys() {
   await chrome.storage.local.remove(STORAGE_KEY);
+  await chrome.storage.local.remove(PUBLIC_KEY_STORAGE);
   await chrome.storage.local.remove(SESSION_KEY);
 }
 
@@ -443,6 +455,16 @@ async function handleMessage(request, isInternal = true) {
       case 'hasKeys': {
         const hasKeys = await hasStoredKeys();
         return { success: true, hasKeys };
+      }
+
+      case 'getPublicKey': {
+        // Public key is always accessible (no password/session required)
+        // because public keys are meant to be public
+        const publicKey = await getPublicKey();
+        if (publicKey) {
+          return { success: true, publicKey };
+        }
+        return { success: false, error: 'No public key found' };
       }
 
       case 'clearKeys': {

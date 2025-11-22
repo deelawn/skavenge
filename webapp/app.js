@@ -178,22 +178,14 @@ async function checkSkavengerKeys() {
     }
 }
 
-// Get Skavenger public key
+// Get Skavenger public key (no session required - public keys are public)
 async function getSkavengerPublicKey() {
     try {
-        // First verify session or password
-        const verifyResponse = await sendToExtension({ action: 'verifyPassword' });
-        
-        if (!verifyResponse.success) {
-            // Need password
-            return null;
-        }
-        
-        const response = await sendToExtension({ action: 'exportPublicKey' });
+        const response = await sendToExtension({ action: 'getPublicKey' });
         if (response.success) {
             return response.publicKey;
         }
-        
+
         return null;
     } catch (error) {
         console.error('Error getting Skavenger public key:', error);
