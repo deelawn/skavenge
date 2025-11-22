@@ -257,7 +257,15 @@ async function retrieveKeys(password) {
   if (!result[STORAGE_KEY]) {
     return null;
   }
-  return decryptData(result[STORAGE_KEY], password);
+  const keys = await decryptData(result[STORAGE_KEY], password);
+
+  // Always ensure public key is migrated to separate storage when keys are decrypted
+  // This guarantees webapp can access public key without session
+  if (keys && keys.publicKey) {
+    await migratePublicKeyIfNeeded(keys);
+  }
+
+  return keys;
 }
 
 // Check if keys exist
@@ -429,9 +437,6 @@ async function handleMessage(request, isInternal = true) {
           return { success: false, error: 'Invalid password or no keys found' };
         }
 
-        // Ensure public key is migrated to separate storage
-        await migratePublicKeyIfNeeded(keys);
-
         return { success: true, publicKey: keys.publicKey };
       }
 
@@ -498,11 +503,8 @@ async function handleMessage(request, isInternal = true) {
 
         const keys = await retrieveKeys(request.password);
         if (keys) {
-          // Always create/update session so webapp can access the public key
+          // Always create/update session
           await createSession(request.password);
-
-          // Ensure public key is migrated to separate storage
-          await migratePublicKeyIfNeeded(keys);
         }
         return { success: !!keys };
       }
