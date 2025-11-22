@@ -133,6 +133,11 @@ async function init() {
     if (sessionCheck.success) {
       // Valid session exists - auto-unlock and go to main screen
       currentPassword = true; // Mark as unlocked (we don't need the actual password in popup)
+
+      // Trigger migration by accessing public key through session
+      // This ensures old keys get migrated to separate public key storage
+      await sendMessage({ action: 'exportPublicKey' });
+
       showScreen(mainScreen);
       await updateKeyStatus(true);
     } else {

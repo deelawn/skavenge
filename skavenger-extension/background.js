@@ -272,6 +272,19 @@ async function getPublicKey() {
   return result[PUBLIC_KEY_STORAGE] || null;
 }
 
+// Migrate public key to separate storage if needed
+async function migratePublicKeyIfNeeded(keys) {
+  if (!keys || !keys.publicKey) return;
+
+  const existingPublicKey = await getPublicKey();
+  if (!existingPublicKey) {
+    // Public key not in separate storage - migrate it
+    await chrome.storage.local.set({
+      [PUBLIC_KEY_STORAGE]: keys.publicKey
+    });
+  }
+}
+
 // Clear stored keys
 async function clearKeys() {
   await chrome.storage.local.remove(STORAGE_KEY);
@@ -415,6 +428,10 @@ async function handleMessage(request, isInternal = true) {
         if (!keys) {
           return { success: false, error: 'Invalid password or no keys found' };
         }
+
+        // Ensure public key is migrated to separate storage
+        await migratePublicKeyIfNeeded(keys);
+
         return { success: true, publicKey: keys.publicKey };
       }
 
@@ -484,14 +501,8 @@ async function handleMessage(request, isInternal = true) {
           // Always create/update session so webapp can access the public key
           await createSession(request.password);
 
-          // Migration: Store public key separately if not already stored
-          // This handles keys that were created before we added separate public key storage
-          const existingPublicKey = await getPublicKey();
-          if (!existingPublicKey && keys.publicKey) {
-            await chrome.storage.local.set({
-              [PUBLIC_KEY_STORAGE]: keys.publicKey
-            });
-          }
+          // Ensure public key is migrated to separate storage
+          await migratePublicKeyIfNeeded(keys);
         }
         return { success: !!keys };
       }
