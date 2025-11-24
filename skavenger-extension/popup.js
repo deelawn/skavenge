@@ -74,8 +74,8 @@ async function updateKeyStatus(keysExist, publicKey = null) {
       publicKeyDisplay.value = publicKey;
       publicKeySection.classList.remove('hidden');
     } else {
-      // Fetch public key if not provided
-      const result = await sendMessage({ action: 'exportPublicKey', password: currentPassword });
+      // Fetch public key if not provided (no password required - public keys are public)
+      const result = await sendMessage({ action: 'getPublicKey' });
       if (result.success) {
         publicKeyDisplay.value = result.publicKey;
         publicKeySection.classList.remove('hidden');
@@ -127,14 +127,26 @@ async function init() {
   const result = await sendMessage({ action: 'hasKeys' });
 
   if (result.hasKeys) {
-    loginSection.classList.remove('hidden');
-    setupSection.classList.add('hidden');
+    // Check if there's a valid session
+    const sessionCheck = await sendMessage({ action: 'verifyPassword' });
+
+    if (sessionCheck.success) {
+      // Valid session exists - auto-unlock and go to main screen
+      currentPassword = true; // Mark as unlocked (we don't need the actual password in popup)
+      showScreen(mainScreen);
+      await updateKeyStatus(true);
+    } else {
+      // No valid session - show login screen
+      loginSection.classList.remove('hidden');
+      setupSection.classList.add('hidden');
+      showScreen(unlockScreen);
+    }
   } else {
+    // No keys - show setup screen
     setupSection.classList.remove('hidden');
     loginSection.classList.add('hidden');
+    showScreen(unlockScreen);
   }
-
-  showScreen(unlockScreen);
 }
 
 // Event handlers

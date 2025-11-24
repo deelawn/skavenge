@@ -5,7 +5,7 @@
 // This must match the extension_id field in skavenger-extension/manifest.json
 // For unpacked extensions: find the ID in chrome://extensions and update both files
 // For production: this will be the published Chrome Web Store extension ID
-const SKAVENGER_EXTENSION_ID = "replace-with-your-extension-id"; // Must match manifest.json extension_id
+const SKAVENGER_EXTENSION_ID = "hnbligdjmpihmhhgajlfjmckcnmnofbn"; // Must match manifest.json extension_id
 
 let extensionId = SKAVENGER_EXTENSION_ID;
 
@@ -95,7 +95,6 @@ const skavengerPublicKeyDisplay = document.getElementById('skavenger-public-key-
 const metamaskAddressDisplay = document.getElementById('metamask-address-display');
 const copySkavengerBtn = document.getElementById('copy-skavenger-btn');
 const copyMetamaskBtn = document.getElementById('copy-metamask-btn');
-const disconnectBtn = document.getElementById('disconnect-btn');
 const toast = document.getElementById('toast');
 
 // Utility functions
@@ -178,22 +177,14 @@ async function checkSkavengerKeys() {
     }
 }
 
-// Get Skavenger public key
+// Get Skavenger public key (no session required - public keys are public)
 async function getSkavengerPublicKey() {
     try {
-        // First verify session or password
-        const verifyResponse = await sendToExtension({ action: 'verifyPassword' });
-        
-        if (!verifyResponse.success) {
-            // Need password
-            return null;
-        }
-        
-        const response = await sendToExtension({ action: 'exportPublicKey' });
+        const response = await sendToExtension({ action: 'getPublicKey' });
         if (response.success) {
             return response.publicKey;
         }
-        
+
         return null;
     } catch (error) {
         console.error('Error getting Skavenger public key:', error);
@@ -228,7 +219,7 @@ function startKeyPolling() {
     
     keyPollInterval = setInterval(async () => {
         pollCount++;
-        
+
         try {
             const hasKeys = await checkSkavengerKeys();
             if (hasKeys) {
@@ -238,23 +229,27 @@ function startKeyPolling() {
                     clearInterval(keyPollInterval);
                     keyPollInterval = null;
                     skavengerPublicKey = publicKey;
+                    skavengerIndicator.classList.remove('pending');
                     skavengerIndicator.classList.add('connected');
                     skavengerStatusText.textContent = 'Keys found';
                     linkSkavengerBtn.classList.add('hidden');
                     linkInstructions.classList.add('hidden');
                     showToast('Skavenger account linked successfully', 'success');
-                    
+
                     // Check if MetaMask is also connected
                     if (metamaskAddress) {
                         showDashboard();
                     }
                 }
             }
-            
+
             // Stop polling after max attempts
             if (pollCount >= maxPolls) {
                 clearInterval(keyPollInterval);
                 keyPollInterval = null;
+                skavengerIndicator.classList.remove('pending');
+                skavengerStatusText.textContent = 'Link timed out. Please try again.';
+                showToast('Could not detect keys. Please try again.', 'error');
             }
         } catch (error) {
             // Continue polling on error
@@ -267,11 +262,11 @@ async function initOnboarding() {
     // Check Skavenger extension
     try {
         const hasKeys = await checkSkavengerKeys();
-        
+
         if (hasKeys) {
-            // Try to get public key (may need password if session expired)
+            // Get public key (always accessible - no session required)
             const publicKey = await getSkavengerPublicKey();
-            
+
             if (publicKey) {
                 skavengerPublicKey = publicKey;
                 skavengerIndicator.classList.add('connected');
@@ -279,9 +274,10 @@ async function initOnboarding() {
                 linkSkavengerBtn.classList.add('hidden');
                 linkInstructions.classList.add('hidden');
             } else {
-                // Session expired, need to link again
+                // Keys exist but public key not in separate storage
+                // User needs to generate new keys or re-import existing keys
                 skavengerIndicator.classList.remove('connected');
-                skavengerStatusText.textContent = 'Session expired - please link again';
+                skavengerStatusText.textContent = 'Please generate or import keys';
                 linkSkavengerBtn.classList.remove('hidden');
                 linkInstructions.classList.add('hidden');
             }
@@ -367,20 +363,28 @@ async function showDashboard() {
 
 // Event handlers
 linkSkavengerBtn.addEventListener('click', async () => {
-    // Show instructions
-    linkInstructions.classList.remove('hidden');
-    skavengerStatusText.textContent = 'Waiting for you to set up Skavenger extension...';
+    // Update UI to show we're waiting
+    skavengerStatusText.textContent = 'Opening extension...';
     skavengerIndicator.classList.add('pending');
-    
-    // Request link from extension (this may fail if extension not found, but that's okay)
+
+    // Request extension to open its popup
     try {
-        await requestSkavengerLink();
-        showToast('Please open the Skavenger extension to set up or unlock your account', 'info');
+        const response = await requestSkavengerLink();
+
+        // Show appropriate message based on response
+        if (response) {
+            showToast('Extension opened. Please generate keys or enter your password.', 'info');
+            skavengerStatusText.textContent = 'Waiting for you to complete setup in the extension...';
+        }
     } catch (error) {
-        // Extension might not be found, but show instructions anyway
-        showToast('Please open the Skavenger extension icon in your browser toolbar', 'info');
+        // Extension might not be found
+        linkInstructions.classList.remove('hidden');
+        skavengerStatusText.textContent = 'Extension not found';
+        showToast('Please install the Skavenger extension and try again', 'error');
+        skavengerIndicator.classList.remove('pending');
+        return;
     }
-    
+
     // Start polling for keys
     startKeyPolling();
 });
@@ -417,20 +421,6 @@ copyMetamaskBtn.addEventListener('click', () => {
         navigator.clipboard.writeText(metamaskAddress);
         showToast('MetaMask address copied', 'success');
     }
-});
-
-disconnectBtn.addEventListener('click', () => {
-    // Stop any polling
-    if (keyPollInterval) {
-        clearInterval(keyPollInterval);
-        keyPollInterval = null;
-    }
-    
-    // Clear in-memory state (but not localStorage - we're not storing keys there)
-    metamaskAddress = null;
-    skavengerPublicKey = null;
-    showScreen(onboardingScreen);
-    initOnboarding();
 });
 
 // Handle MetaMask account changes

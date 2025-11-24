@@ -2,6 +2,7 @@
 // Handles key generation, storage, import, and export
 
 const STORAGE_KEY = 'skavenger_encrypted_keys';
+const PUBLIC_KEY_STORAGE = 'skavenger_public_key';
 const SESSION_KEY = 'skavenger_session';
 const KEYSTORE_VERSION = 1;
 const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
@@ -243,7 +244,11 @@ async function importFromKeystore(keystore, password) {
 // Store encrypted keys (internal storage format)
 async function storeKeys(keyData, password) {
   const encrypted = await encryptData(keyData, password);
-  await chrome.storage.local.set({ [STORAGE_KEY]: encrypted });
+  // Also store public key separately (unencrypted) for webapp access
+  await chrome.storage.local.set({
+    [STORAGE_KEY]: encrypted,
+    [PUBLIC_KEY_STORAGE]: keyData.publicKey
+  });
 }
 
 // Retrieve and decrypt keys (internal storage format)
@@ -261,9 +266,16 @@ async function hasStoredKeys() {
   return !!result[STORAGE_KEY];
 }
 
+// Get public key (no password required - public keys are meant to be public)
+async function getPublicKey() {
+  const result = await chrome.storage.local.get(PUBLIC_KEY_STORAGE);
+  return result[PUBLIC_KEY_STORAGE] || null;
+}
+
 // Clear stored keys
 async function clearKeys() {
   await chrome.storage.local.remove(STORAGE_KEY);
+  await chrome.storage.local.remove(PUBLIC_KEY_STORAGE);
   await chrome.storage.local.remove(SESSION_KEY);
 }
 
@@ -369,9 +381,8 @@ async function handleMessage(request, isInternal = true) {
           publicKey: bufferToHex(publicKeyRaw)
         }, password);
 
-        if (!isInternal) {
-          await createSession(password);
-        }
+        // Always create session so webapp can access the public key
+        await createSession(password);
 
         return { success: true, publicKey: bufferToHex(publicKeyRaw) };
       }
@@ -404,6 +415,7 @@ async function handleMessage(request, isInternal = true) {
         if (!keys) {
           return { success: false, error: 'Invalid password or no keys found' };
         }
+
         return { success: true, publicKey: keys.publicKey };
       }
 
@@ -435,12 +447,25 @@ async function handleMessage(request, isInternal = true) {
           publicKey: keyData.publicKey
         }, password);
 
+        // Always create session so webapp can access the public key
+        await createSession(password);
+
         return { success: true };
       }
 
       case 'hasKeys': {
         const hasKeys = await hasStoredKeys();
         return { success: true, hasKeys };
+      }
+
+      case 'getPublicKey': {
+        // Public key is always accessible (no password/session required)
+        // because public keys are meant to be public
+        const publicKey = await getPublicKey();
+        if (publicKey) {
+          return { success: true, publicKey };
+        }
+        return { success: false, error: 'No public key found' };
       }
 
       case 'clearKeys': {
@@ -456,8 +481,8 @@ async function handleMessage(request, isInternal = true) {
         }
 
         const keys = await retrieveKeys(request.password);
-        if (keys && !isInternal) {
-          // Create session for external requests
+        if (keys) {
+          // Always create/update session
           await createSession(request.password);
         }
         return { success: !!keys };
@@ -469,19 +494,26 @@ async function handleMessage(request, isInternal = true) {
       }
 
       case 'requestLink': {
-        // Set badge to notify user to open extension
+        // Open the extension popup
         try {
-          await chrome.action.setBadgeText({ text: '!' });
-          await chrome.action.setBadgeBackgroundColor({ color: '#667eea' });
-          // Clear badge after 30 seconds
-          setTimeout(async () => {
-            await chrome.action.setBadgeText({ text: '' });
-          }, 30000);
+          await chrome.action.openPopup();
+          return { success: true, message: 'Extension popup opened' };
         } catch (error) {
-          // Badge API might not be available, that's okay
-          console.log('Could not set badge:', error);
+          // If openPopup fails (e.g., popup already open or user interaction required),
+          // fall back to setting a badge to notify the user
+          console.log('Could not open popup, setting badge instead:', error);
+          try {
+            await chrome.action.setBadgeText({ text: '!' });
+            await chrome.action.setBadgeBackgroundColor({ color: '#667eea' });
+            // Clear badge after 30 seconds
+            setTimeout(async () => {
+              await chrome.action.setBadgeText({ text: '' });
+            }, 30000);
+          } catch (badgeError) {
+            console.log('Could not set badge:', badgeError);
+          }
+          return { success: true, message: 'Please click the Skavenger extension icon to set up or unlock your account' };
         }
-        return { success: true, message: 'Please open the Skavenger extension to set up or unlock your account' };
       }
 
       case 'getExtensionId': {

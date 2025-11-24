@@ -3,7 +3,7 @@
   "name": "Skavenger",
   "version": "1.0.0",
   "description": "Secure key management for Skavenge proof generation and verification",
-  "extension_id": "replace-with-your-extension-id",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4I62TwYguUqfJ5McUOkIxnQh5ZvlNjmgTMAuWIO/F//m8wgw9dcglezxLFVjM5IVYq36iGUzs9tFR4uTAuzVrL6RH+4cXW43PhvWI+Ohu2d7m1csu32Oc9SzbpiQy1BxKk+QgMeeN38XCtxzt8tmlVAoJIikQycbtZd6+ZrP6pJLRVoTc3ry7rlnZJbyU+ET2f04lBrXFMD3pP2LxpGprUHZar2ZWFsgbZu9NYcbY4GHOjnRzkGPYfWDoyAb71ALWlVHuqHbkvdJwOOG6Qc8yDNqZc21qjBjOfafP1IgItl1ouhqRz/GGGkd+6FXAKFaL9GCPraidqlN3fnIgwwDfwIDAQAB",
   "permissions": [
     "storage"
   ],
