@@ -16,11 +16,25 @@ function toHex(num) {
 }
 
 /**
+ * Convert RPC URL for browser access
+ * Replaces Docker internal hostnames with localhost
+ */
+function getBrowserRpcUrl(rpcUrl) {
+  if (!rpcUrl) {
+    return 'http://localhost:8545';
+  }
+
+  // Replace hardhat (Docker service name) with localhost for browser access
+  return rpcUrl.replace(/http:\/\/hardhat:/, 'http://localhost:');
+}
+
+/**
  * Switch MetaMask to the specified network
  * If the network doesn't exist, it will be added automatically
  */
 async function switchToNetwork(chainId, rpcUrl) {
   const chainIdHex = toHex(chainId);
+  const browserRpcUrl = getBrowserRpcUrl(rpcUrl);
 
   try {
     // Try to switch to the network
@@ -39,7 +53,7 @@ async function switchToNetwork(chainId, rpcUrl) {
             {
               chainId: chainIdHex,
               chainName: `Skavenge Network (${chainId})`,
-              rpcUrls: [rpcUrl],
+              rpcUrls: [browserRpcUrl],
               nativeCurrency: {
                 name: 'Ether',
                 symbol: 'ETH',
@@ -49,7 +63,9 @@ async function switchToNetwork(chainId, rpcUrl) {
           ],
         });
       } catch (addError) {
-        throw new Error('Failed to add network to MetaMask.');
+        // Provide more detailed error message
+        const errorMsg = addError.message || 'Failed to add network to MetaMask.';
+        throw new Error(`Failed to add network: ${errorMsg}`);
       }
     } else if (switchError.code === 4001) {
       throw new Error('Network switch rejected by user.');
