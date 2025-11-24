@@ -181,6 +181,12 @@ function SkavengerStep({ onKeysFound, onToast }) {
         <span>{statusText}</span>
       </div>
 
+      {publicKey && (
+        <div className="account-value" style={{ marginTop: '12px' }}>
+          {publicKey}
+        </div>
+      )}
+
       {showButton && (
         <button className="primary" onClick={handleLinkClick}>
           Link Skavenger Account
