@@ -1,10 +1,17 @@
-.PHONY: all compile hardhat test
+.PHONY: all compile compile-js hardhat test
 
 all: compile
 
 compile:
 	solc --abi --bin --base-path eth/node_modules --overwrite eth/skavenge.sol -o eth/build
 	abigen --bin eth/build/Skavenge.bin --abi eth/build/Skavenge.abi --pkg bindings --type Skavenge --out eth/bindings/bindings.go
+
+compile-js:
+	solc --abi --base-path eth/node_modules --overwrite eth/skavenge.sol -o eth/build
+	@echo "// ABI for Skavenge contract - includes ERC721Enumerable and custom Clue functions" > webapp/src/contractABI.js
+	@echo "export const SKAVENGE_ABI = " >> webapp/src/contractABI.js
+	@cat eth/build/Skavenge.abi >> webapp/src/contractABI.js
+	@echo ";" >> webapp/src/contractABI.js
 
 # Docker targets
 .PHONY: docker-build
