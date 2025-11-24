@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title Skavenge
  * @dev A scavenger hunt NFT that stores encrypted clues which users can solve and trade
  */
-contract Skavenge is ERC721, ReentrancyGuard {
+contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     // Clue structure
     struct Clue {
         bytes encryptedContents; // ElGamal encrypted content of the clue
@@ -590,9 +590,6 @@ contract Skavenge is ERC721, ReentrancyGuard {
     }
 
     /**
-     * @dev Override _beforeTokenTransfer to handle transfers
-     */
-    /**
      * @dev Update the authorized minter address
      * @param newMinter New address authorized to mint clues
      */
@@ -605,17 +602,24 @@ contract Skavenge is ERC721, ReentrancyGuard {
         emit AuthorizedMinterUpdated(oldMinter, newMinter);
     }
 
-    function _beforeTokenTransfer(
-        address from,
+    /**
+     * @dev Override _update to handle transfers and maintain enumerable functionality
+     */
+    function _update(
         address to,
-        uint256 tokenId
-    ) internal virtual {
-        // If this is a transfer (not a mint), clear the sale price
+        uint256 tokenId,
+        address auth
+    ) internal virtual override returns (address) {
+        address from = super._update(to, tokenId, auth);
+
+        // If this is a transfer (not a mint or burn), clear the sale price
         if (from != address(0) && to != address(0)) {
             if (cluesForSale[tokenId]) {
                 _removeFromForSaleList(tokenId);
             }
             clues[tokenId].salePrice = 0;
         }
+
+        return from;
     }
 }
