@@ -1,0 +1,295 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    color: #333;
+}
+
+.container {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    max-width: 600px;
+    width: 100%;
+    padding: 40px;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+h1 {
+    font-size: 2.5em;
+    color: #667eea;
+    margin-bottom: 8px;
+}
+
+.subtitle {
+    color: #666;
+    font-size: 0.95em;
+}
+
+.screen {
+    display: block;
+}
+
+.screen.hidden {
+    display: none;
+}
+
+.step {
+    margin-bottom: 40px;
+    padding: 30px;
+    background: #f8f9fa;
+    border-radius: 12px;
+    border: 2px solid #e9ecef;
+}
+
+.step h2 {
+    font-size: 1.5em;
+    color: #333;
+    margin-bottom: 12px;
+}
+
+.info {
+    color: #666;
+    font-size: 0.9em;
+    margin-bottom: 20px;
+}
+
+.status {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 20px 0;
+    padding: 12px;
+    background: white;
+    border-radius: 8px;
+}
+
+.status-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #dee2e6;
+    flex-shrink: 0;
+}
+
+.status-indicator.connected {
+    background: #51cf66;
+}
+
+.status-indicator.pending {
+    background: #ffd43b;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+button {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 1em;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.primary {
+    background: #667eea;
+    color: white;
+}
+
+.primary:hover:not(:disabled) {
+    background: #5568d3;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.secondary {
+    background: #e9ecef;
+    color: #333;
+}
+
+.secondary:hover:not(:disabled) {
+    background: #dee2e6;
+}
+
+button.hidden {
+    display: none;
+}
+
+.link-instructions {
+    margin-top: 16px;
+    padding: 12px;
+    background: #e7f5ff;
+    border-radius: 8px;
+    border: 1px solid #74c0fc;
+}
+
+.link-instructions.hidden {
+    display: none;
+}
+
+.link-instructions p {
+    margin: 0;
+    color: #1864ab;
+    font-size: 0.9em;
+}
+
+.dashboard h2 {
+    font-size: 1.8em;
+    color: #333;
+    margin-bottom: 30px;
+    text-align: center;
+}
+
+.account-card {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    border: 2px solid #e9ecef;
+}
+
+.account-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.account-label {
+    font-weight: 600;
+    color: #495057;
+    font-size: 0.9em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.account-status {
+    font-size: 0.85em;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-weight: 500;
+}
+
+.account-status.connected {
+    background: #d3f9d8;
+    color: #2b8a3e;
+}
+
+.account-value {
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.9em;
+    color: #333;
+    word-break: break-all;
+    background: white;
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    border: 1px solid #e9ecef;
+}
+
+.copy-btn {
+    width: 100%;
+    padding: 10px;
+    background: #e9ecef;
+    color: #333;
+    font-size: 0.9em;
+}
+
+.copy-btn:hover {
+    background: #dee2e6;
+}
+
+.toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.toast.visible {
+    opacity: 1;
+}
+
+.toast.error {
+    background: #e03131;
+}
+
+.toast.success {
+    background: #51cf66;
+}
+
+.config-info {
+    margin-top: 20px;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 2px solid #e9ecef;
+}
+
+.config-info h3 {
+    font-size: 1.1em;
+    color: #333;
+    margin-bottom: 12px;
+}
+
+.config-row {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 12px;
+}
+
+.config-row:last-child {
+    margin-bottom: 0;
+}
+
+.config-label {
+    font-weight: 600;
+    color: #495057;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.config-value {
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.85em;
+    color: #333;
+    word-break: break-all;
+}
