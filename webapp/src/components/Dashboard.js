@@ -1,4 +1,5 @@
 import React from 'react';
+import { getBrowserRpcUrl } from '../utils.js';
 
 /**
  * Dashboard Component
@@ -60,7 +61,7 @@ function Dashboard({ skavengerPublicKey, metamaskAddress, config, onToast }) {
           </div>
           <div className="config-row">
             <span className="config-label">Network RPC URL</span>
-            <span className="config-value">{config.networkRpcUrl}</span>
+            <span className="config-value">{getBrowserRpcUrl(config.networkRpcUrl)}</span>
           </div>
           <div className="config-row">
             <span className="config-label">Chain ID</span>

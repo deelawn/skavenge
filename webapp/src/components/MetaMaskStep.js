@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { loadConfig, CHAIN_ID } from '../config.js';
+import { getBrowserRpcUrl } from '../utils.js';
 
 /**
  * Check if MetaMask is installed
@@ -13,19 +14,6 @@ function isMetaMaskInstalled() {
  */
 function toHex(num) {
   return '0x' + num.toString(16);
-}
-
-/**
- * Convert RPC URL for browser access
- * Replaces Docker internal hostnames with localhost
- */
-function getBrowserRpcUrl(rpcUrl) {
-  if (!rpcUrl) {
-    return 'http://localhost:8545';
-  }
-
-  // Replace hardhat (Docker service name) with localhost for browser access
-  return rpcUrl.replace(/http:\/\/hardhat:/, 'http://localhost:');
 }
 
 /**
