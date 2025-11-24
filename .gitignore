@@ -9,3 +9,6 @@ node_modules
 # Chrome extension private keys
 skavenger-extension/private_key.pem
 skavenger-extension/public_key_base64.txt
+
+# Test configuration with private keys
+test-config.json

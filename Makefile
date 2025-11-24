@@ -26,12 +26,23 @@ docker-up:
 	docker compose up -d hardhat
 
 .PHONY: start
-start: start-services
+start: start-with-setup
 
 .PHONY: start-services
 start-services:
 	docker compose up -d hardhat webapp
 	@echo "Services starting..."
+	@echo "Hardhat: http://localhost:8545"
+	@echo "Webapp: http://localhost:8080"
+
+.PHONY: start-with-setup
+start-with-setup:
+	docker compose up -d hardhat
+	@echo "Waiting for Hardhat to be ready..."
+	@sleep 5
+	docker compose up --abort-on-container-exit setup
+	docker compose up -d webapp
+	@echo "Services started with contract deployment..."
 	@echo "Hardhat: http://localhost:8545"
 	@echo "Webapp: http://localhost:8080"
 
@@ -60,3 +71,17 @@ test-local: docker-build docker-up
 	@sleep 5
 	docker compose up --abort-on-container-exit test
 	docker compose down
+
+.PHONY: setup
+setup:
+	@echo "Running contract setup..."
+	docker compose up --abort-on-container-exit setup
+
+.PHONY: setup-local
+setup-local:
+	@echo "Running contract setup locally..."
+	@if [ ! -f test-config.json ]; then \
+		echo "Error: test-config.json not found"; \
+		exit 1; \
+	fi
+	go run ./cmd/setup
