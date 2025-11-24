@@ -31,6 +31,16 @@ function App() {
     initConfig();
   }, []);
 
+  // Auto-switch to dashboard when both accounts are connected
+  useEffect(() => {
+    if (skavengerPublicKey && metamaskAddress) {
+      setScreen('dashboard');
+    } else if (!metamaskAddress && screen === 'dashboard') {
+      // Switch back to onboarding if MetaMask disconnects
+      setScreen('onboarding');
+    }
+  }, [skavengerPublicKey, metamaskAddress, screen]);
+
   // Show toast message
   const showToast = (message, type = 'info') => {
     setToastMessage(message);
@@ -45,29 +55,13 @@ function App() {
   // Handle Skavenger keys found
   const handleSkavengerKeysFound = (publicKey) => {
     setSkavengerPublicKey(publicKey);
-
-    // If MetaMask is also connected, show dashboard
-    if (metamaskAddress) {
-      setScreen('dashboard');
-    }
+    // Dashboard switch is handled by useEffect
   };
 
   // Handle MetaMask account connected
   const handleMetaMaskConnected = (address) => {
-    if (address) {
-      setMetamaskAddress(address);
-
-      // If Skavenger is also connected, show dashboard
-      if (skavengerPublicKey) {
-        setScreen('dashboard');
-      }
-    } else {
-      // Disconnected - go back to onboarding
-      setMetamaskAddress(null);
-      if (screen === 'dashboard') {
-        setScreen('onboarding');
-      }
-    }
+    setMetamaskAddress(address);
+    // Dashboard switch is handled by useEffect
   };
 
   return (
