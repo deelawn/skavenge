@@ -37,6 +37,8 @@ services:
     container_name: skavenge-webapp
     ports:
       - "8080:80"
+    volumes:
+      - ./webapp/config.json:/usr/share/nginx/html/config.json:ro
     networks:
       - skavenge-network
 

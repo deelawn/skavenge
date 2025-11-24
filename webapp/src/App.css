@@ -143,32 +143,25 @@ button.hidden {
     display: none;
 }
 
-input[type="password"],
-input[type="text"] {
-    width: 100%;
+.link-instructions {
+    margin-top: 16px;
     padding: 12px;
-    border: 2px solid #e9ecef;
+    background: #e7f5ff;
     border-radius: 8px;
-    font-size: 1em;
-    margin-bottom: 12px;
-    transition: border-color 0.2s;
+    border: 1px solid #74c0fc;
 }
 
-input[type="password"]:focus,
-input[type="text"]:focus {
-    outline: none;
-    border-color: #667eea;
+.link-instructions.hidden {
+    display: none;
 }
 
-label {
-    display: block;
-    margin-bottom: 8px;
-    color: #495057;
+.link-instructions p {
+    margin: 0;
+    color: #1864ab;
     font-size: 0.9em;
-    font-weight: 500;
 }
 
-#dashboard h2 {
+.dashboard h2 {
     font-size: 1.8em;
     color: #333;
     margin-bottom: 30px;
@@ -234,11 +227,6 @@ label {
     background: #dee2e6;
 }
 
-.actions {
-    margin-top: 30px;
-    text-align: center;
-}
-
 .toast {
     position: fixed;
     bottom: 20px;
@@ -254,7 +242,7 @@ label {
     transition: opacity 0.3s;
 }
 
-.toast:not(.hidden) {
+.toast.visible {
     opacity: 1;
 }
 
@@ -266,3 +254,42 @@ label {
     background: #51cf66;
 }
 
+.config-info {
+    margin-top: 20px;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 2px solid #e9ecef;
+}
+
+.config-info h3 {
+    font-size: 1.1em;
+    color: #333;
+    margin-bottom: 12px;
+}
+
+.config-row {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 12px;
+}
+
+.config-row:last-child {
+    margin-bottom: 0;
+}
+
+.config-label {
+    font-weight: 600;
+    color: #495057;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.config-value {
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.85em;
+    color: #333;
+    word-break: break-all;
+}
