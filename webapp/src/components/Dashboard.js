@@ -62,6 +62,10 @@ function Dashboard({ skavengerPublicKey, metamaskAddress, config, onToast }) {
             <span className="config-label">Network RPC URL</span>
             <span className="config-value">{config.networkRpcUrl}</span>
           </div>
+          <div className="config-row">
+            <span className="config-label">Chain ID</span>
+            <span className="config-value">{config.chainId || 'N/A'}</span>
+          </div>
         </div>
       )}
     </div>

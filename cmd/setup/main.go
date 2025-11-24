@@ -25,6 +25,7 @@ type Config struct {
 type WebappConfig struct {
 	ContractAddress string `json:"contractAddress"`
 	NetworkRpcUrl   string `json:"networkRpcUrl"`
+	ChainId         int64  `json:"chainId"`
 }
 
 func main() {
@@ -163,10 +164,18 @@ func main() {
 
 	fmt.Printf("Token ownership verified: %s owns token %s\n", owner.Hex(), tokenId.String())
 
+	// Get chain ID
+	chainID, err := client.ChainID(nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting chain ID: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Update webapp config.json
 	webappConfig := WebappConfig{
 		ContractAddress: contractAddress.Hex(),
 		NetworkRpcUrl:   hardhatURL,
+		ChainId:         chainID.Int64(),
 	}
 
 	configJSON, err := json.MarshalIndent(webappConfig, "", "  ")

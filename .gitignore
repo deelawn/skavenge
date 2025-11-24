@@ -12,3 +12,5 @@ skavenger-extension/public_key_base64.txt
 
 # Test configuration with private keys
 test-config.json
+
+webapp/config.json
