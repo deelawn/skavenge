@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { loadConfig, CHAIN_ID } from '../config.js';
 
 /**
  * Check if MetaMask is installed
@@ -8,7 +9,58 @@ function isMetaMaskInstalled() {
 }
 
 /**
- * Connect to MetaMask
+ * Convert chain ID to hex format for MetaMask
+ */
+function toHex(num) {
+  return '0x' + num.toString(16);
+}
+
+/**
+ * Switch MetaMask to the specified network
+ * If the network doesn't exist, it will be added automatically
+ */
+async function switchToNetwork(chainId, rpcUrl) {
+  const chainIdHex = toHex(chainId);
+
+  try {
+    // Try to switch to the network
+    await window.ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: chainIdHex }],
+    });
+  } catch (switchError) {
+    // This error code indicates that the chain has not been added to MetaMask
+    if (switchError.code === 4902) {
+      try {
+        // Add the network to MetaMask
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [
+            {
+              chainId: chainIdHex,
+              chainName: `Skavenge Network (${chainId})`,
+              rpcUrls: [rpcUrl],
+              nativeCurrency: {
+                name: 'Ether',
+                symbol: 'ETH',
+                decimals: 18,
+              },
+            },
+          ],
+        });
+      } catch (addError) {
+        throw new Error('Failed to add network to MetaMask.');
+      }
+    } else if (switchError.code === 4001) {
+      throw new Error('Network switch rejected by user.');
+    } else {
+      throw new Error('Failed to switch network.');
+    }
+  }
+}
+
+/**
+ * Connect to MetaMask with automatic network configuration
  */
 async function connectMetaMask() {
   if (!isMetaMaskInstalled()) {
@@ -16,18 +68,39 @@ async function connectMetaMask() {
   }
 
   try {
+    // Load configuration to get chain ID and RPC URL
+    const config = await loadConfig();
+    const chainId = config.chainId || CHAIN_ID.value;
+    const rpcUrl = config.networkRpcUrl;
+
+    // First, request account access
     const accounts = await window.ethereum.request({
       method: 'eth_requestAccounts'
     });
 
-    if (accounts && accounts.length > 0) {
-      return accounts[0];
+    if (!accounts || accounts.length === 0) {
+      return null;
     }
 
-    return null;
+    // Get current chain ID
+    const currentChainId = await window.ethereum.request({
+      method: 'eth_chainId'
+    });
+
+    // Convert to decimal for comparison
+    const currentChainIdDecimal = parseInt(currentChainId, 16);
+
+    // Switch network if needed
+    if (currentChainIdDecimal !== chainId) {
+      await switchToNetwork(chainId, rpcUrl);
+    }
+
+    return accounts[0];
   } catch (error) {
     if (error.code === 4001) {
       throw new Error('MetaMask connection rejected.');
+    } else if (error.message) {
+      throw error;
     } else {
       throw new Error('Failed to connect to MetaMask.');
     }
@@ -97,12 +170,27 @@ function MetaMaskStep({ onAccountConnected, onToast }) {
       }
     };
 
+    const handleChainChanged = async (chainId) => {
+      // Get expected chain ID from config
+      const config = await loadConfig();
+      const expectedChainId = config.chainId || CHAIN_ID.value;
+      const currentChainIdDecimal = parseInt(chainId, 16);
+
+      if (currentChainIdDecimal !== expectedChainId) {
+        onToast(`Warning: Wrong network detected. Expected chain ID ${expectedChainId}, but connected to ${currentChainIdDecimal}. Please reconnect.`, 'error');
+      } else {
+        onToast('Network switched successfully', 'success');
+      }
+    };
+
     window.ethereum.on('accountsChanged', handleAccountsChanged);
+    window.ethereum.on('chainChanged', handleChainChanged);
 
     return () => {
       window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+      window.ethereum.removeListener('chainChanged', handleChainChanged);
     };
-  }, [onAccountConnected]);
+  }, [onAccountConnected, onToast]);
 
   const checkInitialConnection = async () => {
     const account = await getMetaMaskAccount();
