@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
@@ -165,7 +166,7 @@ func main() {
 	fmt.Printf("Token ownership verified: %s owns token %s\n", owner.Hex(), tokenId.String())
 
 	// Get chain ID
-	chainID, err := client.ChainID(nil)
+	chainID, err := client.ChainID(context.Background())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting chain ID: %v\n", err)
 		os.Exit(1)
