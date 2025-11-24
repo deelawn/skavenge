@@ -1,9 +1,10 @@
 import React from 'react';
 import { getBrowserRpcUrl } from '../utils.js';
+import TokenDisplay from './TokenDisplay';
 
 /**
  * Dashboard Component
- * Displays connected accounts and configuration information
+ * Displays connected accounts, configuration, and user's NFT tokens
  *
  * @param {object} props
  * @param {string} props.skavengerPublicKey - The Skavenger public key
@@ -27,48 +28,60 @@ function Dashboard({ skavengerPublicKey, metamaskAddress, config, onToast }) {
   };
 
   return (
-    <div className="dashboard">
-      <h2>Your Accounts</h2>
+    <div className="dashboard-layout">
+      {/* Left Sidebar Navigation */}
+      <div className="dashboard-sidebar">
+        <h2>Your Accounts</h2>
 
-      <div className="account-card">
-        <div className="account-header">
-          <span className="account-label">Skavenger Public Key</span>
-          <span className="account-status connected">Connected</span>
+        <div className="account-card">
+          <div className="account-header">
+            <span className="account-label">Skavenger Public Key</span>
+            <span className="account-status connected">Connected</span>
+          </div>
+          <div className="account-value">{skavengerPublicKey || 'Loading...'}</div>
+          <button className="copy-btn" onClick={handleCopySkavengerKey}>
+            Copy
+          </button>
         </div>
-        <div className="account-value">{skavengerPublicKey || 'Loading...'}</div>
-        <button className="copy-btn" onClick={handleCopySkavengerKey}>
-          Copy
-        </button>
+
+        <div className="account-card">
+          <div className="account-header">
+            <span className="account-label">MetaMask Wallet</span>
+            <span className="account-status connected">Connected</span>
+          </div>
+          <div className="account-value">{metamaskAddress || 'Loading...'}</div>
+          <button className="copy-btn" onClick={handleCopyMetamaskAddress}>
+            Copy
+          </button>
+        </div>
+
+        {config && (
+          <div className="config-info">
+            <h3>Configuration</h3>
+            <div className="config-row">
+              <span className="config-label">Contract Address</span>
+              <span className="config-value">{config.contractAddress}</span>
+            </div>
+            <div className="config-row">
+              <span className="config-label">Network RPC URL</span>
+              <span className="config-value">{getBrowserRpcUrl(config.networkRpcUrl)}</span>
+            </div>
+            <div className="config-row">
+              <span className="config-label">Chain ID</span>
+              <span className="config-value">{config.chainId || 'N/A'}</span>
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="account-card">
-        <div className="account-header">
-          <span className="account-label">MetaMask Wallet</span>
-          <span className="account-status connected">Connected</span>
-        </div>
-        <div className="account-value">{metamaskAddress || 'Loading...'}</div>
-        <button className="copy-btn" onClick={handleCopyMetamaskAddress}>
-          Copy
-        </button>
+      {/* Main Content Area - Token Display */}
+      <div className="dashboard-main">
+        <TokenDisplay
+          metamaskAddress={metamaskAddress}
+          config={config}
+          onToast={onToast}
+        />
       </div>
-
-      {config && (
-        <div className="config-info">
-          <h3>Configuration</h3>
-          <div className="config-row">
-            <span className="config-label">Contract Address</span>
-            <span className="config-value">{config.contractAddress}</span>
-          </div>
-          <div className="config-row">
-            <span className="config-label">Network RPC URL</span>
-            <span className="config-value">{getBrowserRpcUrl(config.networkRpcUrl)}</span>
-          </div>
-          <div className="config-row">
-            <span className="config-label">Chain ID</span>
-            <span className="config-value">{config.chainId || 'N/A'}</span>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

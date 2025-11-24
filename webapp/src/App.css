@@ -19,7 +19,7 @@ body {
     background: white;
     border-radius: 16px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    max-width: 600px;
+    max-width: 1400px;
     width: 100%;
     padding: 40px;
 }
@@ -292,4 +292,245 @@ button.hidden {
     font-size: 0.85em;
     color: #333;
     word-break: break-all;
+}
+
+/* Dashboard Layout with Sidebar */
+.dashboard-layout {
+    display: flex;
+    gap: 24px;
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.dashboard-sidebar {
+    width: 350px;
+    flex-shrink: 0;
+}
+
+.dashboard-main {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Token Display Styles */
+.token-display-container {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 24px;
+    min-height: 400px;
+}
+
+.token-display-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid #e9ecef;
+}
+
+.token-display-header h2 {
+    font-size: 1.8em;
+    color: #333;
+    margin: 0;
+}
+
+.token-count {
+    color: #666;
+    font-size: 0.95em;
+    font-weight: 500;
+}
+
+.btn-refresh {
+    padding: 8px 16px;
+    background: #667eea;
+    color: white;
+    font-size: 0.9em;
+}
+
+.btn-refresh:hover {
+    background: #5568d3;
+    transform: translateY(-1px);
+}
+
+.btn-retry {
+    padding: 10px 20px;
+    background: #667eea;
+    color: white;
+    margin-top: 12px;
+}
+
+.btn-retry:hover {
+    background: #5568d3;
+}
+
+.token-display-message {
+    text-align: center;
+    padding: 60px 20px;
+    color: #666;
+}
+
+.token-display-message h3 {
+    font-size: 1.5em;
+    color: #495057;
+    margin-bottom: 12px;
+}
+
+.token-display-message p {
+    font-size: 1em;
+    color: #868e96;
+}
+
+.token-display-error {
+    background: #fff5f5;
+    border: 2px solid #ffc9c9;
+    border-radius: 8px;
+    padding: 24px;
+    text-align: center;
+}
+
+.token-display-error h3 {
+    color: #e03131;
+    margin-bottom: 12px;
+}
+
+.token-display-error p {
+    color: #666;
+    margin-bottom: 16px;
+}
+
+/* Token Grid */
+.token-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 20px;
+}
+
+.token-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    border: 2px solid #e9ecef;
+    transition: all 0.2s;
+}
+
+.token-card:hover {
+    border-color: #667eea;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+    transform: translateY(-2px);
+}
+
+.token-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #f1f3f5;
+}
+
+.token-card-header h3 {
+    font-size: 1.2em;
+    color: #333;
+    margin: 0;
+}
+
+.badge-solved,
+.badge-for-sale {
+    font-size: 0.75em;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.badge-solved {
+    background: #d3f9d8;
+    color: #2b8a3e;
+}
+
+.badge-for-sale {
+    background: #fff3bf;
+    color: #e67700;
+}
+
+.token-details {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.token-detail-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.detail-label {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #495057;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.detail-value {
+    font-size: 0.95em;
+    color: #333;
+    word-break: break-word;
+}
+
+.detail-value.mono {
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.85em;
+    background: #f8f9fa;
+    padding: 8px;
+    border-radius: 4px;
+}
+
+.detail-value.text-success {
+    color: #2b8a3e;
+    font-weight: 600;
+}
+
+.detail-value.text-warning {
+    color: #e67700;
+    font-weight: 600;
+}
+
+.token-error {
+    color: #e03131;
+    font-size: 0.9em;
+    padding: 12px;
+    background: #fff5f5;
+    border-radius: 6px;
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .dashboard-layout {
+        flex-direction: column;
+    }
+
+    .dashboard-sidebar {
+        width: 100%;
+    }
+
+    .token-grid {
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    }
+}
+
+@media (max-width: 768px) {
+    .token-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .token-display-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
 }
