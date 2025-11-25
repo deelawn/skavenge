@@ -24,13 +24,10 @@ const importBtn = document.getElementById('import-btn');
 const lockBtn = document.getElementById('lock-btn');
 
 const exportModal = document.getElementById('export-modal');
-const exportOutput = document.getElementById('export-output');
-const copyExportBtn = document.getElementById('copy-export-btn');
-const downloadExportBtn = document.getElementById('download-export-btn');
 const closeExportBtn = document.getElementById('close-export-btn');
 
 const importModal = document.getElementById('import-modal');
-const importKeysInput = document.getElementById('import-keys');
+const importFileInput = document.getElementById('import-file');
 const confirmImportBtn = document.getElementById('confirm-import-btn');
 const closeImportBtn = document.getElementById('close-import-btn');
 
@@ -229,75 +226,65 @@ exportBtn.addEventListener('click', async () => {
   });
 
   if (result.success) {
-    exportOutput.value = result.keyData;
+    // Download the private key directly to a file
+    const blob = new Blob([result.privateKey], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'skavenger-private-key.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    // Show confirmation modal
     exportModal.classList.remove('hidden');
   } else {
     showToast(result.error || 'Failed to export keys', true);
   }
 });
 
-copyExportBtn.addEventListener('click', () => {
-  if (!exportOutput.value) {
-    showToast('Generate keystore first', true);
-    return;
-  }
-  navigator.clipboard.writeText(exportOutput.value);
-  showToast('Copied to clipboard');
-});
-
-downloadExportBtn.addEventListener('click', () => {
-  if (!exportOutput.value) {
-    showToast('Generate keystore first', true);
-    return;
-  }
-  const blob = new Blob([exportOutput.value], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'skavenger-keys.json';
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('Downloaded');
-});
-
 closeExportBtn.addEventListener('click', () => {
   exportModal.classList.add('hidden');
-  exportOutput.value = '';
 });
 
 importBtn.addEventListener('click', () => {
-  importKeysInput.value = '';
+  importFileInput.value = '';
   importModal.classList.remove('hidden');
 });
 
 confirmImportBtn.addEventListener('click', async () => {
-  const keyData = importKeysInput.value.trim();
+  const file = importFileInput.files[0];
 
-  if (!keyData) {
-    showToast('Keys JSON is required', true);
+  if (!file) {
+    showToast('Please select a file', true);
     return;
   }
 
   if (hasKeys) {
     const confirmed = await showConfirmDialog(
-      'Import Keys',
+      'Import Private Key',
       'This will replace your existing keys. Make sure you have exported them first.'
     );
     if (!confirmed) return;
   }
 
-  const result = await sendMessage({
-    action: 'importKeys',
-    keyData,
-    password: currentPassword
-  });
+  try {
+    const privateKey = await file.text();
 
-  if (result.success) {
-    await updateKeyStatus(true);
-    importModal.classList.add('hidden');
-    showToast('Keys imported');
-  } else {
-    showToast(result.error || 'Invalid keys format', true);
+    const result = await sendMessage({
+      action: 'importKeys',
+      privateKey: privateKey.trim(),
+      password: currentPassword
+    });
+
+    if (result.success) {
+      await updateKeyStatus(true);
+      importModal.classList.add('hidden');
+      showToast('Private key imported successfully');
+    } else {
+      showToast(result.error || 'Invalid private key format', true);
+    }
+  } catch (error) {
+    showToast('Failed to read file: ' + error.message, true);
   }
 });
 
