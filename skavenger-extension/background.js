@@ -33,131 +33,342 @@ function hexToBuffer(hex) {
 }
 
 // Keccak-256 implementation (legacy Keccak, as used by Go's sha3 package)
-// Based on the reference implementation
+// Uses 32-bit array representation for simplicity and correctness
 function keccak256(msgBytes) {
-  function ROTL64(a, n) {
-    const ah = a[0], al = a[1];
-    if (n >= 32) {
-      n -= 32;
-      return [
-        (al << n) | (ah >>> (32 - n)),
-        (ah << n) | (al >>> (32 - n))
-      ];
+  const RC = [
+    1, 0, 32898, 0, 32906, 2147483648, 2147516416, 2147483648, 32907, 0, 2147483649,
+    0, 2147516545, 2147483648, 32777, 2147483648, 138, 0, 136, 0, 2147516425, 0,
+    2147483658, 0, 2147516555, 0, 139, 2147483648, 32905, 2147483648, 32771,
+    2147483648, 32770, 2147483648, 128, 2147483648, 32778, 0, 2147483658, 2147483648,
+    2147516545, 2147483648, 32896, 2147483648, 2147483649, 0, 2147516424, 2147483648
+  ];
+
+  const r = [0, 1, 62, 28, 27, 36, 44, 6, 55, 20, 3, 10, 43, 25, 39, 41, 45, 15, 21, 8, 18, 2, 61, 56, 14];
+
+  const rotate = function(v, n) {
+    const h = v[0], l = v[1];
+    if (n === 0) return v;
+    if (n === 32) return [l, h];
+    if (n < 32) {
+      return [(h << n) | (l >>> (32 - n)), (l << n) | (h >>> (32 - n))];
     } else {
-      return [
-        (ah << n) | (al >>> (32 - n)),
-        (al << n) | (ah >>> (32 - n))
-      ];
+      n -= 32;
+      return [(l << n) | (h >>> (32 - n)), (h << n) | (l >>> (32 - n))];
+    }
+  };
+
+  // Initialize state (25 lanes x 2 words each = 50 words)
+  const s = new Array(50);
+  for (let i = 0; i < 50; ++i) s[i] = 0;
+
+  const blocks = [];
+  const blockCount = 17; // (1600 - 512) / 32 for Keccak-256
+  const byteCount = 136; // rate for Keccak-256
+
+  // Absorb phase
+  let blockIndex = 0, lastByteIndex = 0;
+
+  for (let i = 0; i < msgBytes.length; ++i) {
+    const index = i % byteCount;
+    const wIndex = index >> 2;
+    const shift = (index & 3) << 3;
+
+    if (!blocks[wIndex]) blocks[wIndex] = 0;
+    blocks[wIndex] |= msgBytes[i] << shift;
+
+    if ((i + 1) % byteCount === 0 || i === msgBytes.length - 1) {
+      lastByteIndex = index + 1;
+
+      if (lastByteIndex === byteCount || i === msgBytes.length - 1) {
+        // Padding
+        if (lastByteIndex < byteCount) {
+          blocks[lastByteIndex >> 2] |= 0x01 << ((lastByteIndex & 3) << 3);
+          if (lastByteIndex === byteCount - 1) {
+            for (let j = 0; j < blockCount; ++j) s[j] ^= blocks[j] || 0;
+            f(s);
+            blocks.fill(0);
+          }
+        }
+        blocks[(byteCount - 1) >> 2] |= 0x80 << (((byteCount - 1) & 3) << 3);
+
+        for (let j = 0; j < blockCount; ++j) s[j] ^= blocks[j] || 0;
+        f(s);
+        break;
+      }
+
+      for (let j = 0; j < blockCount; ++j) s[j] ^= blocks[j] || 0;
+      f(s);
+      blocks.fill(0);
     }
   }
 
-  function XOR64(a, b) {
-    return [a[0] ^ b[0], a[1] ^ b[1]];
-  }
+  // Keccak-f permutation
+  function f(s) {
+    for (let n = 0; n < 48; n += 2) {
+      const c0 = s[0] ^ s[10] ^ s[20] ^ s[30] ^ s[40];
+      const c1 = s[1] ^ s[11] ^ s[21] ^ s[31] ^ s[41];
+      const c2 = s[2] ^ s[12] ^ s[22] ^ s[32] ^ s[42];
+      const c3 = s[3] ^ s[13] ^ s[23] ^ s[33] ^ s[43];
+      const c4 = s[4] ^ s[14] ^ s[24] ^ s[34] ^ s[44];
+      const c5 = s[5] ^ s[15] ^ s[25] ^ s[35] ^ s[45];
+      const c6 = s[6] ^ s[16] ^ s[26] ^ s[36] ^ s[46];
+      const c7 = s[7] ^ s[17] ^ s[27] ^ s[37] ^ s[47];
+      const c8 = s[8] ^ s[18] ^ s[28] ^ s[38] ^ s[48];
+      const c9 = s[9] ^ s[19] ^ s[29] ^ s[39] ^ s[49];
 
-  function keccakF(s) {
-    const RC = [
-      [0x00000000, 0x00000001], [0x00000000, 0x00008082], [0x80000000, 0x0000808A],
-      [0x80000000, 0x80008000], [0x00000000, 0x0000808B], [0x00000000, 0x80000001],
-      [0x80000000, 0x80008081], [0x80000000, 0x00008009], [0x00000000, 0x0000008A],
-      [0x00000000, 0x00000088], [0x00000000, 0x80008009], [0x00000000, 0x8000000A],
-      [0x00000000, 0x8000808B], [0x80000000, 0x0000008B], [0x80000000, 0x00008089],
-      [0x80000000, 0x00008003], [0x80000000, 0x00008002], [0x80000000, 0x00000080],
-      [0x00000000, 0x0000800A], [0x80000000, 0x8000000A], [0x80000000, 0x80008081],
-      [0x80000000, 0x00008080], [0x00000000, 0x80000001], [0x80000000, 0x80008008]
-    ];
+      let h = c8 ^ ((c2 << 1) | (c3 >>> 31));
+      let l = c9 ^ ((c3 << 1) | (c2 >>> 31));
+      s[0] ^= h; s[1] ^= l;
+      s[10] ^= h; s[11] ^= l;
+      s[20] ^= h; s[21] ^= l;
+      s[30] ^= h; s[31] ^= l;
+      s[40] ^= h; s[41] ^= l;
+      h = c0 ^ ((c4 << 1) | (c5 >>> 31));
+      l = c1 ^ ((c5 << 1) | (c4 >>> 31));
+      s[2] ^= h; s[3] ^= l;
+      s[12] ^= h; s[13] ^= l;
+      s[22] ^= h; s[23] ^= l;
+      s[32] ^= h; s[33] ^= l;
+      s[42] ^= h; s[43] ^= l;
+      h = c2 ^ ((c6 << 1) | (c7 >>> 31));
+      l = c3 ^ ((c7 << 1) | (c6 >>> 31));
+      s[4] ^= h; s[5] ^= l;
+      s[14] ^= h; s[15] ^= l;
+      s[24] ^= h; s[25] ^= l;
+      s[34] ^= h; s[35] ^= l;
+      s[44] ^= h; s[45] ^= l;
+      h = c4 ^ ((c8 << 1) | (c9 >>> 31));
+      l = c5 ^ ((c9 << 1) | (c8 >>> 31));
+      s[6] ^= h; s[7] ^= l;
+      s[16] ^= h; s[17] ^= l;
+      s[26] ^= h; s[27] ^= l;
+      s[36] ^= h; s[37] ^= l;
+      s[46] ^= h; s[47] ^= l;
+      h = c6 ^ ((c0 << 1) | (c1 >>> 31));
+      l = c7 ^ ((c1 << 1) | (c0 >>> 31));
+      s[8] ^= h; s[9] ^= l;
+      s[18] ^= h; s[19] ^= l;
+      s[28] ^= h; s[29] ^= l;
+      s[38] ^= h; s[39] ^= l;
+      s[48] ^= h; s[49] ^= l;
 
-    for (let round = 0; round < 24; round++) {
-      // Theta
-      const C = [];
-      for (let x = 0; x < 5; x++) {
-        C[x] = XOR64(XOR64(XOR64(XOR64(s[x], s[x + 5]), s[x + 10]), s[x + 15]), s[x + 20]);
-      }
-      const D = [];
-      for (let x = 0; x < 5; x++) {
-        D[x] = XOR64(C[(x + 4) % 5], ROTL64(C[(x + 1) % 5], 1));
-      }
-      for (let x = 0; x < 5; x++) {
-        for (let y = 0; y < 5; y++) {
-          s[x + 5 * y] = XOR64(s[x + 5 * y], D[x]);
-        }
-      }
+      // Rho Pi
+      const b0 = s[0], b1 = s[1];
+      h = s[2]; l = s[3];
+      s[2] = (l << 12) | (h >>> 20);
+      s[3] = (h << 12) | (l >>> 20);
+      h = s[14]; l = s[15];
+      s[14] = (l << 20) | (h >>> 12);
+      s[15] = (h << 20) | (l >>> 12);
+      h = s[26]; l = s[27];
+      s[26] = (l << 29) | (h >>> 3);
+      s[27] = (h << 29) | (l >>> 3);
+      h = s[38]; l = s[39];
+      s[38] = (h << 7) | (l >>> 25);
+      s[39] = (l << 7) | (h >>> 25);
+      h = s[48]; l = s[49];
+      s[48] = (h << 14) | (l >>> 18);
+      s[49] = (l << 14) | (h >>> 18);
 
-      // Rho and Pi
-      const B = [];
-      const rotations = [
-        0, 1, 62, 28, 27, 36, 44, 6, 55, 20, 3, 10, 43, 25, 39, 41, 45, 15, 21, 8, 18, 2, 61, 56, 14
-      ];
-      for (let x = 0; x < 5; x++) {
-        for (let y = 0; y < 5; y++) {
-          B[y + 5 * ((2 * x + 3 * y) % 5)] = ROTL64(s[x + 5 * y], rotations[x + 5 * y]);
-        }
-      }
+      h = s[6]; l = s[7];
+      s[6] = (h << 3) | (l >>> 29);
+      s[7] = (l << 3) | (h >>> 29);
+      h = s[18]; l = s[19];
+      s[18] = (l << 10) | (h >>> 22);
+      s[19] = (h << 10) | (l >>> 22);
+      h = s[30]; l = s[31];
+      s[30] = (l << 18) | (h >>> 14);
+      s[31] = (h << 18) | (l >>> 14);
+      h = s[42]; l = s[43];
+      s[42] = (h << 27) | (l >>> 5);
+      s[43] = (l << 27) | (h >>> 5);
+      h = s[4]; l = s[5];
+      s[4] = (l << 1) | (h >>> 31);
+      s[5] = (h << 1) | (l >>> 31);
+
+      h = s[16]; l = s[17];
+      s[16] = (l << 6) | (h >>> 26);
+      s[17] = (h << 6) | (l >>> 26);
+      h = s[28]; l = s[29];
+      s[28] = (h << 25) | (l >>> 7);
+      s[29] = (l << 25) | (h >>> 7);
+      h = s[40]; l = s[41];
+      s[40] = (l << 8) | (h >>> 24);
+      s[41] = (h << 8) | (l >>> 24);
+      h = s[2]; l = s[3];
+      s[2] = (l << 23) | (h >>> 9);
+      s[3] = (h << 23) | (l >>> 9);
+
+      h = s[24]; l = s[25];
+      s[24] = (h << 2) | (l >>> 30);
+      s[25] = (l << 2) | (h >>> 30);
+      h = s[36]; l = s[37];
+      s[36] = (h << 13) | (l >>> 19);
+      s[37] = (l << 13) | (h >>> 19);
+      h = s[48]; l = s[49];
+      s[48] = (h << 21) | (l >>> 11);
+      s[49] = (l << 21) | (h >>> 11);
+      h = s[10]; l = s[11];
+      s[10] = (l << 30) | (h >>> 2);
+      s[11] = (h << 30) | (l >>> 2);
+      h = s[22]; l = s[23];
+      s[22] = (h << 9) | (l >>> 23);
+      s[23] = (l << 9) | (h >>> 23);
+
+      h = s[34]; l = s[35];
+      s[34] = (l << 15) | (h >>> 17);
+      s[35] = (h << 15) | (l >>> 17);
+      h = s[46]; l = s[47];
+      s[46] = (l << 24) | (h >>> 8);
+      s[47] = (h << 24) | (l >>> 8);
+      h = s[8]; l = s[9];
+      s[8] = (h << 28) | (l >>> 4);
+      s[9] = (l << 28) | (h >>> 4);
+      h = s[20]; l = s[21];
+      s[20] = (l << 4) | (h >>> 28);
+      s[21] = (h << 4) | (l >>> 28);
+      h = s[32]; l = s[33];
+      s[32] = (h << 11) | (l >>> 21);
+      s[33] = (l << 11) | (h >>> 21);
+
+      h = s[44]; l = s[45];
+      s[44] = (l << 27) | (h >>> 5);
+      s[45] = (h << 27) | (l >>> 5);
+      h = s[6]; l = s[7];
+      s[6] = (l << 19) | (h >>> 13);
+      s[7] = (h << 19) | (l >>> 13);
+      h = s[18]; l = s[19];
+      s[18] = (h << 20) | (l >>> 12);
+      s[19] = (l << 20) | (h >>> 12);
+      h = s[30]; l = s[31];
+      s[30] = (h << 10) | (l >>> 22);
+      s[31] = (l << 10) | (h >>> 22);
+
+      h = s[42]; l = s[43];
+      s[42] = (l << 26) | (h >>> 6);
+      s[43] = (h << 26) | (l >>> 6);
+      h = s[4]; l = s[5];
+      s[4] = (h << 18) | (l >>> 14);
+      s[5] = (l << 18) | (h >>> 14);
+      h = s[16]; l = s[17];
+      s[16] = (h << 15) | (l >>> 17);
+      s[17] = (l << 15) | (h >>> 17);
+
+      h = s[28]; l = s[29];
+      s[28] = (l << 14) | (h >>> 18);
+      s[29] = (h << 14) | (l >>> 18);
+      h = s[40]; l = s[41];
+      s[40] = (l << 5) | (h >>> 27);
+      s[41] = (h << 5) | (l >>> 27);
+      h = s[2]; l = s[3];
+      s[2] = (h << 3) | (l >>> 29);
+      s[3] = (l << 3) | (h >>> 29);
+      h = s[12]; l = s[13];
+      s[12] = (l << 31) | (h >>> 1);
+      s[13] = (h << 31) | (l >>> 1);
+
+      h = s[24]; l = s[25];
+      s[24] = (l << 25) | (h >>> 7);
+      s[25] = (h << 25) | (l >>> 7);
+      h = s[36]; l = s[37];
+      s[36] = (l << 16) | (h >>> 16);
+      s[37] = (h << 16) | (l >>> 16);
+      h = s[48]; l = s[49];
+      s[48] = (l << 7) | (h >>> 25);
+      s[49] = (h << 7) | (l >>> 25);
+      h = s[10]; l = s[11];
+      s[10] = (h << 29) | (l >>> 3);
+      s[11] = (l << 29) | (h >>> 3);
+
+      h = s[22]; l = s[23];
+      s[22] = (l << 24) | (h >>> 8);
+      s[23] = (h << 24) | (l >>> 8);
+      h = s[34]; l = s[35];
+      s[34] = (h << 1) | (l >>> 31);
+      s[35] = (l << 1) | (h >>> 31);
+      h = s[46]; l = s[47];
+      s[46] = (h << 6) | (l >>> 26);
+      s[47] = (l << 6) | (h >>> 26);
+      h = s[8]; l = s[9];
+      s[8] = (l << 23) | (h >>> 9);
+      s[9] = (h << 23) | (l >>> 9);
+
+      h = s[20]; l = s[21];
+      s[20] = (h << 12) | (l >>> 20);
+      s[21] = (l << 12) | (h >>> 20);
+      h = s[32]; l = s[33];
+      s[32] = (l << 21) | (h >>> 11);
+      s[33] = (h << 21) | (l >>> 11);
+      h = s[44]; l = s[45];
+      s[44] = (l << 2) | (h >>> 30);
+      s[45] = (h << 2) | (l >>> 30);
+      h = s[6]; l = s[7];
+      s[6] = (h << 8) | (l >>> 24);
+      s[7] = (l << 8) | (h >>> 24);
+
+      h = s[18]; l = s[19];
+      s[18] = (l << 22) | (h >>> 10);
+      s[19] = (h << 22) | (l >>> 10);
+      h = s[30]; l = s[31];
+      s[30] = (l << 11) | (h >>> 21);
+      s[31] = (h << 11) | (l >>> 21);
+      h = s[42]; l = s[43];
+      s[42] = (h << 30) | (l >>> 2);
+      s[43] = (l << 30) | (h >>> 2);
+      h = s[4]; l = s[5];
+      s[4] = (h << 21) | (l >>> 11);
+      s[5] = (l << 21) | (h >>> 11);
+
+      h = s[16]; l = s[17];
+      s[16] = (l << 17) | (h >>> 15);
+      s[17] = (h << 17) | (l >>> 15);
+      h = s[28]; l = s[29];
+      s[28] = (h << 28) | (l >>> 4);
+      s[29] = (l << 28) | (h >>> 4);
+      h = s[40]; l = s[41];
+      s[40] = (h << 19) | (l >>> 13);
+      s[41] = (l << 19) | (h >>> 13);
+      s[0] = b0;
+      s[1] = b1;
 
       // Chi
-      for (let x = 0; x < 5; x++) {
-        for (let y = 0; y < 5; y++) {
-          const b1 = B[(x + 1) % 5 + 5 * y];
-          const b2 = B[(x + 2) % 5 + 5 * y];
-          s[x + 5 * y] = XOR64(B[x + 5 * y], [(~b1[0]) & b2[0], (~b1[1]) & b2[1]]);
-        }
+      for (let j = 0; j < 50; j += 10) {
+        const c0 = s[j], c1 = s[j + 1];
+        h = s[j + 2]; l = s[j + 3];
+        const c2 = h, c3 = l;
+        h = s[j + 4]; l = s[j + 5];
+        const c4 = h, c5 = l;
+        h = s[j + 6]; l = s[j + 7];
+        const c6 = h, c7 = l;
+        h = s[j + 8]; l = s[j + 9];
+        const c8 = h, c9 = l;
+
+        s[j] ^= (~c2) & c4;
+        s[j + 1] ^= (~c3) & c5;
+        s[j + 2] ^= (~c4) & c6;
+        s[j + 3] ^= (~c5) & c7;
+        s[j + 4] ^= (~c6) & c8;
+        s[j + 5] ^= (~c7) & c9;
+        s[j + 6] ^= (~c8) & c0;
+        s[j + 7] ^= (~c9) & c1;
+        s[j + 8] ^= (~c0) & c2;
+        s[j + 9] ^= (~c1) & c3;
       }
 
       // Iota
-      s[0] = XOR64(s[0], RC[round]);
+      s[0] ^= RC[n];
+      s[1] ^= RC[n + 1];
     }
   }
 
-  // Initialize state (25 x 64-bit words as [hi, lo] pairs)
-  const state = [];
-  for (let i = 0; i < 25; i++) {
-    state[i] = [0, 0];
-  }
-
-  const rate = 136; // 1088 bits for Keccak-256
-  let offset = 0;
-
-  // Absorb phase
-  while (offset + rate <= msgBytes.length) {
-    for (let i = 0; i < rate / 8; i++) {
-      const lo = msgBytes[offset + i * 8] | (msgBytes[offset + i * 8 + 1] << 8) |
-                 (msgBytes[offset + i * 8 + 2] << 16) | (msgBytes[offset + i * 8 + 3] << 24);
-      const hi = msgBytes[offset + i * 8 + 4] | (msgBytes[offset + i * 8 + 5] << 8) |
-                 (msgBytes[offset + i * 8 + 6] << 16) | (msgBytes[offset + i * 8 + 7] << 24);
-      state[i] = XOR64(state[i], [hi, lo]);
-    }
-    keccakF(state);
-    offset += rate;
-  }
-
-  // Absorb remaining bytes and padding
-  const temp = new Uint8Array(rate);
-  const remaining = msgBytes.length - offset;
-  for (let i = 0; i < remaining; i++) {
-    temp[i] = msgBytes[offset + i];
-  }
-  temp[remaining] = 0x01;
-  temp[rate - 1] |= 0x80;
-
-  for (let i = 0; i < rate / 8; i++) {
-    const lo = temp[i * 8] | (temp[i * 8 + 1] << 8) | (temp[i * 8 + 2] << 16) | (temp[i * 8 + 3] << 24);
-    const hi = temp[i * 8 + 4] | (temp[i * 8 + 5] << 8) | (temp[i * 8 + 6] << 16) | (temp[i * 8 + 7] << 24);
-    state[i] = XOR64(state[i], [hi, lo]);
-  }
-  keccakF(state);
-
-  // Squeeze phase - extract 32 bytes
+  // Extract output
   const output = new Uint8Array(32);
-  for (let i = 0; i < 4; i++) {
-    const [hi, lo] = state[i];
-    output[i * 8] = lo & 0xFF;
-    output[i * 8 + 1] = (lo >> 8) & 0xFF;
-    output[i * 8 + 2] = (lo >> 16) & 0xFF;
-    output[i * 8 + 3] = (lo >> 24) & 0xFF;
-    output[i * 8 + 4] = hi & 0xFF;
-    output[i * 8 + 5] = (hi >> 8) & 0xFF;
-    output[i * 8 + 6] = (hi >> 16) & 0xFF;
-    output[i * 8 + 7] = (hi >> 24) & 0xFF;
+  for (let i = 0, j = 0; i < 32; i += 4) {
+    const n = s[j++];
+    output[i] = n;
+    output[i + 1] = n >>> 8;
+    output[i + 2] = n >>> 16;
+    output[i + 3] = n >>> 24;
   }
 
   return output;
