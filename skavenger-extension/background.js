@@ -32,6 +32,32 @@ function hexToBuffer(hex) {
   return bytes.buffer;
 }
 
+// Convert base64url to hex
+function base64urlToHex(base64url) {
+  // Add padding if needed
+  let base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4) {
+    base64 += '=';
+  }
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bufferToHex(bytes.buffer);
+}
+
+// Convert hex to base64url
+function hexToBase64url(hex) {
+  const bytes = new Uint8Array(hexToBuffer(hex));
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  const base64 = btoa(binary);
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
 // Derive encryption key from password using PBKDF2
 async function deriveKey(password, salt, iterations = 100000) {
   const encoder = new TextEncoder();
@@ -137,6 +163,112 @@ async function generateKeyPair() {
   );
 
   return keyPair;
+}
+
+// Extract raw private key from ECDSA key (32 bytes for P-256)
+async function extractRawPrivateKey(privateKey) {
+  const jwk = await crypto.subtle.exportKey('jwk', privateKey);
+  // The 'd' parameter contains the base64url-encoded raw private key
+  return base64urlToHex(jwk.d);
+}
+
+// P-256 curve parameters
+const P256_P = BigInt('0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff');
+const P256_A = BigInt('0xffffffff00000001000000000000000000000000fffffffffffffffffffffffc');
+const P256_B = BigInt('0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b');
+const P256_GX = BigInt('0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296');
+const P256_GY = BigInt('0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5');
+const P256_N = BigInt('0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551');
+
+// Modular inverse using Extended Euclidean Algorithm
+function modInverse(a, m) {
+  a = ((a % m) + m) % m;
+  let [oldR, r] = [a, m];
+  let [oldS, s] = [1n, 0n];
+
+  while (r !== 0n) {
+    const quotient = oldR / r;
+    [oldR, r] = [r, oldR - quotient * r];
+    [oldS, s] = [s, oldS - quotient * s];
+  }
+
+  return ((oldS % m) + m) % m;
+}
+
+// EC point addition on P-256
+function pointAdd(p1, p2) {
+  if (p1 === null) return p2;
+  if (p2 === null) return p1;
+
+  const [x1, y1] = p1;
+  const [x2, y2] = p2;
+
+  if (x1 === x2 && y1 === y2) {
+    // Point doubling
+    const s = (3n * x1 * x1 + P256_A) * modInverse(2n * y1, P256_P) % P256_P;
+    const x3 = (s * s - 2n * x1) % P256_P;
+    const y3 = (s * (x1 - x3) - y1) % P256_P;
+    return [(x3 + P256_P) % P256_P, (y3 + P256_P) % P256_P];
+  }
+
+  const s = (y2 - y1) * modInverse((x2 - x1 + P256_P) % P256_P, P256_P) % P256_P;
+  const x3 = (s * s - x1 - x2) % P256_P;
+  const y3 = (s * (x1 - x3) - y1) % P256_P;
+  return [(x3 + P256_P) % P256_P, (y3 + P256_P) % P256_P];
+}
+
+// Scalar multiplication on P-256
+function scalarMult(k, point) {
+  let result = null;
+  let addend = point;
+
+  while (k > 0n) {
+    if (k & 1n) {
+      result = pointAdd(result, addend);
+    }
+    addend = pointAdd(addend, addend);
+    k >>= 1n;
+  }
+
+  return result;
+}
+
+// Compute public key from private key
+function derivePublicKey(privateKeyHex) {
+  const d = BigInt('0x' + privateKeyHex);
+  const [x, y] = scalarMult(d, [P256_GX, P256_GY]);
+
+  // Convert to base64url for JWK
+  const xHex = x.toString(16).padStart(64, '0');
+  const yHex = y.toString(16).padStart(64, '0');
+
+  return {
+    x: hexToBase64url(xHex),
+    y: hexToBase64url(yHex)
+  };
+}
+
+// Import raw private key (64 hex chars) back to CryptoKey with derived public key
+async function importRawPrivateKey(rawPrivateKeyHex) {
+  const publicKeyCoords = derivePublicKey(rawPrivateKeyHex);
+
+  // Convert raw key to JWK format with public key coordinates
+  const jwk = {
+    kty: 'EC',
+    crv: 'P-256',
+    d: hexToBase64url(rawPrivateKeyHex),
+    x: publicKeyCoords.x,
+    y: publicKeyCoords.y,
+    ext: true
+  };
+
+  return await crypto.subtle.importKey(
+    'jwk',
+    jwk,
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    true,
+    ['sign']
+  );
 }
 
 // Convert ArrayBuffer to base64
@@ -373,11 +505,12 @@ async function handleMessage(request, isInternal = true) {
         }
 
         const keyPair = await generateKeyPair();
-        const privateKeyRaw = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
+        // Extract raw 32-byte private key (64 hex chars)
+        const rawPrivateKeyHex = await extractRawPrivateKey(keyPair.privateKey);
         const publicKeyRaw = await crypto.subtle.exportKey('spki', keyPair.publicKey);
 
         await storeKeys({
-          privateKey: bufferToHex(privateKeyRaw),
+          privateKey: rawPrivateKeyHex,
           publicKey: bufferToHex(publicKeyRaw)
         }, password);
 
@@ -397,12 +530,10 @@ async function handleMessage(request, isInternal = true) {
           return { success: false, error: 'Invalid password or no keys found' };
         }
 
+        // Return only the raw private key (64 hex chars)
         return {
           success: true,
-          keyData: JSON.stringify({
-            privateKey: keys.privateKey,
-            publicKey: keys.publicKey
-          }, null, 2)
+          privateKey: keys.privateKey
         };
       }
 
@@ -424,33 +555,53 @@ async function handleMessage(request, isInternal = true) {
           return { success: false, error: 'Password required or session expired' };
         }
 
-        const keyData = JSON.parse(request.keyData);
+        const rawPrivateKeyHex = request.privateKey.trim();
 
-        // Validate keys by importing them as CryptoKey objects
-        await crypto.subtle.importKey(
-          'pkcs8',
-          hexToBuffer(keyData.privateKey),
-          { name: 'ECDSA', namedCurve: 'P-256' },
-          true,
-          ['sign']
-        );
-        await crypto.subtle.importKey(
-          'spki',
-          hexToBuffer(keyData.publicKey),
-          { name: 'ECDSA', namedCurve: 'P-256' },
-          true,
-          ['verify']
-        );
+        // Validate it's exactly 64 hex characters
+        if (!/^[0-9a-fA-F]{64}$/.test(rawPrivateKeyHex)) {
+          return { success: false, error: 'Invalid private key format. Expected 64 hex characters.' };
+        }
 
-        await storeKeys({
-          privateKey: keyData.privateKey,
-          publicKey: keyData.publicKey
-        }, password);
+        try {
+          // Import private key and derive public key
+          const privateKey = await importRawPrivateKey(rawPrivateKeyHex);
 
-        // Always create session so webapp can access the public key
-        await createSession(password);
+          // Export the full JWK to get a complete keypair that we can use
+          const privateJwk = await crypto.subtle.exportKey('jwk', privateKey);
 
-        return { success: true };
+          // Create public key from the coordinates
+          const publicJwk = {
+            kty: privateJwk.kty,
+            crv: privateJwk.crv,
+            x: privateJwk.x,
+            y: privateJwk.y,
+            ext: true
+          };
+
+          const publicKey = await crypto.subtle.importKey(
+            'jwk',
+            publicJwk,
+            { name: 'ECDSA', namedCurve: 'P-256' },
+            true,
+            ['verify']
+          );
+
+          // Export public key in SPKI format for storage
+          const publicKeyRaw = await crypto.subtle.exportKey('spki', publicKey);
+
+          // Store both keys
+          await storeKeys({
+            privateKey: rawPrivateKeyHex,
+            publicKey: bufferToHex(publicKeyRaw)
+          }, password);
+
+          // Always create session so webapp can access the public key
+          await createSession(password);
+
+          return { success: true };
+        } catch (error) {
+          return { success: false, error: 'Failed to import private key: ' + error.message };
+        }
       }
 
       case 'hasKeys': {
