@@ -2,10 +2,36 @@ import React, { useState, useEffect } from 'react';
 import Web3 from 'web3';
 import { SKAVENGE_ABI } from '../contractABI';
 
+// Extension ID - hardcoded to match manifest.json
+const SKAVENGER_EXTENSION_ID = "hnbligdjmpihmhhgajlfjmckcnmnofbn";
+
+/**
+ * Send message to Skavenger extension
+ */
+async function sendToExtension(message) {
+  return new Promise((resolve, reject) => {
+    if (typeof window.chrome === 'undefined' || !window.chrome.runtime) {
+      reject(new Error('Chrome extension API not available'));
+      return;
+    }
+
+    window.chrome.runtime.sendMessage(SKAVENGER_EXTENSION_ID, message, (response) => {
+      if (window.chrome.runtime.lastError) {
+        reject(new Error(window.chrome.runtime.lastError.message));
+      } else if (response && response.success !== false) {
+        resolve(response);
+      } else {
+        reject(new Error(response?.error || 'Unknown error'));
+      }
+    });
+  });
+}
+
 function TokenDisplay({ metamaskAddress, config, onToast }) {
   const [tokens, setTokens] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [revealedClues, setRevealedClues] = useState({});
 
   useEffect(() => {
     if (!metamaskAddress || !config || !config.contractAddress) {
@@ -14,7 +40,17 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
     }
 
     fetchUserTokens();
+
+    // Clear revealed clues when tokens are refetched for privacy
+    setRevealedClues({});
   }, [metamaskAddress, config]);
+
+  // Clear revealed clues when component unmounts for privacy
+  useEffect(() => {
+    return () => {
+      setRevealedClues({});
+    };
+  }, []);
 
   const fetchUserTokens = async () => {
     try {
@@ -96,6 +132,47 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
   const truncateHex = (hex, length = 10) => {
     if (!hex || hex.length <= length) return hex;
     return `${hex.substring(0, length)}...${hex.substring(hex.length - 6)}`;
+  };
+
+  const handleRevealClue = async (tokenId, encryptedContents, rValue) => {
+    try {
+      // Clean the encrypted hex string (remove '0x' prefix if present)
+      const cleanEncryptedHex = encryptedContents.startsWith('0x')
+        ? encryptedContents.substring(2)
+        : encryptedContents;
+
+      // Convert rValue from decimal string to hex
+      // rValue comes from the contract as a decimal string representation of uint256
+      const web3 = new Web3();
+      const rValueBigInt = BigInt(rValue);
+      const rValueHex = rValueBigInt.toString(16).padStart(64, '0'); // Pad to 64 hex chars (32 bytes)
+
+      // Call the extension to decrypt
+      const response = await sendToExtension({
+        action: 'decryptElGamal',
+        encryptedHex: cleanEncryptedHex,
+        rValueHex: rValueHex
+      });
+
+      if (response.success) {
+        setRevealedClues(prev => ({
+          ...prev,
+          [tokenId]: response.plaintext
+        }));
+        if (onToast) {
+          onToast('Clue revealed successfully', 'success');
+        }
+      } else {
+        if (onToast) {
+          onToast('Failed to reveal clue: ' + (response.error || 'Unknown error'), 'error');
+        }
+      }
+    } catch (error) {
+      console.error('Error revealing clue:', error);
+      if (onToast) {
+        onToast('Failed to reveal clue: ' + error.message, 'error');
+      }
+    }
   };
 
   if (!metamaskAddress) {
@@ -189,21 +266,40 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
                   </div>
                 )}
 
-                {token.encryptedContents && (
-                  <div className="token-detail-row">
-                    <span className="detail-label">Encrypted Data:</span>
-                    <span className="detail-value mono">
-                      {truncateHex(token.encryptedContents)}
-                    </span>
-                  </div>
-                )}
-
-                {token.rValue && token.rValue !== '0' && (
-                  <div className="token-detail-row">
-                    <span className="detail-label">R Value:</span>
-                    <span className="detail-value mono">
-                      {truncateHex(token.rValue, 16)}
-                    </span>
+                {token.encryptedContents && token.rValue && token.rValue !== '0' && (
+                  <div className="token-detail-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
+                      <span className="detail-label">Clue:</span>
+                      {!revealedClues[token.tokenId] && (
+                        <button
+                          onClick={() => handleRevealClue(token.tokenId, token.encryptedContents, token.rValue)}
+                          className="btn-reveal-clue"
+                          style={{
+                            padding: '6px 12px',
+                            fontSize: '12px',
+                            backgroundColor: '#667eea',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontWeight: '500'
+                          }}
+                        >
+                          Reveal Clue
+                        </button>
+                      )}
+                    </div>
+                    {revealedClues[token.tokenId] && (
+                      <div style={{
+                        padding: '12px',
+                        backgroundColor: '#f7fafc',
+                        borderRadius: '6px',
+                        width: '100%',
+                        wordBreak: 'break-word'
+                      }}>
+                        <span className="detail-value">{revealedClues[token.tokenId]}</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

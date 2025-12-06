@@ -32,6 +32,144 @@ function hexToBuffer(hex) {
   return bytes.buffer;
 }
 
+// Keccak-256 implementation for ElGamal decryption
+// This is a minimal implementation based on the Keccak reference
+function keccak256(data) {
+  // Convert input to Uint8Array if needed
+  const input = data instanceof Uint8Array ? data : new Uint8Array(data);
+
+  // Keccak-256 parameters
+  const KECCAK_ROUNDS = 24;
+  const RC = [
+    0x0000000000000001n, 0x0000000000008082n, 0x800000000000808an,
+    0x8000000080008000n, 0x000000000000808bn, 0x0000000080000001n,
+    0x8000000080008081n, 0x8000000000008009n, 0x000000000000008an,
+    0x0000000000000088n, 0x0000000080008009n, 0x000000008000000an,
+    0x000000008000808bn, 0x800000000000008bn, 0x8000000000008089n,
+    0x8000000000008003n, 0x8000000000008002n, 0x8000000000000080n,
+    0x000000000000800an, 0x800000008000000an, 0x8000000080008081n,
+    0x8000000000008080n, 0x0000000080000001n, 0x8000000080008008n
+  ];
+
+  const rotl = (x, n) => {
+    return ((x << n) | (x >> (64n - n))) & 0xffffffffffffffffn;
+  };
+
+  // Initialize state
+  const state = new Array(25).fill(0n);
+
+  // Absorb phase
+  const rate = 136; // For SHA3-256 (1088 bits / 8)
+  let blockSize = 0;
+  let inputOffset = 0;
+
+  while (inputOffset < input.length) {
+    state[blockSize >> 3] ^= BigInt(input[inputOffset]) << BigInt((blockSize & 7) << 3);
+    blockSize++;
+    inputOffset++;
+
+    if (blockSize === rate) {
+      // Keccak-f permutation
+      for (let round = 0; round < KECCAK_ROUNDS; round++) {
+        // Theta
+        const C = Array(5);
+        for (let x = 0; x < 5; x++) {
+          C[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20];
+        }
+        for (let x = 0; x < 5; x++) {
+          const D = C[(x + 4) % 5] ^ rotl(C[(x + 1) % 5], 1n);
+          for (let y = 0; y < 25; y += 5) {
+            state[y + x] ^= D;
+          }
+        }
+
+        // Rho and Pi
+        let current = state[1];
+        for (let x = 0; x < 24; x++) {
+          const [Y, X] = [[0, 1], [2, 3], [1, 4], [4, 0], [3, 2], [2, 1], [1, 3],
+                          [3, 4], [4, 2], [2, 0], [0, 3], [3, 1], [1, 2], [2, 4],
+                          [4, 3], [3, 0], [0, 2], [2, 1], [1, 4], [4, 0], [0, 3],
+                          [3, 2], [2, 1], [1, 0]][x];
+          const temp = state[Y * 5 + X];
+          state[Y * 5 + X] = rotl(current, BigInt(((x + 1) * (x + 2) / 2) % 64));
+          current = temp;
+        }
+
+        // Chi
+        for (let y = 0; y < 25; y += 5) {
+          const temp = Array(5);
+          for (let x = 0; x < 5; x++) {
+            temp[x] = state[y + x];
+          }
+          for (let x = 0; x < 5; x++) {
+            state[y + x] ^= (~temp[(x + 1) % 5]) & temp[(x + 2) % 5];
+          }
+        }
+
+        // Iota
+        state[0] ^= RC[round];
+      }
+      blockSize = 0;
+    }
+  }
+
+  // Padding
+  state[blockSize >> 3] ^= BigInt(0x01) << BigInt((blockSize & 7) << 3);
+  state[(rate - 1) >> 3] ^= BigInt(0x80) << BigInt(((rate - 1) & 7) << 3);
+
+  // Final permutation
+  for (let round = 0; round < KECCAK_ROUNDS; round++) {
+    // Theta
+    const C = Array(5);
+    for (let x = 0; x < 5; x++) {
+      C[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20];
+    }
+    for (let x = 0; x < 5; x++) {
+      const D = C[(x + 4) % 5] ^ rotl(C[(x + 1) % 5], 1n);
+      for (let y = 0; y < 25; y += 5) {
+        state[y + x] ^= D;
+      }
+    }
+
+    // Rho and Pi
+    let current = state[1];
+    for (let x = 0; x < 24; x++) {
+      const [Y, X] = [[0, 1], [2, 3], [1, 4], [4, 0], [3, 2], [2, 1], [1, 3],
+                      [3, 4], [4, 2], [2, 0], [0, 3], [3, 1], [1, 2], [2, 4],
+                      [4, 3], [3, 0], [0, 2], [2, 1], [1, 4], [4, 0], [0, 3],
+                      [3, 2], [2, 1], [1, 0]][x];
+      const temp = state[Y * 5 + X];
+      state[Y * 5 + X] = rotl(current, BigInt(((x + 1) * (x + 2) / 2) % 64));
+      current = temp;
+    }
+
+    // Chi
+    for (let y = 0; y < 25; y += 5) {
+      const temp = Array(5);
+      for (let x = 0; x < 5; x++) {
+        temp[x] = state[y + x];
+      }
+      for (let x = 0; x < 5; x++) {
+        state[y + x] ^= (~temp[(x + 1) % 5]) & temp[(x + 2) % 5];
+      }
+    }
+
+    // Iota
+    state[0] ^= RC[round];
+  }
+
+  // Squeeze phase - extract 32 bytes (256 bits)
+  const output = new Uint8Array(32);
+  for (let i = 0; i < 4; i++) {
+    const val = state[i];
+    for (let j = 0; j < 8; j++) {
+      output[i * 8 + j] = Number((val >> BigInt(j * 8)) & 0xffn);
+    }
+  }
+
+  return output;
+}
+
 // Convert base64url to hex
 function base64urlToHex(base64url) {
   // Add padding if needed
@@ -463,6 +601,152 @@ async function getPasswordFromSession(request) {
   return null;
 }
 
+// Unmarshal ElGamal ciphertext from bytes
+// Format: len(C1) | C1 | len(C2) | C2 | len(SharedSecret) | SharedSecret
+function unmarshalElGamalCiphertext(data) {
+  const bytes = new Uint8Array(data);
+  let offset = 0;
+
+  if (bytes.length < 12) {
+    throw new Error('Ciphertext data too short');
+  }
+
+  // Read C1 length (4 bytes, big endian)
+  const c1Len = (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
+  offset += 4;
+
+  if (offset + c1Len > bytes.length) {
+    throw new Error('Invalid C1 length');
+  }
+
+  // Read C1
+  const c1 = bytes.slice(offset, offset + c1Len);
+  offset += c1Len;
+
+  if (offset + 4 > bytes.length) {
+    throw new Error('Data too short for C2 length');
+  }
+
+  // Read C2 length (4 bytes, big endian)
+  const c2Len = (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
+  offset += 4;
+
+  if (offset + c2Len > bytes.length) {
+    throw new Error('Invalid C2 length');
+  }
+
+  // Read C2
+  const c2 = bytes.slice(offset, offset + c2Len);
+  offset += c2Len;
+
+  if (offset + 4 > bytes.length) {
+    throw new Error('Data too short for SharedSecret length');
+  }
+
+  // Read SharedSecret length (4 bytes, big endian)
+  const ssLen = (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
+  offset += 4;
+
+  if (offset + ssLen > bytes.length) {
+    throw new Error('Invalid SharedSecret length');
+  }
+
+  // Read SharedSecret
+  const sharedSecret = bytes.slice(offset, offset + ssLen);
+
+  return { c1, c2, sharedSecret };
+}
+
+// Parse elliptic curve point from bytes (uncompressed format)
+// Format: 0x04 | X (32 bytes) | Y (32 bytes)
+function parseECPoint(bytes) {
+  if (bytes.length !== 65 || bytes[0] !== 0x04) {
+    throw new Error('Invalid EC point format');
+  }
+
+  // Extract X and Y coordinates (skip first byte which is 0x04)
+  const xBytes = bytes.slice(1, 33);
+  const yBytes = bytes.slice(33, 65);
+
+  // Convert to BigInt
+  let x = 0n;
+  for (let i = 0; i < xBytes.length; i++) {
+    x = (x << 8n) | BigInt(xBytes[i]);
+  }
+
+  let y = 0n;
+  for (let i = 0; i < yBytes.length; i++) {
+    y = (y << 8n) | BigInt(yBytes[i]);
+  }
+
+  return [x, y];
+}
+
+// Convert BigInt to byte array (big endian)
+function bigIntToBytes(value) {
+  const hex = value.toString(16);
+  const paddedHex = hex.length % 2 === 0 ? hex : '0' + hex;
+  const bytes = new Uint8Array(paddedHex.length / 2);
+  for (let i = 0; i < paddedHex.length; i += 2) {
+    bytes[i / 2] = parseInt(paddedHex.substr(i, 2), 16);
+  }
+  return bytes;
+}
+
+// Decrypt ElGamal ciphertext
+// This mirrors the DecryptElGamal function in elgamal.go
+async function decryptElGamal(encryptedHex, rValueHex, privateKeyHex) {
+  try {
+    // Parse inputs
+    const ciphertextBytes = hexToBuffer(encryptedHex);
+    const ciphertext = unmarshalElGamalCiphertext(ciphertextBytes);
+
+    // Parse r value
+    const rValue = BigInt('0x' + rValueHex);
+
+    // Parse private key
+    const privateKeyD = BigInt('0x' + privateKeyHex);
+
+    // Parse C1 as EC point (g^r)
+    const [c1x, c1y] = parseECPoint(ciphertext.c1);
+
+    // Verify C1 is on the curve
+    // For P-256: y^2 = x^3 + ax + b (mod p)
+    const c1ySquared = (c1y * c1y) % P256_P;
+    const c1xCubed = (c1x * c1x * c1x) % P256_P;
+    const c1Right = (c1xCubed + P256_A * c1x + P256_B) % P256_P;
+    if (c1ySquared !== c1Right) {
+      throw new Error('C1 not on curve');
+    }
+
+    // Compute shared secret: S = C1^privKey = (g^r)^privKey
+    const [sx, sy] = scalarMult(privateKeyD, [c1x, c1y]);
+
+    // Convert sx to bytes (for hashing)
+    const sxBytes = bigIntToBytes(sx);
+
+    // Derive decryption key: Hash(r || sharedSecret)
+    // This matches the Go implementation: keyHash.Write(r.Bytes()); keyHash.Write(sharedSecret)
+    const rBytes = bigIntToBytes(rValue);
+    const keyInput = new Uint8Array(rBytes.length + sxBytes.length);
+    keyInput.set(rBytes, 0);
+    keyInput.set(sxBytes, rBytes.length);
+    const key = keccak256(keyInput);
+
+    // XOR C2 with key to decrypt
+    const plaintext = new Uint8Array(ciphertext.c2.length);
+    for (let i = 0; i < ciphertext.c2.length; i++) {
+      plaintext[i] = ciphertext.c2[i] ^ key[i % key.length];
+    }
+
+    // Convert plaintext bytes to string
+    const decoder = new TextDecoder('utf-8');
+    return decoder.decode(plaintext);
+  } catch (error) {
+    throw new Error('Decryption failed: ' + error.message);
+  }
+}
+
 // Internal message handler (from popup)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   handleMessage(request, true).then(sendResponse);
@@ -670,6 +954,32 @@ async function handleMessage(request, isInternal = true) {
       case 'getExtensionId': {
         // Return extension ID for webapp discovery
         return { success: true, extensionId: chrome.runtime.id };
+      }
+
+      case 'decryptElGamal': {
+        if (!password) {
+          return { success: false, error: 'Password required or session expired' };
+        }
+
+        if (!request.encryptedHex || !request.rValueHex) {
+          return { success: false, error: 'Missing required parameters: encryptedHex and rValueHex' };
+        }
+
+        const keys = await retrieveKeys(password);
+        if (!keys) {
+          return { success: false, error: 'Invalid password or no keys found' };
+        }
+
+        try {
+          const plaintext = await decryptElGamal(
+            request.encryptedHex,
+            request.rValueHex,
+            keys.privateKey
+          );
+          return { success: true, plaintext };
+        } catch (error) {
+          return { success: false, error: error.message };
+        }
       }
 
       default:
