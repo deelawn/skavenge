@@ -144,6 +144,7 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
       // Convert rValue from decimal string to hex
       // rValue comes from the contract as a decimal string representation of uint256
       const web3 = new Web3();
+      // eslint-disable-next-line no-undef
       const rValueBigInt = BigInt(rValue);
       const rValueHex = rValueBigInt.toString(16).padStart(64, '0'); // Pad to 64 hex chars (32 bytes)
 
