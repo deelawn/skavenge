@@ -136,6 +136,11 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
 
   const handleRevealClue = async (tokenId, encryptedContents, rValue) => {
     try {
+      console.log('=== WEBAPP: Preparing to decrypt ===');
+      console.log('tokenId:', tokenId);
+      console.log('encryptedContents (raw):', encryptedContents);
+      console.log('rValue (raw decimal):', rValue);
+
       // Clean the encrypted hex string (remove '0x' prefix if present)
       const cleanEncryptedHex = encryptedContents.startsWith('0x')
         ? encryptedContents.substring(2)
@@ -148,12 +153,18 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
       const rValueBigInt = BigInt(rValue);
       const rValueHex = rValueBigInt.toString(16).padStart(64, '0'); // Pad to 64 hex chars (32 bytes)
 
+      console.log('cleanEncryptedHex:', cleanEncryptedHex);
+      console.log('rValueHex:', rValueHex);
+      console.log('encryptedHex length:', cleanEncryptedHex.length);
+
       // Call the extension to decrypt
       const response = await sendToExtension({
         action: 'decryptElGamal',
         encryptedHex: cleanEncryptedHex,
         rValueHex: rValueHex
       });
+
+      console.log('Extension response:', response);
 
       if (response.success) {
         setRevealedClues(prev => ({
