@@ -674,9 +674,19 @@ function bigIntToBytes(value) {
 // This mirrors the DecryptElGamal function in elgamal.go
 async function decryptElGamal(encryptedHex, rValueHex, privateKeyHex) {
   try {
+    console.log('=== DECRYPTION DEBUG ===');
+    console.log('encryptedHex length:', encryptedHex.length);
+    console.log('rValueHex:', rValueHex);
+    console.log('privateKeyHex:', privateKeyHex);
+
     // Parse inputs
     const ciphertextBytes = hexToBuffer(encryptedHex);
     const ciphertext = unmarshalElGamalCiphertext(ciphertextBytes);
+
+    console.log('C1 length:', ciphertext.c1.length);
+    console.log('C2 length:', ciphertext.c2.length);
+    console.log('SharedSecret length:', ciphertext.sharedSecret.length);
+    console.log('C2 hex:', bufferToHex(ciphertext.c2));
 
     // Parse r value
     const rValue = BigInt('0x' + rValueHex);
@@ -687,14 +697,12 @@ async function decryptElGamal(encryptedHex, rValueHex, privateKeyHex) {
     // Parse C1 as EC point (g^r)
     const [c1x, c1y] = parseECPoint(ciphertext.c1);
 
-    // Verify C1 is on the curve (optional - skip for now to see if decryption works)
-    // For P-256: y^2 = x^3 + ax + b (mod p)
-    // We skip this validation because if the data came from a valid encryption,
-    // it should already be on the curve, and the validation might have edge cases
-    // with BigInt modular arithmetic that we can address later if needed.
+    console.log('C1 parsed successfully');
 
     // Compute shared secret: S = C1^privKey = (g^r)^privKey
     const [sx, sy] = scalarMult(privateKeyD, [c1x, c1y]);
+
+    console.log('sx:', sx.toString(16));
 
     // Convert sx to bytes (for hashing)
     const sxBytes = bigIntToBytes(sx);
@@ -702,10 +710,19 @@ async function decryptElGamal(encryptedHex, rValueHex, privateKeyHex) {
     // Derive decryption key: Hash(r || sharedSecret)
     // This matches the Go implementation: keyHash.Write(r.Bytes()); keyHash.Write(sharedSecret)
     const rBytes = bigIntToBytes(rValue);
+
+    console.log('rBytes length:', rBytes.length, 'hex:', bufferToHex(rBytes));
+    console.log('sxBytes length:', sxBytes.length, 'hex:', bufferToHex(sxBytes));
+
     const keyInput = new Uint8Array(rBytes.length + sxBytes.length);
     keyInput.set(rBytes, 0);
     keyInput.set(sxBytes, rBytes.length);
+
+    console.log('keyInput length:', keyInput.length, 'hex:', bufferToHex(keyInput));
+
     const key = keccak256(keyInput);
+
+    console.log('key hex:', bufferToHex(key));
 
     // XOR C2 with key to decrypt
     const plaintext = new Uint8Array(ciphertext.c2.length);
@@ -715,8 +732,12 @@ async function decryptElGamal(encryptedHex, rValueHex, privateKeyHex) {
 
     // Convert plaintext bytes to string
     const decoder = new TextDecoder('utf-8');
-    return decoder.decode(plaintext);
+    const result = decoder.decode(plaintext);
+    console.log('plaintext:', result);
+    console.log('=== END DEBUG ===');
+    return result;
   } catch (error) {
+    console.error('Decryption error:', error);
     throw new Error('Decryption failed: ' + error.message);
   }
 }
