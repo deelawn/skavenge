@@ -32,116 +32,132 @@ function hexToBuffer(hex) {
   return bytes.buffer;
 }
 
-// Keccak-256 implementation (legacy Keccak, as used by Ethereum and Go's sha3 package)
-// Based on the FIPS 202 specification
-function keccak256(data) {
-  const input = data instanceof Uint8Array ? data : new Uint8Array(data);
-
-  const KECCAK_ROUNDS = 24;
-  const ROTATIONS = [
-    [0, 1, 62, 28, 27],
-    [36, 44, 6, 55, 20],
-    [3, 10, 43, 25, 39],
-    [41, 45, 15, 21, 8],
-    [18, 2, 61, 56, 14]
-  ];
-
-  const RC = [
-    0x0000000000000001n, 0x0000000000008082n, 0x800000000000808An,
-    0x8000000080008000n, 0x000000000000808Bn, 0x0000000080000001n,
-    0x8000000080008081n, 0x8000000000008009n, 0x000000000000008An,
-    0x0000000000000088n, 0x0000000080008009n, 0x000000008000000An,
-    0x000000008000808Bn, 0x800000000000008Bn, 0x8000000000008089n,
-    0x8000000000008003n, 0x8000000000008002n, 0x8000000000000080n,
-    0x000000000000800An, 0x800000008000000An, 0x8000000080008081n,
-    0x8000000000008080n, 0x0000000080000001n, 0x8000000080008008n
-  ];
-
-  const rotl64 = (n, c) => (n << c) | (n >> (64n - c));
-
-  // Helper function to apply Keccak-f[1600] permutation
-  const keccakF = () => {
-    for (let round = 0; round < KECCAK_ROUNDS; round++) {
-      // θ (Theta)
-      const C = new Array(5);
-      for (let x = 0; x < 5; x++) {
-        C[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20];
-      }
-
-      for (let x = 0; x < 5; x++) {
-        const D = C[(x + 4) % 5] ^ rotl64(C[(x + 1) % 5], 1n);
-        for (let y = 0; y < 5; y++) {
-          state[x + 5 * y] ^= D;
-        }
-      }
-
-      // ρ (Rho) and π (Pi)
-      const B = new Array(25);
-      for (let x = 0; x < 5; x++) {
-        for (let y = 0; y < 5; y++) {
-          B[y + 5 * ((2 * x + 3 * y) % 5)] = rotl64(state[x + 5 * y], BigInt(ROTATIONS[x][y]));
-        }
-      }
-
-      // χ (Chi)
-      for (let x = 0; x < 5; x++) {
-        for (let y = 0; y < 5; y++) {
-          state[x + 5 * y] = B[x + 5 * y] ^ ((~B[(x + 1) % 5 + 5 * y]) & B[(x + 2) % 5 + 5 * y]);
-        }
-      }
-
-      // ι (Iota)
-      state[0] ^= RC[round];
+// Keccak-256 implementation (legacy Keccak, as used by Go's sha3 package)
+// Based on the reference implementation
+function keccak256(msgBytes) {
+  function ROTL64(a, n) {
+    const ah = a[0], al = a[1];
+    if (n >= 32) {
+      n -= 32;
+      return [
+        (al << n) | (ah >>> (32 - n)),
+        (ah << n) | (al >>> (32 - n))
+      ];
+    } else {
+      return [
+        (ah << n) | (al >>> (32 - n)),
+        (al << n) | (ah >>> (32 - n))
+      ];
     }
-  };
+  }
 
-  // Initialize state (25 lanes of 64 bits each)
-  const state = new Array(25).fill(0n);
+  function XOR64(a, b) {
+    return [a[0] ^ b[0], a[1] ^ b[1]];
+  }
+
+  function keccakF(s) {
+    const RC = [
+      [0x00000000, 0x00000001], [0x00000000, 0x00008082], [0x80000000, 0x0000808A],
+      [0x80000000, 0x80008000], [0x00000000, 0x0000808B], [0x00000000, 0x80000001],
+      [0x80000000, 0x80008081], [0x80000000, 0x00008009], [0x00000000, 0x0000008A],
+      [0x00000000, 0x00000088], [0x00000000, 0x80008009], [0x00000000, 0x8000000A],
+      [0x00000000, 0x8000808B], [0x80000000, 0x0000008B], [0x80000000, 0x00008089],
+      [0x80000000, 0x00008003], [0x80000000, 0x00008002], [0x80000000, 0x00000080],
+      [0x00000000, 0x0000800A], [0x80000000, 0x8000000A], [0x80000000, 0x80008081],
+      [0x80000000, 0x00008080], [0x00000000, 0x80000001], [0x80000000, 0x80008008]
+    ];
+
+    for (let round = 0; round < 24; round++) {
+      // Theta
+      const C = [];
+      for (let x = 0; x < 5; x++) {
+        C[x] = XOR64(XOR64(XOR64(XOR64(s[x], s[x + 5]), s[x + 10]), s[x + 15]), s[x + 20]);
+      }
+      const D = [];
+      for (let x = 0; x < 5; x++) {
+        D[x] = XOR64(C[(x + 4) % 5], ROTL64(C[(x + 1) % 5], 1));
+      }
+      for (let x = 0; x < 5; x++) {
+        for (let y = 0; y < 5; y++) {
+          s[x + 5 * y] = XOR64(s[x + 5 * y], D[x]);
+        }
+      }
+
+      // Rho and Pi
+      const B = [];
+      const rotations = [
+        0, 1, 62, 28, 27, 36, 44, 6, 55, 20, 3, 10, 43, 25, 39, 41, 45, 15, 21, 8, 18, 2, 61, 56, 14
+      ];
+      for (let x = 0; x < 5; x++) {
+        for (let y = 0; y < 5; y++) {
+          B[y + 5 * ((2 * x + 3 * y) % 5)] = ROTL64(s[x + 5 * y], rotations[x + 5 * y]);
+        }
+      }
+
+      // Chi
+      for (let x = 0; x < 5; x++) {
+        for (let y = 0; y < 5; y++) {
+          const b1 = B[(x + 1) % 5 + 5 * y];
+          const b2 = B[(x + 2) % 5 + 5 * y];
+          s[x + 5 * y] = XOR64(B[x + 5 * y], [(~b1[0]) & b2[0], (~b1[1]) & b2[1]]);
+        }
+      }
+
+      // Iota
+      s[0] = XOR64(s[0], RC[round]);
+    }
+  }
+
+  // Initialize state (25 x 64-bit words as [hi, lo] pairs)
+  const state = [];
+  for (let i = 0; i < 25; i++) {
+    state[i] = [0, 0];
+  }
+
   const rate = 136; // 1088 bits for Keccak-256
-
-  // Absorb phase - process complete blocks
   let offset = 0;
-  while (offset + rate <= input.length) {
-    // XOR full rate block into state
-    for (let j = 0; j < rate; j++) {
-      const lane = Math.floor(j / 8);
-      const byteOffset = j % 8;
-      state[lane] ^= BigInt(input[offset + j]) << BigInt(byteOffset * 8);
-    }
 
-    keccakF();
+  // Absorb phase
+  while (offset + rate <= msgBytes.length) {
+    for (let i = 0; i < rate / 8; i++) {
+      const lo = msgBytes[offset + i * 8] | (msgBytes[offset + i * 8 + 1] << 8) |
+                 (msgBytes[offset + i * 8 + 2] << 16) | (msgBytes[offset + i * 8 + 3] << 24);
+      const hi = msgBytes[offset + i * 8 + 4] | (msgBytes[offset + i * 8 + 5] << 8) |
+                 (msgBytes[offset + i * 8 + 6] << 16) | (msgBytes[offset + i * 8 + 7] << 24);
+      state[i] = XOR64(state[i], [hi, lo]);
+    }
+    keccakF(state);
     offset += rate;
   }
 
-  // Absorb remaining bytes (if any) and apply padding
-  const remaining = input.length - offset;
-
-  // XOR remaining input bytes into state
-  for (let j = 0; j < remaining; j++) {
-    const lane = Math.floor(j / 8);
-    const byteOffset = j % 8;
-    state[lane] ^= BigInt(input[offset + j]) << BigInt(byteOffset * 8);
+  // Absorb remaining bytes and padding
+  const temp = new Uint8Array(rate);
+  const remaining = msgBytes.length - offset;
+  for (let i = 0; i < remaining; i++) {
+    temp[i] = msgBytes[offset + i];
   }
+  temp[remaining] = 0x01;
+  temp[rate - 1] |= 0x80;
 
-  // Apply Keccak padding (0x01 || 0x00...00 || 0x80)
-  const paddingStart = remaining;
-  const lane1 = Math.floor(paddingStart / 8);
-  const byteOffset1 = paddingStart % 8;
-  state[lane1] ^= BigInt(0x01) << BigInt(byteOffset1 * 8);
+  for (let i = 0; i < rate / 8; i++) {
+    const lo = temp[i * 8] | (temp[i * 8 + 1] << 8) | (temp[i * 8 + 2] << 16) | (temp[i * 8 + 3] << 24);
+    const hi = temp[i * 8 + 4] | (temp[i * 8 + 5] << 8) | (temp[i * 8 + 6] << 16) | (temp[i * 8 + 7] << 24);
+    state[i] = XOR64(state[i], [hi, lo]);
+  }
+  keccakF(state);
 
-  const lane2 = Math.floor((rate - 1) / 8);
-  const byteOffset2 = (rate - 1) % 8;
-  state[lane2] ^= BigInt(0x80) << BigInt(byteOffset2 * 8);
-
-  // Final permutation
-  keccakF();
-
-  // Squeeze phase - extract first 256 bits (32 bytes)
+  // Squeeze phase - extract 32 bytes
   const output = new Uint8Array(32);
   for (let i = 0; i < 4; i++) {
-    for (let j = 0; j < 8; j++) {
-      output[i * 8 + j] = Number((state[i] >> BigInt(j * 8)) & 0xFFn);
-    }
+    const [hi, lo] = state[i];
+    output[i * 8] = lo & 0xFF;
+    output[i * 8 + 1] = (lo >> 8) & 0xFF;
+    output[i * 8 + 2] = (lo >> 16) & 0xFF;
+    output[i * 8 + 3] = (lo >> 24) & 0xFF;
+    output[i * 8 + 4] = hi & 0xFF;
+    output[i * 8 + 5] = (hi >> 8) & 0xFF;
+    output[i * 8 + 6] = (hi >> 16) & 0xFF;
+    output[i * 8 + 7] = (hi >> 24) & 0xFF;
   }
 
   return output;
