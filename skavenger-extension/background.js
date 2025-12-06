@@ -32,138 +32,132 @@ function hexToBuffer(hex) {
   return bytes.buffer;
 }
 
-// Keccak-256 implementation for ElGamal decryption
-// This is a minimal implementation based on the Keccak reference
+// Keccak-256 implementation (legacy Keccak, as used by Ethereum and Go's sha3 package)
+// Based on the FIPS 202 specification
 function keccak256(data) {
-  // Convert input to Uint8Array if needed
   const input = data instanceof Uint8Array ? data : new Uint8Array(data);
 
-  // Keccak-256 parameters
   const KECCAK_ROUNDS = 24;
+  const ROTATIONS = [
+    [0, 1, 62, 28, 27],
+    [36, 44, 6, 55, 20],
+    [3, 10, 43, 25, 39],
+    [41, 45, 15, 21, 8],
+    [18, 2, 61, 56, 14]
+  ];
+
   const RC = [
-    0x0000000000000001n, 0x0000000000008082n, 0x800000000000808an,
-    0x8000000080008000n, 0x000000000000808bn, 0x0000000080000001n,
-    0x8000000080008081n, 0x8000000000008009n, 0x000000000000008an,
-    0x0000000000000088n, 0x0000000080008009n, 0x000000008000000an,
-    0x000000008000808bn, 0x800000000000008bn, 0x8000000000008089n,
+    0x0000000000000001n, 0x0000000000008082n, 0x800000000000808An,
+    0x8000000080008000n, 0x000000000000808Bn, 0x0000000080000001n,
+    0x8000000080008081n, 0x8000000000008009n, 0x000000000000008An,
+    0x0000000000000088n, 0x0000000080008009n, 0x000000008000000An,
+    0x000000008000808Bn, 0x800000000000008Bn, 0x8000000000008089n,
     0x8000000000008003n, 0x8000000000008002n, 0x8000000000000080n,
-    0x000000000000800an, 0x800000008000000an, 0x8000000080008081n,
+    0x000000000000800An, 0x800000008000000An, 0x8000000080008081n,
     0x8000000000008080n, 0x0000000080000001n, 0x8000000080008008n
   ];
 
-  const rotl = (x, n) => {
-    return ((x << n) | (x >> (64n - n))) & 0xffffffffffffffffn;
-  };
+  const rotl64 = (n, c) => (n << c) | (n >> (64n - c));
 
-  // Initialize state
+  // Initialize state (25 lanes of 64 bits each)
   const state = new Array(25).fill(0n);
+  const rate = 136; // 1088 bits for Keccak-256
 
   // Absorb phase
-  const rate = 136; // For SHA3-256 (1088 bits / 8)
-  let blockSize = 0;
-  let inputOffset = 0;
+  for (let i = 0; i < input.length; i += rate) {
+    const block = input.slice(i, i + rate);
 
-  while (inputOffset < input.length) {
-    state[blockSize >> 3] ^= BigInt(input[inputOffset]) << BigInt((blockSize & 7) << 3);
-    blockSize++;
-    inputOffset++;
+    // XOR block into state
+    for (let j = 0; j < block.length; j++) {
+      const lane = Math.floor(j / 8);
+      const offset = j % 8;
+      state[lane] ^= BigInt(block[j]) << BigInt(offset * 8);
+    }
 
-    if (blockSize === rate) {
-      // Keccak-f permutation
-      for (let round = 0; round < KECCAK_ROUNDS; round++) {
-        // Theta
-        const C = Array(5);
-        for (let x = 0; x < 5; x++) {
-          C[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20];
-        }
-        for (let x = 0; x < 5; x++) {
-          const D = C[(x + 4) % 5] ^ rotl(C[(x + 1) % 5], 1n);
-          for (let y = 0; y < 25; y += 5) {
-            state[y + x] ^= D;
-          }
-        }
-
-        // Rho and Pi
-        let current = state[1];
-        for (let x = 0; x < 24; x++) {
-          const [Y, X] = [[0, 1], [2, 3], [1, 4], [4, 0], [3, 2], [2, 1], [1, 3],
-                          [3, 4], [4, 2], [2, 0], [0, 3], [3, 1], [1, 2], [2, 4],
-                          [4, 3], [3, 0], [0, 2], [2, 1], [1, 4], [4, 0], [0, 3],
-                          [3, 2], [2, 1], [1, 0]][x];
-          const temp = state[Y * 5 + X];
-          state[Y * 5 + X] = rotl(current, BigInt(((x + 1) * (x + 2) / 2) % 64));
-          current = temp;
-        }
-
-        // Chi
-        for (let y = 0; y < 25; y += 5) {
-          const temp = Array(5);
-          for (let x = 0; x < 5; x++) {
-            temp[x] = state[y + x];
-          }
-          for (let x = 0; x < 5; x++) {
-            state[y + x] ^= (~temp[(x + 1) % 5]) & temp[(x + 2) % 5];
-          }
-        }
-
-        // Iota
-        state[0] ^= RC[round];
+    // Apply Keccak-f permutation
+    for (let round = 0; round < KECCAK_ROUNDS; round++) {
+      // θ (Theta)
+      const C = new Array(5);
+      for (let x = 0; x < 5; x++) {
+        C[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20];
       }
-      blockSize = 0;
+
+      for (let x = 0; x < 5; x++) {
+        const D = C[(x + 4) % 5] ^ rotl64(C[(x + 1) % 5], 1n);
+        for (let y = 0; y < 5; y++) {
+          state[x + 5 * y] ^= D;
+        }
+      }
+
+      // ρ (Rho) and π (Pi)
+      const B = new Array(25);
+      for (let x = 0; x < 5; x++) {
+        for (let y = 0; y < 5; y++) {
+          B[y + 5 * ((2 * x + 3 * y) % 5)] = rotl64(state[x + 5 * y], BigInt(ROTATIONS[x][y]));
+        }
+      }
+
+      // χ (Chi)
+      for (let x = 0; x < 5; x++) {
+        for (let y = 0; y < 5; y++) {
+          state[x + 5 * y] = B[x + 5 * y] ^ ((~B[(x + 1) % 5 + 5 * y]) & B[(x + 2) % 5 + 5 * y]);
+        }
+      }
+
+      // ι (Iota)
+      state[0] ^= RC[round];
     }
   }
 
-  // Padding
-  state[blockSize >> 3] ^= BigInt(0x01) << BigInt((blockSize & 7) << 3);
-  state[(rate - 1) >> 3] ^= BigInt(0x80) << BigInt(((rate - 1) & 7) << 3);
+  // Padding (Keccak padding: 0x01 || 0x00...00 || 0x80)
+  const paddingStart = input.length % rate;
+  const paddingLen = rate - paddingStart;
+  const padding = new Uint8Array(paddingLen);
+  padding[0] = 0x01;
+  padding[paddingLen - 1] |= 0x80;
+
+  // XOR padding into state
+  for (let j = 0; j < padding.length; j++) {
+    const lane = Math.floor((paddingStart + j) / 8);
+    const offset = (paddingStart + j) % 8;
+    state[lane] ^= BigInt(padding[j]) << BigInt(offset * 8);
+  }
 
   // Final permutation
   for (let round = 0; round < KECCAK_ROUNDS; round++) {
-    // Theta
-    const C = Array(5);
+    const C = new Array(5);
     for (let x = 0; x < 5; x++) {
       C[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20];
     }
+
     for (let x = 0; x < 5; x++) {
-      const D = C[(x + 4) % 5] ^ rotl(C[(x + 1) % 5], 1n);
-      for (let y = 0; y < 25; y += 5) {
-        state[y + x] ^= D;
+      const D = C[(x + 4) % 5] ^ rotl64(C[(x + 1) % 5], 1n);
+      for (let y = 0; y < 5; y++) {
+        state[x + 5 * y] ^= D;
       }
     }
 
-    // Rho and Pi
-    let current = state[1];
-    for (let x = 0; x < 24; x++) {
-      const [Y, X] = [[0, 1], [2, 3], [1, 4], [4, 0], [3, 2], [2, 1], [1, 3],
-                      [3, 4], [4, 2], [2, 0], [0, 3], [3, 1], [1, 2], [2, 4],
-                      [4, 3], [3, 0], [0, 2], [2, 1], [1, 4], [4, 0], [0, 3],
-                      [3, 2], [2, 1], [1, 0]][x];
-      const temp = state[Y * 5 + X];
-      state[Y * 5 + X] = rotl(current, BigInt(((x + 1) * (x + 2) / 2) % 64));
-      current = temp;
-    }
-
-    // Chi
-    for (let y = 0; y < 25; y += 5) {
-      const temp = Array(5);
-      for (let x = 0; x < 5; x++) {
-        temp[x] = state[y + x];
-      }
-      for (let x = 0; x < 5; x++) {
-        state[y + x] ^= (~temp[(x + 1) % 5]) & temp[(x + 2) % 5];
+    const B = new Array(25);
+    for (let x = 0; x < 5; x++) {
+      for (let y = 0; y < 5; y++) {
+        B[y + 5 * ((2 * x + 3 * y) % 5)] = rotl64(state[x + 5 * y], BigInt(ROTATIONS[x][y]));
       }
     }
 
-    // Iota
+    for (let x = 0; x < 5; x++) {
+      for (let y = 0; y < 5; y++) {
+        state[x + 5 * y] = B[x + 5 * y] ^ ((~B[(x + 1) % 5 + 5 * y]) & B[(x + 2) % 5 + 5 * y]);
+      }
+    }
+
     state[0] ^= RC[round];
   }
 
-  // Squeeze phase - extract 32 bytes (256 bits)
+  // Squeeze phase - extract first 256 bits (32 bytes)
   const output = new Uint8Array(32);
   for (let i = 0; i < 4; i++) {
-    const val = state[i];
     for (let j = 0; j < 8; j++) {
-      output[i * 8 + j] = Number((val >> BigInt(j * 8)) & 0xffn);
+      output[i * 8 + j] = Number((state[i] >> BigInt(j * 8)) & 0xFFn);
     }
   }
 
