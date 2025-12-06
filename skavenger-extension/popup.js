@@ -129,7 +129,7 @@ async function init() {
 
     if (sessionCheck.success) {
       // Valid session exists - auto-unlock and go to main screen
-      currentPassword = true; // Mark as unlocked (we don't need the actual password in popup)
+      currentPassword = null; // Let background use session password
       showScreen(mainScreen);
       await updateKeyStatus(true);
     } else {
