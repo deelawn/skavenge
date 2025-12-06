@@ -59,22 +59,8 @@ function keccak256(data) {
 
   const rotl64 = (n, c) => (n << c) | (n >> (64n - c));
 
-  // Initialize state (25 lanes of 64 bits each)
-  const state = new Array(25).fill(0n);
-  const rate = 136; // 1088 bits for Keccak-256
-
-  // Absorb phase
-  for (let i = 0; i < input.length; i += rate) {
-    const block = input.slice(i, i + rate);
-
-    // XOR block into state
-    for (let j = 0; j < block.length; j++) {
-      const lane = Math.floor(j / 8);
-      const offset = j % 8;
-      state[lane] ^= BigInt(block[j]) << BigInt(offset * 8);
-    }
-
-    // Apply Keccak-f permutation
+  // Helper function to apply Keccak-f[1600] permutation
+  const keccakF = () => {
     for (let round = 0; round < KECCAK_ROUNDS; round++) {
       // θ (Theta)
       const C = new Array(5);
@@ -107,51 +93,48 @@ function keccak256(data) {
       // ι (Iota)
       state[0] ^= RC[round];
     }
+  };
+
+  // Initialize state (25 lanes of 64 bits each)
+  const state = new Array(25).fill(0n);
+  const rate = 136; // 1088 bits for Keccak-256
+
+  // Absorb phase - process complete blocks
+  let offset = 0;
+  while (offset + rate <= input.length) {
+    // XOR full rate block into state
+    for (let j = 0; j < rate; j++) {
+      const lane = Math.floor(j / 8);
+      const byteOffset = j % 8;
+      state[lane] ^= BigInt(input[offset + j]) << BigInt(byteOffset * 8);
+    }
+
+    keccakF();
+    offset += rate;
   }
 
-  // Padding (Keccak padding: 0x01 || 0x00...00 || 0x80)
-  const paddingStart = input.length % rate;
-  const paddingLen = rate - paddingStart;
-  const padding = new Uint8Array(paddingLen);
-  padding[0] = 0x01;
-  padding[paddingLen - 1] |= 0x80;
+  // Absorb remaining bytes (if any) and apply padding
+  const remaining = input.length - offset;
 
-  // XOR padding into state
-  for (let j = 0; j < padding.length; j++) {
-    const lane = Math.floor((paddingStart + j) / 8);
-    const offset = (paddingStart + j) % 8;
-    state[lane] ^= BigInt(padding[j]) << BigInt(offset * 8);
+  // XOR remaining input bytes into state
+  for (let j = 0; j < remaining; j++) {
+    const lane = Math.floor(j / 8);
+    const byteOffset = j % 8;
+    state[lane] ^= BigInt(input[offset + j]) << BigInt(byteOffset * 8);
   }
+
+  // Apply Keccak padding (0x01 || 0x00...00 || 0x80)
+  const paddingStart = remaining;
+  const lane1 = Math.floor(paddingStart / 8);
+  const byteOffset1 = paddingStart % 8;
+  state[lane1] ^= BigInt(0x01) << BigInt(byteOffset1 * 8);
+
+  const lane2 = Math.floor((rate - 1) / 8);
+  const byteOffset2 = (rate - 1) % 8;
+  state[lane2] ^= BigInt(0x80) << BigInt(byteOffset2 * 8);
 
   // Final permutation
-  for (let round = 0; round < KECCAK_ROUNDS; round++) {
-    const C = new Array(5);
-    for (let x = 0; x < 5; x++) {
-      C[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20];
-    }
-
-    for (let x = 0; x < 5; x++) {
-      const D = C[(x + 4) % 5] ^ rotl64(C[(x + 1) % 5], 1n);
-      for (let y = 0; y < 5; y++) {
-        state[x + 5 * y] ^= D;
-      }
-    }
-
-    const B = new Array(25);
-    for (let x = 0; x < 5; x++) {
-      for (let y = 0; y < 5; y++) {
-        B[y + 5 * ((2 * x + 3 * y) % 5)] = rotl64(state[x + 5 * y], BigInt(ROTATIONS[x][y]));
-      }
-    }
-
-    for (let x = 0; x < 5; x++) {
-      for (let y = 0; y < 5; y++) {
-        state[x + 5 * y] = B[x + 5 * y] ^ ((~B[(x + 1) % 5 + 5 * y]) & B[(x + 2) % 5 + 5 * y]);
-      }
-    }
-
-    state[0] ^= RC[round];
-  }
+  keccakF();
 
   // Squeeze phase - extract first 256 bits (32 bytes)
   const output = new Uint8Array(32);
