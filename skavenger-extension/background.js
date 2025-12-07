@@ -67,17 +67,18 @@ function keccak256(message) {
   const length = message.length;
   const isString = false;
   let index = 0;
+  let i;
 
   while (index < length) {
     if (reset) {
       reset = false;
       blocks[0] = block;
-      for (let i = 1; i < blockCount + 1; ++i) {
+      for (i = 1; i < blockCount + 1; ++i) {
         blocks[i] = 0;
       }
     }
 
-    for (let i = start; index < length && i < byteCount; ++index) {
+    for (i = start; index < length && i < byteCount; ++index) {
       blocks[i >> 2] |= message[index] << SHIFT[i++ & 3];
     }
 
@@ -85,7 +86,7 @@ function keccak256(message) {
     if (i >= byteCount) {
       start = i - byteCount;
       block = blocks[blockCount];
-      for (let i = 0; i < blockCount; ++i) {
+      for (i = 0; i < blockCount; ++i) {
         s[i] ^= blocks[i];
       }
       f(s);
@@ -96,7 +97,7 @@ function keccak256(message) {
   }
 
   // finalize
-  let i = lastByteIndex;
+  i = lastByteIndex;
   blocks[i >> 2] |= padding[i & 3];
   if (lastByteIndex === byteCount) {
     blocks[0] = blocks[blockCount];
