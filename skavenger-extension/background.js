@@ -68,6 +68,7 @@ function keccak256(message) {
   const isString = false;
   let index = 0;
   let i;
+  let lastByteIndex;
 
   while (index < length) {
     if (reset) {
@@ -82,7 +83,7 @@ function keccak256(message) {
       blocks[i >> 2] |= message[index] << SHIFT[i++ & 3];
     }
 
-    const lastByteIndex = i;
+    lastByteIndex = i;
     if (i >= byteCount) {
       start = i - byteCount;
       block = blocks[blockCount];
