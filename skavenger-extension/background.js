@@ -33,7 +33,7 @@ function hexToBuffer(hex) {
 }
 
 // Keccak-256 implementation (legacy Keccak, as used by Go's sha3 package)
-// Based on js-sha3 (MIT License) by Chen, Yi-Cyuan
+// Extracted from js-sha3 v0.9.3 (MIT License) by Chen, Yi-Cyuan
 // https://github.com/emn178/js-sha3
 function keccak256(message) {
   const KECCAK_PADDING = [1, 256, 65536, 16777216];
@@ -50,35 +50,33 @@ function keccak256(message) {
 
   const blocks = [];
   const s = [];
-  let reset = true;
-  let finalized = false;
+  for (let idx = 0; idx < 50; ++idx) {
+    s[idx] = 0;
+  }
+
   let block = 0;
   let start = 0;
+  let reset = true;
   const blockCount = (1600 - (bits << 1)) >> 5;
   const byteCount = blockCount << 2;
   const outputBlocks = outputBits >> 5;
   const extraBytes = (outputBits & 31) >> 3;
 
-  for (let i = 0; i < 50; ++i) {
-    s[i] = 0;
-  }
-
-  // update
+  // Update phase
   const length = message.length;
-  const isString = false;
   let index = 0;
-  let i;
-  let lastByteIndex;
+  let lastByteIndex = 0;
 
   while (index < length) {
     if (reset) {
       reset = false;
       blocks[0] = block;
-      for (i = 1; i < blockCount + 1; ++i) {
-        blocks[i] = 0;
+      for (let idx = 1; idx < blockCount + 1; ++idx) {
+        blocks[idx] = 0;
       }
     }
 
+    let i;
     for (i = start; index < length && i < byteCount; ++index) {
       blocks[i >> 2] |= message[index] << SHIFT[i++ & 3];
     }
@@ -87,8 +85,8 @@ function keccak256(message) {
     if (i >= byteCount) {
       start = i - byteCount;
       block = blocks[blockCount];
-      for (i = 0; i < blockCount; ++i) {
-        s[i] ^= blocks[i];
+      for (let idx = 0; idx < blockCount; ++idx) {
+        s[idx] ^= blocks[idx];
       }
       f(s);
       reset = true;
@@ -97,8 +95,8 @@ function keccak256(message) {
     }
   }
 
-  // finalize
-  i = lastByteIndex;
+  // Finalize phase
+  let i = lastByteIndex;
   blocks[i >> 2] |= padding[i & 3];
   if (lastByteIndex === byteCount) {
     blocks[0] = blocks[blockCount];
@@ -112,19 +110,19 @@ function keccak256(message) {
   }
   f(s);
 
-  // digest/array output
+  // Digest phase
   const array = [];
-  let offset, sblock;
+  let offset, block2;
   i = 0;
   let j = 0;
   while (j < outputBlocks) {
     for (i = 0; i < blockCount && j < outputBlocks; ++i, ++j) {
       offset = j << 2;
-      sblock = s[i];
-      array[offset] = sblock & 0xFF;
-      array[offset + 1] = (sblock >> 8) & 0xFF;
-      array[offset + 2] = (sblock >> 16) & 0xFF;
-      array[offset + 3] = (sblock >> 24) & 0xFF;
+      block2 = s[i];
+      array[offset] = block2 & 0xFF;
+      array[offset + 1] = (block2 >> 8) & 0xFF;
+      array[offset + 2] = (block2 >> 16) & 0xFF;
+      array[offset + 3] = (block2 >> 24) & 0xFF;
     }
     if (j % blockCount === 0) {
       f(s);
@@ -132,13 +130,13 @@ function keccak256(message) {
   }
   if (extraBytes) {
     offset = j << 2;
-    sblock = s[i];
-    array[offset] = sblock & 0xFF;
+    block2 = s[i];
+    array[offset] = block2 & 0xFF;
     if (extraBytes > 1) {
-      array[offset + 1] = (sblock >> 8) & 0xFF;
+      array[offset + 1] = (block2 >> 8) & 0xFF;
     }
     if (extraBytes > 2) {
-      array[offset + 2] = (sblock >> 16) & 0xFF;
+      array[offset + 2] = (block2 >> 16) & 0xFF;
     }
   }
 
