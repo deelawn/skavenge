@@ -7,6 +7,7 @@ function ClueMarketplace({ metamaskAddress, config, onToast }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [processingPurchase, setProcessingPurchase] = useState(null);
+  const [showInProgressTransfers, setShowInProgressTransfers] = useState(false);
 
   useEffect(() => {
     if (!config || !config.contractAddress) {
@@ -40,13 +41,19 @@ function ClueMarketplace({ metamaskAddress, config, onToast }) {
       // Fetch all clues for sale (offset=0, limit=totalNum)
       const result = await contract.methods.getCluesForSale(0, totalNum).call();
 
-      // Parse the result into a more usable format
-      const clues = result.tokenIds.map((tokenId, index) => ({
-        tokenId: tokenId.toString(),
-        owner: result.owners[index],
-        price: result.prices[index].toString(),
-        isSolved: result.solvedStatus[index]
-      }));
+      // Parse the result and check transfer status for each token
+      const cluesPromises = result.tokenIds.map(async (tokenId, index) => {
+        const transferInProgress = await contract.methods.transferInProgress(tokenId).call();
+        return {
+          tokenId: tokenId.toString(),
+          owner: result.owners[index],
+          price: result.prices[index].toString(),
+          isSolved: result.solvedStatus[index],
+          transferInProgress
+        };
+      });
+
+      const clues = await Promise.all(cluesPromises);
 
       setCluesForSale(clues);
       setLoading(false);
@@ -138,6 +145,11 @@ function ClueMarketplace({ metamaskAddress, config, onToast }) {
     );
   }
 
+  // Filter tokens based on transfer status before checking if empty
+  const filteredCluesBeforeRender = showInProgressTransfers
+    ? cluesForSale
+    : cluesForSale.filter(clue => !clue.transferInProgress);
+
   if (cluesForSale.length === 0) {
     return (
       <div className="token-display-container">
@@ -149,21 +161,116 @@ function ClueMarketplace({ metamaskAddress, config, onToast }) {
     );
   }
 
+  if (filteredCluesBeforeRender.length === 0 && !showInProgressTransfers) {
+    return (
+      <div className="token-display-container">
+        <div className="token-display-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>Clue Marketplace</h2>
+          </div>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#495057', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={showInProgressTransfers}
+                onChange={(e) => setShowInProgressTransfers(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              Show tokens being transferred
+            </label>
+            <button
+              onClick={fetchCluesForSale}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#667eea',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '500'
+              }}
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+        <div className="token-display-message">
+          <h3>All listed tokens are being transferred</h3>
+          <p>Check the "Show tokens being transferred" option to view them.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Filter tokens based on transfer status
+  const filteredClues = showInProgressTransfers
+    ? cluesForSale
+    : cluesForSale.filter(clue => !clue.transferInProgress);
+
   return (
     <div className="token-display-container">
       <div className="token-display-header">
-        <h2>Clue Marketplace</h2>
-        <p className="token-count">{cluesForSale.length} {cluesForSale.length === 1 ? 'clue' : 'clues'} for sale</p>
-        <button onClick={fetchCluesForSale} className="btn-refresh">Refresh</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>Clue Marketplace</h2>
+          <span style={{
+            padding: '4px 12px',
+            backgroundColor: '#e9ecef',
+            borderRadius: '12px',
+            fontSize: '14px',
+            fontWeight: '500',
+            color: '#495057'
+          }}>
+            {filteredClues.length}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#495057', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={showInProgressTransfers}
+              onChange={(e) => setShowInProgressTransfers(e.target.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+            Show tokens being transferred
+          </label>
+          <button
+            onClick={fetchCluesForSale}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#667eea',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500'
+            }}
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       <div className="token-grid">
-        {cluesForSale.map((clue) => (
+        {filteredClues.map((clue) => (
           <div key={clue.tokenId} className="token-card">
             <div className="token-card-header">
               <h3>Token #{clue.tokenId}</h3>
               {clue.isSolved && <span className="badge-solved">Solved</span>}
-              <span className="badge-for-sale">For Sale</span>
+              {clue.transferInProgress && (
+                <span style={{
+                  padding: '4px 8px',
+                  backgroundColor: '#e67700',
+                  color: 'white',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  fontWeight: '500'
+                }}>
+                  Transfer In Progress
+                </span>
+              )}
+              {!clue.transferInProgress && <span className="badge-for-sale">For Sale</span>}
             </div>
 
             <div className="token-details">
@@ -191,25 +298,31 @@ function ClueMarketplace({ metamaskAddress, config, onToast }) {
               {/* Purchase Button */}
               {metamaskAddress && metamaskAddress.toLowerCase() !== clue.owner.toLowerCase() && (
                 <div className="token-actions" style={{ marginTop: '16px' }}>
-                  <button
-                    onClick={() => handlePurchase(clue.tokenId, clue.price)}
-                    disabled={processingPurchase === clue.tokenId}
-                    className="btn-purchase"
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      fontSize: '14px',
-                      backgroundColor: '#48bb78',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: processingPurchase === clue.tokenId ? 'not-allowed' : 'pointer',
-                      fontWeight: '500',
-                      opacity: processingPurchase === clue.tokenId ? 0.6 : 1
-                    }}
-                  >
-                    {processingPurchase === clue.tokenId ? 'Processing...' : `Buy for ${formatPrice(clue.price)} ETH`}
-                  </button>
+                  {clue.transferInProgress ? (
+                    <div style={{ padding: '10px', backgroundColor: '#fff5f5', borderRadius: '6px', textAlign: 'center' }}>
+                      <span style={{ fontSize: '13px', color: '#e67700', fontWeight: '500' }}>Transfer in progress - cannot purchase</span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => handlePurchase(clue.tokenId, clue.price)}
+                      disabled={processingPurchase === clue.tokenId}
+                      className="btn-purchase"
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        fontSize: '14px',
+                        backgroundColor: '#48bb78',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: processingPurchase === clue.tokenId ? 'not-allowed' : 'pointer',
+                        fontWeight: '500',
+                        opacity: processingPurchase === clue.tokenId ? 0.6 : 1
+                      }}
+                    >
+                      {processingPurchase === clue.tokenId ? 'Processing...' : `Buy for ${formatPrice(clue.price)} ETH`}
+                    </button>
+                  )}
                 </div>
               )}
 

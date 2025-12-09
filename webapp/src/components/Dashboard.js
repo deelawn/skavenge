@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { getBrowserRpcUrl } from '../utils.js';
 import TokenDisplay from './TokenDisplay';
 import ClueMarketplace from './ClueMarketplace';
+import Transfers from './Transfers';
 
 /**
  * Dashboard Component
@@ -14,7 +15,7 @@ import ClueMarketplace from './ClueMarketplace';
  * @param {function} props.onToast - Callback to show toast message
  */
 function Dashboard({ skavengerPublicKey, metamaskAddress, config, onToast }) {
-  const [currentView, setCurrentView] = useState('myTokens'); // 'myTokens' or 'marketplace'
+  const [currentView, setCurrentView] = useState('myTokens'); // 'myTokens', 'marketplace', or 'transfers'
   const handleCopySkavengerKey = () => {
     if (skavengerPublicKey) {
       navigator.clipboard.writeText(skavengerPublicKey);
@@ -122,6 +123,24 @@ function Dashboard({ skavengerPublicKey, metamaskAddress, config, onToast }) {
           >
             Marketplace
           </button>
+          <button
+            onClick={() => setCurrentView('transfers')}
+            className={`view-toggle-btn ${currentView === 'transfers' ? 'active' : ''}`}
+            style={{
+              padding: '12px 24px',
+              fontSize: '16px',
+              fontWeight: '600',
+              backgroundColor: 'transparent',
+              color: currentView === 'transfers' ? '#667eea' : '#718096',
+              border: 'none',
+              borderBottom: currentView === 'transfers' ? '3px solid #667eea' : '3px solid transparent',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              marginBottom: '-2px'
+            }}
+          >
+            Transfers
+          </button>
         </div>
 
         {/* Conditional Rendering Based on Current View */}
@@ -131,8 +150,14 @@ function Dashboard({ skavengerPublicKey, metamaskAddress, config, onToast }) {
             config={config}
             onToast={onToast}
           />
-        ) : (
+        ) : currentView === 'marketplace' ? (
           <ClueMarketplace
+            metamaskAddress={metamaskAddress}
+            config={config}
+            onToast={onToast}
+          />
+        ) : (
+          <Transfers
             metamaskAddress={metamaskAddress}
             config={config}
             onToast={onToast}
