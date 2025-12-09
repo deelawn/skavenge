@@ -180,6 +180,59 @@ function verifySignature(message, signature, address) {
 }
 
 /**
+ * Save verified linkage to localStorage
+ * @param {string} address - The Ethereum address
+ * @param {string} skavengerPublicKey - The Skavenge public key
+ */
+function saveVerifiedLinkage(address, skavengerPublicKey) {
+  try {
+    const linkageData = {
+      address: address.toLowerCase(),
+      skavengerPublicKey,
+      timestamp: Date.now(),
+    };
+    localStorage.setItem('skavenge_verified_linkage', JSON.stringify(linkageData));
+  } catch (error) {
+    console.error('Failed to save verified linkage:', error);
+  }
+}
+
+/**
+ * Check if the current address/key pair has been previously verified
+ * @param {string} address - The Ethereum address
+ * @param {string} skavengerPublicKey - The Skavenge public key
+ * @returns {boolean} True if this exact pairing was previously verified
+ */
+function isLinkageVerified(address, skavengerPublicKey) {
+  try {
+    const stored = localStorage.getItem('skavenge_verified_linkage');
+    if (!stored) {
+      return false;
+    }
+
+    const linkageData = JSON.parse(stored);
+    return (
+      linkageData.address === address.toLowerCase() &&
+      linkageData.skavengerPublicKey === skavengerPublicKey
+    );
+  } catch (error) {
+    console.error('Failed to check verified linkage:', error);
+    return false;
+  }
+}
+
+/**
+ * Clear verified linkage from localStorage
+ */
+function clearVerifiedLinkage() {
+  try {
+    localStorage.removeItem('skavenge_verified_linkage');
+  } catch (error) {
+    console.error('Failed to clear verified linkage:', error);
+  }
+}
+
+/**
  * MetaMask Step Component
  * Handles connecting to MetaMask wallet and verifying ownership
  *
@@ -214,6 +267,16 @@ function MetaMaskStep({ skavengerPublicKey, onAccountConnected, onToast }) {
           return;
         }
 
+        // Check if this account/key pair is already verified
+        if (isLinkageVerified(account, skavengerPublicKey)) {
+          // Already verified, no need to re-verify
+          setAddress(account);
+          setStatus('connected');
+          setStatusText(`Connected: ${account.substring(0, 6)}...${account.substring(38)}`);
+          onAccountConnected(account);
+          return;
+        }
+
         try {
           onToast('Account changed - please sign to verify ownership', 'info');
           const { signature, message } = await signLinkageMessage(account, skavengerPublicKey);
@@ -224,6 +287,9 @@ function MetaMaskStep({ skavengerPublicKey, onAccountConnected, onToast }) {
             return;
           }
 
+          // Save verified linkage
+          saveVerifiedLinkage(account, skavengerPublicKey);
+
           setAddress(account);
           setStatus('connected');
           setStatusText(`Connected: ${account.substring(0, 6)}...${account.substring(38)}`);
@@ -233,7 +299,8 @@ function MetaMaskStep({ skavengerPublicKey, onAccountConnected, onToast }) {
           onToast(error.message, 'error');
         }
       } else {
-        // Disconnected
+        // Disconnected - clear verified linkage
+        clearVerifiedLinkage();
         setAddress(null);
         setStatus('disconnected');
         setStatusText('Not connected');
@@ -266,24 +333,19 @@ function MetaMaskStep({ skavengerPublicKey, onAccountConnected, onToast }) {
   const checkInitialConnection = async () => {
     const account = await getMetaMaskAccount();
     if (account && skavengerPublicKey) {
-      try {
-        // Verify ownership on initial connection check
-        const { signature, message } = await signLinkageMessage(account, skavengerPublicKey);
-        const isValid = verifySignature(message, signature, account);
-
-        if (!isValid) {
-          onToast('Signature verification failed', 'error');
-          return;
-        }
-
+      // Check if this address/key pair has already been verified
+      if (isLinkageVerified(account, skavengerPublicKey)) {
+        // Already verified, no need to re-verify
         setAddress(account);
         setStatus('connected');
         setStatusText(`Connected: ${account.substring(0, 6)}...${account.substring(38)}`);
         onAccountConnected(account);
-      } catch (error) {
-        // User may have rejected the signature request, which is fine on initial load
-        console.log('Initial connection verification skipped:', error.message);
+        return;
       }
+
+      // Not yet verified, clear any old verification and skip on initial load
+      // User will need to click "Connect MetaMask" to verify
+      clearVerifiedLinkage();
     }
   };
 
@@ -314,7 +376,9 @@ function MetaMaskStep({ skavengerPublicKey, onAccountConnected, onToast }) {
         return;
       }
 
-      // Signature verified successfully
+      // Signature verified successfully - save to localStorage
+      saveVerifiedLinkage(account, skavengerPublicKey);
+
       setAddress(account);
       setStatus('connected');
       setStatusText(`Connected: ${account.substring(0, 6)}...${account.substring(38)}`);
