@@ -60,6 +60,9 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     // Mapping to track tokens with active transfers (prevents concurrent purchases)
     mapping(uint256 => bool) public transferInProgress;
 
+    // Mapping from token ID to active transfer ID (for cancelling transfers when sale is removed)
+    mapping(uint256 => bytes32) public activeTransferIds;
+
     // Error for attempting to transfer a solved clue
     error SolvedClueTransferNotAllowed();
 
@@ -339,6 +342,9 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         // Mark token as having an active transfer
         transferInProgress[tokenId] = true;
 
+        // Store the active transfer ID for this token
+        activeTransferIds[tokenId] = transferId;
+
         // Create transfer record
         transfers[transferId] = TokenTransfer({
             buyer: msg.sender,
@@ -490,6 +496,9 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         // Clear the transfer in progress flag
         transferInProgress[transfer.tokenId] = false;
 
+        // Clear the active transfer ID
+        delete activeTransferIds[transfer.tokenId];
+
         // Clear the transfer
         delete transfers[transferId];
 
@@ -558,6 +567,9 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         // Clear the transfer in progress flag
         transferInProgress[transfer.tokenId] = false;
 
+        // Clear the active transfer ID
+        delete activeTransferIds[transfer.tokenId];
+
         emit TransferCancelled(transferId);
 
         // Clear the transfer
@@ -571,6 +583,32 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     function _removeFromForSaleList(uint256 tokenId) private {
         if (!cluesForSale[tokenId]) {
             return;
+        }
+
+        // Cancel any pending transfer for this token
+        bytes32 transferId = activeTransferIds[tokenId];
+        if (transferId != bytes32(0)) {
+            TokenTransfer storage transfer = transfers[transferId];
+            if (transfer.buyer != address(0)) {
+                // Refund the buyer
+                if (transfer.value > 0) {
+                    (bool sent, ) = payable(transfer.buyer).call{
+                        value: transfer.value
+                    }("");
+                    require(sent, "Failed to send Ether");
+                }
+
+                // Clear the transfer in progress flag
+                transferInProgress[tokenId] = false;
+
+                // Clear the active transfer ID
+                delete activeTransferIds[tokenId];
+
+                emit TransferCancelled(transferId);
+
+                // Clear the transfer
+                delete transfers[transferId];
+            }
         }
 
         cluesForSale[tokenId] = false;
