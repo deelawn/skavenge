@@ -246,10 +246,11 @@ function MetaMaskStep({ skavengerPublicKey, onAccountConnected, onToast }) {
   const [statusText, setStatusText] = useState('Not connected');
   const [address, setAddress] = useState(null);
 
-  // Check for existing connection on mount
+  // Check for existing connection on mount and when skavengerPublicKey loads
   useEffect(() => {
     checkInitialConnection();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skavengerPublicKey]);
 
   // Listen for account changes
   useEffect(() => {
