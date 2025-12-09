@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { loadConfig, CHAIN_ID } from '../config.js';
 import { getBrowserRpcUrl } from '../utils.js';
+import { Web3 } from 'web3';
 
 /**
  * Check if MetaMask is installed
@@ -135,14 +136,59 @@ async function getMetaMaskAccount() {
 }
 
 /**
+ * Request user to sign a message linking their MetaMask address to their Skavenge public key
+ * @param {string} address - The Ethereum address to link
+ * @param {string} skavengerPublicKey - The Skavenge public key to link
+ * @returns {Promise<string>} The signature
+ */
+async function signLinkageMessage(address, skavengerPublicKey) {
+  const message = `Link MetaMask address ${address} to Skavenge key ${skavengerPublicKey}`;
+
+  try {
+    const signature = await window.ethereum.request({
+      method: 'personal_sign',
+      params: [message, address],
+    });
+
+    return { signature, message };
+  } catch (error) {
+    if (error.code === 4001) {
+      throw new Error('Signature request rejected by user.');
+    }
+    throw new Error('Failed to sign message: ' + (error.message || 'Unknown error'));
+  }
+}
+
+/**
+ * Verify that the signature was created by the owner of the address
+ * @param {string} message - The original message that was signed
+ * @param {string} signature - The signature to verify
+ * @param {string} address - The address that should have signed the message
+ * @returns {boolean} True if the signature is valid
+ */
+function verifySignature(message, signature, address) {
+  try {
+    const web3 = new Web3();
+    const recoveredAddress = web3.eth.accounts.recover(message, signature);
+
+    // Compare addresses (case-insensitive)
+    return recoveredAddress.toLowerCase() === address.toLowerCase();
+  } catch (error) {
+    console.error('Signature verification failed:', error);
+    return false;
+  }
+}
+
+/**
  * MetaMask Step Component
- * Handles connecting to MetaMask wallet
+ * Handles connecting to MetaMask wallet and verifying ownership
  *
  * @param {object} props
- * @param {function} props.onAccountConnected - Callback when account is connected
+ * @param {string} props.skavengerPublicKey - The Skavenge public key to link
+ * @param {function} props.onAccountConnected - Callback when account is connected and verified
  * @param {function} props.onToast - Callback to show toast message
  */
-function MetaMaskStep({ onAccountConnected, onToast }) {
+function MetaMaskStep({ skavengerPublicKey, onAccountConnected, onToast }) {
   const [status, setStatus] = useState('disconnected'); // disconnected, connected
   const [statusText, setStatusText] = useState('Not connected');
   const [address, setAddress] = useState(null);
@@ -158,13 +204,34 @@ function MetaMaskStep({ onAccountConnected, onToast }) {
       return;
     }
 
-    const handleAccountsChanged = (accounts) => {
+    const handleAccountsChanged = async (accounts) => {
       if (accounts.length > 0) {
         const account = accounts[0];
-        setAddress(account);
-        setStatus('connected');
-        setStatusText(`Connected: ${account.substring(0, 6)}...${account.substring(38)}`);
-        onAccountConnected(account);
+
+        // Require signature verification when account changes
+        if (!skavengerPublicKey) {
+          onToast('Cannot verify new account - Skavenge key not found', 'error');
+          return;
+        }
+
+        try {
+          onToast('Account changed - please sign to verify ownership', 'info');
+          const { signature, message } = await signLinkageMessage(account, skavengerPublicKey);
+          const isValid = verifySignature(message, signature, account);
+
+          if (!isValid) {
+            onToast('Signature verification failed for new account', 'error');
+            return;
+          }
+
+          setAddress(account);
+          setStatus('connected');
+          setStatusText(`Connected: ${account.substring(0, 6)}...${account.substring(38)}`);
+          onToast('New account verified successfully', 'success');
+          onAccountConnected(account);
+        } catch (error) {
+          onToast(error.message, 'error');
+        }
       } else {
         // Disconnected
         setAddress(null);
@@ -194,29 +261,65 @@ function MetaMaskStep({ onAccountConnected, onToast }) {
       window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
       window.ethereum.removeListener('chainChanged', handleChainChanged);
     };
-  }, [onAccountConnected, onToast]);
+  }, [onAccountConnected, onToast, skavengerPublicKey]);
 
   const checkInitialConnection = async () => {
     const account = await getMetaMaskAccount();
-    if (account) {
-      setAddress(account);
-      setStatus('connected');
-      setStatusText(`Connected: ${account.substring(0, 6)}...${account.substring(38)}`);
-      onAccountConnected(account);
+    if (account && skavengerPublicKey) {
+      try {
+        // Verify ownership on initial connection check
+        const { signature, message } = await signLinkageMessage(account, skavengerPublicKey);
+        const isValid = verifySignature(message, signature, account);
+
+        if (!isValid) {
+          onToast('Signature verification failed', 'error');
+          return;
+        }
+
+        setAddress(account);
+        setStatus('connected');
+        setStatusText(`Connected: ${account.substring(0, 6)}...${account.substring(38)}`);
+        onAccountConnected(account);
+      } catch (error) {
+        // User may have rejected the signature request, which is fine on initial load
+        console.log('Initial connection verification skipped:', error.message);
+      }
     }
   };
 
   const handleConnectClick = async () => {
     try {
+      // Check if Skavenge key is available
+      if (!skavengerPublicKey) {
+        onToast('Please complete Step 1 first (Link Skavenger Account)', 'error');
+        return;
+      }
+
+      // Connect to MetaMask
       const account = await connectMetaMask();
 
-      if (account) {
-        setAddress(account);
-        setStatus('connected');
-        setStatusText(`Connected: ${account.substring(0, 6)}...${account.substring(38)}`);
-        onToast('MetaMask connected successfully', 'success');
-        onAccountConnected(account);
+      if (!account) {
+        return;
       }
+
+      // Request user to sign a message to prove ownership
+      onToast('Please sign the message in MetaMask to verify ownership', 'info');
+      const { signature, message } = await signLinkageMessage(account, skavengerPublicKey);
+
+      // Verify the signature
+      const isValid = verifySignature(message, signature, account);
+
+      if (!isValid) {
+        onToast('Signature verification failed. Unable to confirm address ownership.', 'error');
+        return;
+      }
+
+      // Signature verified successfully
+      setAddress(account);
+      setStatus('connected');
+      setStatusText(`Connected: ${account.substring(0, 6)}...${account.substring(38)}`);
+      onToast('MetaMask connected and verified successfully', 'success');
+      onAccountConnected(account);
     } catch (error) {
       onToast(error.message, 'error');
     }
@@ -225,7 +328,7 @@ function MetaMaskStep({ onAccountConnected, onToast }) {
   return (
     <div className="step">
       <h2>Step 2: Connect MetaMask</h2>
-      <p className="info">Connect your MetaMask wallet for transaction signing.</p>
+      <p className="info">Connect your MetaMask wallet and sign a message to verify address ownership.</p>
 
       <div className="status">
         <span className={`status-indicator ${status === 'connected' ? 'connected' : ''}`}></span>

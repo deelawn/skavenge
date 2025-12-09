@@ -78,6 +78,7 @@ function App() {
             onToast={showToast}
           />
           <MetaMaskStep
+            skavengerPublicKey={skavengerPublicKey}
             onAccountConnected={handleMetaMaskConnected}
             onToast={showToast}
           />
