@@ -469,13 +469,16 @@ async function extractRawPrivateKey(privateKey) {
   return base64urlToHex(jwk.d);
 }
 
-// P-256 curve parameters
+// P-256 curve parameters (NIST curve for WebCrypto ECDSA)
 const P256_P = BigInt('0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff');
 const P256_A = BigInt('0xffffffff00000001000000000000000000000000fffffffffffffffffffffffc');
-const P256_B = BigInt('0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b');
 const P256_GX = BigInt('0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296');
 const P256_GY = BigInt('0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5');
-const P256_N = BigInt('0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551');
+
+// secp256k1 curve parameters (Bitcoin/Ethereum curve)
+// The Go backend uses secp256k1 for ElGamal encryption, so we must use the same curve for decryption
+const SECP256K1_P = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F');
+const SECP256K1_A = BigInt(0); // a = 0 for secp256k1
 
 // Modular inverse using Extended Euclidean Algorithm
 function modInverse(a, m) {
@@ -492,8 +495,8 @@ function modInverse(a, m) {
   return ((oldS % m) + m) % m;
 }
 
-// EC point addition on P-256
-function pointAdd(p1, p2) {
+// EC point addition on P-256 (for WebCrypto key derivation)
+function pointAddP256(p1, p2) {
   if (p1 === null) return p2;
   if (p2 === null) return p1;
 
@@ -514,26 +517,65 @@ function pointAdd(p1, p2) {
   return [(x3 + P256_P) % P256_P, (y3 + P256_P) % P256_P];
 }
 
-// Scalar multiplication on P-256
-function scalarMult(k, point) {
+// EC point addition on secp256k1 (for ElGamal decryption)
+function pointAddSecp256k1(p1, p2) {
+  if (p1 === null) return p2;
+  if (p2 === null) return p1;
+
+  const [x1, y1] = p1;
+  const [x2, y2] = p2;
+
+  if (x1 === x2 && y1 === y2) {
+    // Point doubling
+    // For secp256k1, a = 0, so the formula simplifies: s = 3*x1^2 / (2*y1)
+    const s = (3n * x1 * x1 + SECP256K1_A) * modInverse(2n * y1, SECP256K1_P) % SECP256K1_P;
+    const x3 = (s * s - 2n * x1) % SECP256K1_P;
+    const y3 = (s * (x1 - x3) - y1) % SECP256K1_P;
+    return [(x3 + SECP256K1_P) % SECP256K1_P, (y3 + SECP256K1_P) % SECP256K1_P];
+  }
+
+  const s = (y2 - y1) * modInverse((x2 - x1 + SECP256K1_P) % SECP256K1_P, SECP256K1_P) % SECP256K1_P;
+  const x3 = (s * s - x1 - x2) % SECP256K1_P;
+  const y3 = (s * (x1 - x3) - y1) % SECP256K1_P;
+  return [(x3 + SECP256K1_P) % SECP256K1_P, (y3 + SECP256K1_P) % SECP256K1_P];
+}
+
+// Scalar multiplication on P-256 (for WebCrypto key derivation)
+function scalarMultP256(k, point) {
   let result = null;
   let addend = point;
 
   while (k > 0n) {
     if (k & 1n) {
-      result = pointAdd(result, addend);
+      result = pointAddP256(result, addend);
     }
-    addend = pointAdd(addend, addend);
+    addend = pointAddP256(addend, addend);
     k >>= 1n;
   }
 
   return result;
 }
 
-// Compute public key from private key
+// Scalar multiplication on secp256k1 (for ElGamal decryption)
+function scalarMultSecp256k1(k, point) {
+  let result = null;
+  let addend = point;
+
+  while (k > 0n) {
+    if (k & 1n) {
+      result = pointAddSecp256k1(result, addend);
+    }
+    addend = pointAddSecp256k1(addend, addend);
+    k >>= 1n;
+  }
+
+  return result;
+}
+
+// Compute public key from private key on P-256 (for WebCrypto ECDSA)
 function derivePublicKey(privateKeyHex) {
   const d = BigInt('0x' + privateKeyHex);
-  const [x, y] = scalarMult(d, [P256_GX, P256_GY]);
+  const [x, y] = scalarMultP256(d, [P256_GX, P256_GY]);
 
   // Convert to base64url for JWK
   const xHex = x.toString(16).padStart(64, '0');
@@ -882,7 +924,8 @@ async function decryptElGamal(encryptedHex, rValueHex, privateKeyHex) {
     console.log('C1 parsed successfully');
 
     // Compute shared secret: S = C1^privKey = (g^r)^privKey
-    const [sx, sy] = scalarMult(privateKeyD, [c1x, c1y]);
+    // Uses secp256k1 curve to match Go backend encryption
+    const [sx, sy] = scalarMultSecp256k1(privateKeyD, [c1x, c1y]);
 
     console.log('sx:', sx.toString(16));
 
