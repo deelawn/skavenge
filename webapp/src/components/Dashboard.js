@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { getBrowserRpcUrl } from '../utils.js';
 import TokenDisplay from './TokenDisplay';
+import ClueMarketplace from './ClueMarketplace';
 
 /**
  * Dashboard Component
@@ -13,6 +14,7 @@ import TokenDisplay from './TokenDisplay';
  * @param {function} props.onToast - Callback to show toast message
  */
 function Dashboard({ skavengerPublicKey, metamaskAddress, config, onToast }) {
+  const [currentView, setCurrentView] = useState('myTokens'); // 'myTokens' or 'marketplace'
   const handleCopySkavengerKey = () => {
     if (skavengerPublicKey) {
       navigator.clipboard.writeText(skavengerPublicKey);
@@ -74,13 +76,68 @@ function Dashboard({ skavengerPublicKey, metamaskAddress, config, onToast }) {
         )}
       </div>
 
-      {/* Main Content Area - Token Display */}
+      {/* Main Content Area - Token Display or Marketplace */}
       <div className="dashboard-main">
-        <TokenDisplay
-          metamaskAddress={metamaskAddress}
-          config={config}
-          onToast={onToast}
-        />
+        {/* View Toggle Navigation */}
+        <div className="view-toggle" style={{
+          display: 'flex',
+          gap: '12px',
+          marginBottom: '20px',
+          borderBottom: '2px solid #e2e8f0',
+          paddingBottom: '0'
+        }}>
+          <button
+            onClick={() => setCurrentView('myTokens')}
+            className={`view-toggle-btn ${currentView === 'myTokens' ? 'active' : ''}`}
+            style={{
+              padding: '12px 24px',
+              fontSize: '16px',
+              fontWeight: '600',
+              backgroundColor: 'transparent',
+              color: currentView === 'myTokens' ? '#667eea' : '#718096',
+              border: 'none',
+              borderBottom: currentView === 'myTokens' ? '3px solid #667eea' : '3px solid transparent',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              marginBottom: '-2px'
+            }}
+          >
+            My Tokens
+          </button>
+          <button
+            onClick={() => setCurrentView('marketplace')}
+            className={`view-toggle-btn ${currentView === 'marketplace' ? 'active' : ''}`}
+            style={{
+              padding: '12px 24px',
+              fontSize: '16px',
+              fontWeight: '600',
+              backgroundColor: 'transparent',
+              color: currentView === 'marketplace' ? '#667eea' : '#718096',
+              border: 'none',
+              borderBottom: currentView === 'marketplace' ? '3px solid #667eea' : '3px solid transparent',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              marginBottom: '-2px'
+            }}
+          >
+            Marketplace
+          </button>
+        </div>
+
+        {/* Conditional Rendering Based on Current View */}
+        {currentView === 'myTokens' ? (
+          <TokenDisplay
+            metamaskAddress={metamaskAddress}
+            config={config}
+            onToast={onToast}
+          />
+        ) : (
+          <ClueMarketplace
+            metamaskAddress={metamaskAddress}
+            config={config}
+            onToast={onToast}
+          />
+        )}
       </div>
     </div>
   );
