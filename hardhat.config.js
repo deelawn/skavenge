@@ -15,6 +15,10 @@ module.exports = {
 					balance: "10000000000000000000000" // 10,000 ETH
 				},
 				{
+					privateKey: "0x3277759edd68934237b0b50f2a87726e958f9209eba5eb07337f470439744df3",
+					balance: "10000000000000000000000" // 10,000 ETH
+				},
+				{
 					privateKey: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
 					balance: "10000000000000000000000" // 10,000 ETH
 				},

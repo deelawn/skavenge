@@ -32,6 +32,9 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [revealedClues, setRevealedClues] = useState({});
+  const [listingToken, setListingToken] = useState(null);
+  const [listingPrice, setListingPrice] = useState('');
+  const [processingTx, setProcessingTx] = useState(false);
 
   useEffect(() => {
     if (!metamaskAddress || !config || !config.contractAddress) {
@@ -43,6 +46,7 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
 
     // Clear revealed clues when tokens are refetched for privacy
     setRevealedClues({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metamaskAddress, config]);
 
   // Clear revealed clues when component unmounts for privacy
@@ -129,10 +133,6 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
     return web3.utils.fromWei(priceWei, 'ether');
   };
 
-  const truncateHex = (hex, length = 10) => {
-    if (!hex || hex.length <= length) return hex;
-    return `${hex.substring(0, length)}...${hex.substring(hex.length - 6)}`;
-  };
 
   const handleRevealClue = async (tokenId, encryptedContents, rValue) => {
     try {
@@ -148,7 +148,6 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
 
       // Convert rValue from decimal string to hex
       // rValue comes from the contract as a decimal string representation of uint256
-      const web3 = new Web3();
       // eslint-disable-next-line no-undef
       const rValueBigInt = BigInt(rValue);
       const rValueHex = rValueBigInt.toString(16).padStart(64, '0'); // Pad to 64 hex chars (32 bytes)
@@ -185,6 +184,85 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
         onToast('Failed to reveal clue: ' + error.message, 'error');
       }
     }
+  };
+
+  const handleSetSalePrice = async (tokenId, priceInEth) => {
+    try {
+      setProcessingTx(true);
+      const web3 = new Web3(window.ethereum);
+      const contract = new web3.eth.Contract(SKAVENGE_ABI, config.contractAddress);
+
+      // Convert ETH to Wei
+      const priceInWei = web3.utils.toWei(priceInEth, 'ether');
+
+      // Call setSalePrice function
+      await contract.methods.setSalePrice(tokenId, priceInWei).send({
+        from: metamaskAddress
+      });
+
+      if (onToast) {
+        onToast(`Token #${tokenId} listed for ${priceInEth} ETH`, 'success');
+      }
+
+      // Refresh tokens to show updated sale status
+      await fetchUserTokens();
+      setListingToken(null);
+      setListingPrice('');
+    } catch (error) {
+      console.error('Error setting sale price:', error);
+      if (onToast) {
+        onToast('Failed to list token: ' + (error.message || 'Unknown error'), 'error');
+      }
+    } finally {
+      setProcessingTx(false);
+    }
+  };
+
+  const handleRemoveSalePrice = async (tokenId) => {
+    try {
+      setProcessingTx(true);
+      const web3 = new Web3(window.ethereum);
+      const contract = new web3.eth.Contract(SKAVENGE_ABI, config.contractAddress);
+
+      // Call removeSalePrice function
+      await contract.methods.removeSalePrice(tokenId).send({
+        from: metamaskAddress
+      });
+
+      if (onToast) {
+        onToast(`Token #${tokenId} removed from sale`, 'success');
+      }
+
+      // Refresh tokens to show updated sale status
+      await fetchUserTokens();
+    } catch (error) {
+      console.error('Error removing sale price:', error);
+      if (onToast) {
+        onToast('Failed to remove token from sale: ' + (error.message || 'Unknown error'), 'error');
+      }
+    } finally {
+      setProcessingTx(false);
+    }
+  };
+
+  const startListing = (tokenId) => {
+    setListingToken(tokenId);
+    setListingPrice('');
+  };
+
+  const cancelListing = () => {
+    setListingToken(null);
+    setListingPrice('');
+  };
+
+  const confirmListing = (tokenId) => {
+    if (!listingPrice || parseFloat(listingPrice) <= 0) {
+      if (onToast) {
+        onToast('Please enter a valid price', 'error');
+      }
+      return;
+    }
+    handleSetSalePrice(tokenId, listingPrice);
   };
 
   if (!metamaskAddress) {
@@ -314,6 +392,112 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
                     )}
                   </div>
                 )}
+
+                {/* Listing Controls */}
+                <div className="token-actions" style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {token.isForSale ? (
+                    <button
+                      onClick={() => handleRemoveSalePrice(token.tokenId)}
+                      disabled={processingTx}
+                      className="btn-unlist"
+                      style={{
+                        padding: '10px',
+                        fontSize: '14px',
+                        backgroundColor: '#e53e3e',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: processingTx ? 'not-allowed' : 'pointer',
+                        fontWeight: '500',
+                        opacity: processingTx ? 0.6 : 1
+                      }}
+                    >
+                      {processingTx ? 'Processing...' : 'Remove from Sale'}
+                    </button>
+                  ) : (
+                    <>
+                      {listingToken === token.tokenId ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <input
+                            type="number"
+                            step="0.001"
+                            min="0"
+                            placeholder="Price in ETH"
+                            value={listingPrice}
+                            onChange={(e) => setListingPrice(e.target.value)}
+                            className="price-input"
+                            style={{
+                              padding: '8px 12px',
+                              fontSize: '14px',
+                              border: '1px solid #cbd5e0',
+                              borderRadius: '6px',
+                              outline: 'none'
+                            }}
+                          />
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              onClick={() => confirmListing(token.tokenId)}
+                              disabled={processingTx}
+                              className="btn-confirm-list"
+                              style={{
+                                flex: 1,
+                                padding: '10px',
+                                fontSize: '14px',
+                                backgroundColor: '#48bb78',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: processingTx ? 'not-allowed' : 'pointer',
+                                fontWeight: '500',
+                                opacity: processingTx ? 0.6 : 1
+                              }}
+                            >
+                              {processingTx ? 'Processing...' : 'Confirm'}
+                            </button>
+                            <button
+                              onClick={cancelListing}
+                              disabled={processingTx}
+                              className="btn-cancel-list"
+                              style={{
+                                flex: 1,
+                                padding: '10px',
+                                fontSize: '14px',
+                                backgroundColor: '#718096',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: processingTx ? 'not-allowed' : 'pointer',
+                                fontWeight: '500',
+                                opacity: processingTx ? 0.6 : 1
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => startListing(token.tokenId)}
+                          disabled={processingTx}
+                          className="btn-list-for-sale"
+                          style={{
+                            padding: '10px',
+                            fontSize: '14px',
+                            backgroundColor: '#667eea',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: processingTx ? 'not-allowed' : 'pointer',
+                            fontWeight: '500',
+                            opacity: processingTx ? 0.6 : 1
+                          }}
+                        >
+                          List for Sale
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             )}
           </div>

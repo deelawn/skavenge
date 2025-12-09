@@ -508,6 +508,65 @@ button.hidden {
     border-radius: 6px;
 }
 
+/* View Toggle Buttons */
+.view-toggle-btn {
+    transition: all 0.2s ease;
+}
+
+.view-toggle-btn:hover:not(:disabled) {
+    color: #667eea;
+}
+
+.view-toggle-btn.active {
+    color: #667eea !important;
+}
+
+/* Action Buttons */
+.btn-list-for-sale,
+.btn-confirm-list,
+.btn-cancel-list,
+.btn-unlist,
+.btn-purchase {
+    transition: all 0.2s ease;
+}
+
+.btn-list-for-sale:hover:not(:disabled) {
+    background: #5568d3 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.btn-confirm-list:hover:not(:disabled) {
+    background: #38a169 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(72, 187, 120, 0.4);
+}
+
+.btn-cancel-list:hover:not(:disabled) {
+    background: #4a5568 !important;
+}
+
+.btn-unlist:hover:not(:disabled) {
+    background: #c53030 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(229, 62, 62, 0.4);
+}
+
+.btn-purchase:hover:not(:disabled) {
+    background: #38a169 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(72, 187, 120, 0.4);
+}
+
+.price-input {
+    transition: border-color 0.2s ease;
+}
+
+.price-input:focus {
+    border-color: #667eea !important;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
 /* Responsive Design */
 @media (max-width: 1024px) {
     .dashboard-layout {
@@ -532,5 +591,14 @@ button.hidden {
         flex-direction: column;
         align-items: flex-start;
         gap: 12px;
+    }
+
+    .view-toggle {
+        flex-direction: column;
+        gap: 8px !important;
+    }
+
+    .view-toggle-btn {
+        width: 100%;
     }
 }
