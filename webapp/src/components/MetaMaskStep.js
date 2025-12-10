@@ -262,13 +262,25 @@ function MetaMaskStep({ skavengerPublicKey, onAccountConnected, onToast }) {
       if (accounts.length > 0) {
         const account = accounts[0];
 
+        // If this is the same account already connected, do nothing
+        // This prevents double verification during initial connection
+        if (address && address.toLowerCase() === account.toLowerCase()) {
+          return;
+        }
+
         // Require signature verification when account changes
         if (!skavengerPublicKey) {
           onToast('Cannot verify new account - Skavenge key not found', 'error');
           return;
         }
 
-        // Check if this account/key pair is already verified
+        // If no address is set yet, this is the initial connection
+        // Let handleConnectClick handle the verification to avoid double prompts
+        if (!address) {
+          return;
+        }
+
+        // Account switched - check if this account/key pair is already verified
         if (isLinkageVerified(account, skavengerPublicKey)) {
           // Already verified, no need to re-verify
           setAddress(account);
@@ -329,7 +341,7 @@ function MetaMaskStep({ skavengerPublicKey, onAccountConnected, onToast }) {
       window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
       window.ethereum.removeListener('chainChanged', handleChainChanged);
     };
-  }, [onAccountConnected, onToast, skavengerPublicKey]);
+  }, [onAccountConnected, onToast, skavengerPublicKey, address]);
 
   const checkInitialConnection = async () => {
     const account = await getMetaMaskAccount();
