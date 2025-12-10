@@ -34,28 +34,63 @@ function Dashboard({ skavengerPublicKey, metamaskAddress, config, onToast }) {
     <div className="dashboard-layout">
       {/* Left Sidebar Navigation */}
       <div className="dashboard-sidebar">
-        <h2>Your Accounts</h2>
+        <h2>Account Linkage</h2>
 
         <div className="account-card">
           <div className="account-header">
-            <span className="account-label">Skavenger Public Key</span>
-            <span className="account-status connected">Connected</span>
+            <span className="account-label">Linked Accounts</span>
+            <span className="account-status connected">Verified</span>
           </div>
-          <div className="account-value">{skavengerPublicKey || 'Loading...'}</div>
-          <button className="copy-btn" onClick={handleCopySkavengerKey}>
-            Copy
-          </button>
-        </div>
 
-        <div className="account-card">
-          <div className="account-header">
-            <span className="account-label">MetaMask Wallet</span>
-            <span className="account-status connected">Connected</span>
+          <div style={{ marginTop: '12px', marginBottom: '12px' }}>
+            <div style={{
+              fontSize: '11px',
+              color: '#718096',
+              marginBottom: '6px',
+              fontWeight: '600',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}>
+              Ethereum Address
+            </div>
+            <div className="account-value" style={{ marginBottom: '12px' }}>
+              {metamaskAddress || 'Loading...'}
+            </div>
+            <button
+              className="copy-btn"
+              onClick={handleCopyMetamaskAddress}
+              style={{ marginBottom: '16px' }}
+            >
+              Copy Address
+            </button>
+
+            <div style={{
+              textAlign: 'center',
+              fontSize: '20px',
+              color: '#667eea',
+              margin: '12px 0',
+              fontWeight: 'bold'
+            }}>
+              ↓
+            </div>
+
+            <div style={{
+              fontSize: '11px',
+              color: '#718096',
+              marginBottom: '6px',
+              fontWeight: '600',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}>
+              Skavenge Public Key
+            </div>
+            <div className="account-value" style={{ marginBottom: '12px' }}>
+              {skavengerPublicKey || 'Loading...'}
+            </div>
+            <button className="copy-btn" onClick={handleCopySkavengerKey}>
+              Copy Key
+            </button>
           </div>
-          <div className="account-value">{metamaskAddress || 'Loading...'}</div>
-          <button className="copy-btn" onClick={handleCopyMetamaskAddress}>
-            Copy
-          </button>
         </div>
 
         {config && (
