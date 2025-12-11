@@ -6,23 +6,21 @@ import (
 	"log"
 	"net/http"
 	"strings"
-
-	"github.com/deelawn/skavenge/linked-accounts-gateway/storage"
 )
 
 // LinkRequest represents the JSON payload for POST /link
 type LinkRequest struct {
-	EthereumAddress    string `json:"ethereumAddress"`
-	SkavengePublicKey  string `json:"skavengePublicKey"`
-	Message            string `json:"message"`
-	Signature          string `json:"signature"`
+	EthereumAddress   string `json:"ethereum_address"`
+	SkavengePublicKey string `json:"skavenge_public_key"`
+	Message           string `json:"message"`
+	Signature         string `json:"signature"`
 }
 
 // LinkResponse represents the JSON response for successful operations
 type LinkResponse struct {
 	Success           bool   `json:"success"`
 	Message           string `json:"message,omitempty"`
-	SkavengePublicKey string `json:"skavengePublicKey,omitempty"`
+	SkavengePublicKey string `json:"skavenge_public_key,omitempty"`
 }
 
 // ErrorResponse represents the JSON response for errors
@@ -33,11 +31,11 @@ type ErrorResponse struct {
 
 // Server holds the dependencies for the HTTP handlers
 type Server struct {
-	storage storage.Storage
+	storage Storage
 }
 
 // NewServer creates a new Server instance
-func NewServer(store storage.Storage) *Server {
+func NewServer(store Storage) *Server {
 	return &Server{
 		storage: store,
 	}
@@ -87,7 +85,7 @@ func (s *Server) handlePostLink(w http.ResponseWriter, r *http.Request) {
 
 	// Store the linkage
 	if err := s.storage.Set(normalizedAddress, req.SkavengePublicKey); err != nil {
-		if errors.Is(err, storage.ErrKeyExists) {
+		if errors.Is(err, ErrKeyExists) {
 			writeErrorResponse(w, http.StatusConflict, "ethereum address already linked (keys are immutable)")
 			return
 		}
@@ -120,7 +118,7 @@ func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) {
 	// Retrieve the linkage
 	skavengePublicKey, err := s.storage.Get(normalizedAddress)
 	if err != nil {
-		if errors.Is(err, storage.ErrKeyNotFound) {
+		if errors.Is(err, ErrKeyNotFound) {
 			writeErrorResponse(w, http.StatusNotFound, "ethereum address not found")
 			return
 		}
@@ -149,7 +147,7 @@ func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
 
 func main() {
 	// Initialize in-memory storage
-	store := storage.NewInMemoryStorage()
+	store := NewInMemoryStorage()
 
 	// Create server
 	server := NewServer(store)
