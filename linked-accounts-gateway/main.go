@@ -43,8 +43,28 @@ func NewServer(store Storage) *Server {
 	}
 }
 
+// corsMiddleware adds CORS headers to all responses
+func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Max-Age", "3600")
+
+		// Call the next handler
+		next(w, r)
+	}
+}
+
 // HandleLink routes requests to the appropriate handler based on method
 func (s *Server) HandleLink(w http.ResponseWriter, r *http.Request) {
+	// Handle CORS preflight request
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	switch r.Method {
 	case http.MethodPost:
 		s.handlePostLink(w, r)
@@ -156,8 +176,8 @@ func main() {
 	// Create server
 	server := NewServer(store)
 
-	// Register handlers
-	http.HandleFunc("/link", server.HandleLink)
+	// Register handlers with CORS middleware
+	http.HandleFunc("/link", corsMiddleware(server.HandleLink))
 
 	// Start server
 	addr := fmt.Sprintf(":%d", *port)
