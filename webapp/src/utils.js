@@ -17,3 +17,19 @@ export function getBrowserRpcUrl(rpcUrl) {
   // Replace hardhat (Docker service name) with localhost for browser access
   return rpcUrl.replace(/http:\/\/hardhat:/, 'http://localhost:');
 }
+
+/**
+ * Convert Gateway URL for browser access
+ * Replaces Docker internal hostnames with localhost
+ *
+ * @param {string} gatewayUrl - The Gateway URL from config
+ * @returns {string} Browser-accessible Gateway URL
+ */
+export function getBrowserGatewayUrl(gatewayUrl) {
+  if (!gatewayUrl) {
+    return 'http://localhost:4591';
+  }
+
+  // Replace gateway (Docker service name) with localhost for browser access
+  return gatewayUrl.replace(/http:\/\/gateway:/, 'http://localhost:');
+}
