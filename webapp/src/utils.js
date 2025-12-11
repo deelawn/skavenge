@@ -69,7 +69,7 @@ export async function checkLinkageOnGateway(ethereumAddress) {
     const data = await response.json();
     return {
       exists: true,
-      skavengePublicKey: data.skavengePublicKey,
+      skavengePublicKey: data.skavenge_public_key,
     };
   } catch (error) {
     console.error('Error checking linkage on gateway:', error);
