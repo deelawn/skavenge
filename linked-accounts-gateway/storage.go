@@ -6,14 +6,13 @@ import (
 )
 
 var (
-	ErrKeyExists   = errors.New("key already exists")
 	ErrKeyNotFound = errors.New("key not found")
 )
 
 // Storage defines the interface for storing linked account information
 type Storage interface {
-	// Set stores a key-value pair. Returns ErrKeyExists if the key already exists.
-	Set(key, value string) error
+	// Set stores a key-value pair, overwriting any existing value.
+	Set(key, value string)
 	// Get retrieves the value associated with a key. Returns ErrKeyNotFound if the key doesn't exist.
 	Get(key string) (string, error)
 }
@@ -31,18 +30,12 @@ func NewInMemoryStorage() *InMemoryStorage {
 	}
 }
 
-// Set stores a key-value pair. Returns ErrKeyExists if the key already exists.
-func (s *InMemoryStorage) Set(key, value string) error {
+// Set stores a key-value pair, overwriting any existing value.
+func (s *InMemoryStorage) Set(key, value string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check if key already exists
-	if _, exists := s.data[key]; exists {
-		return ErrKeyExists
-	}
-
 	s.data[key] = value
-	return nil
 }
 
 // Get retrieves the value associated with a key. Returns ErrKeyNotFound if the key doesn't exist.

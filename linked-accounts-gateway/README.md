@@ -97,21 +97,32 @@ This ensures that the signature was created by the owner of the Ethereum address
 
 ### Storage Layer
 
-The storage layer is defined as an interface with two methods:
-- `Set(key, value string) error`: Stores a key-value pair, returns error if key exists
-- `Get(key string) (string, error)`: Retrieves value by key, returns error if not found
+The storage layer is a simple key-value store defined as an interface with two methods:
+- `Set(key, value string)`: Stores a key-value pair, overwriting any existing value
+- `Get(key string) (string, error)`: Retrieves value by key, returns `ErrKeyNotFound` if not found
+
+The storage layer is intentionally kept simple and free of business logic. It's a pure data store that allows setting and getting values without restrictions.
 
 The current implementation uses an in-memory map with mutex protection for thread safety. This can easily be replaced with a persistent storage implementation (e.g., database, Redis) by implementing the `Storage` interface.
+
+### Business Logic Layer
+
+Immutability enforcement happens at the HTTP handler level, not in storage:
+- Before storing a new linkage, the handler checks if the address already exists using `Get()`
+- If it exists, a 409 Conflict error is returned
+- Only if it doesn't exist does the handler call `Set()` to store the new linkage
+
+This separation of concerns makes the storage layer more flexible and reusable.
 
 ### Project Structure
 
 ```
 linked-accounts-gateway/
-├── main.go              # HTTP server and handlers
+├── main.go              # HTTP server and handlers (business logic)
 ├── verify.go            # Ethereum signature verification
-├── storage/
-│   └── storage.go       # Storage interface and in-memory implementation
-├── go.mod               # Go module definition
+├── storage.go           # Storage interface and in-memory implementation
+├── storage_test.go      # Storage layer tests
+├── verify_test.go       # Signature verification tests
 └── README.md            # This file
 ```
 

@@ -83,16 +83,14 @@ func (s *Server) handlePostLink(w http.ResponseWriter, r *http.Request) {
 	// Normalize the ethereum address to lowercase for consistent storage
 	normalizedAddress := strings.ToLower(req.EthereumAddress)
 
-	// Store the linkage
-	if err := s.storage.Set(normalizedAddress, req.SkavengePublicKey); err != nil {
-		if errors.Is(err, ErrKeyExists) {
-			writeErrorResponse(w, http.StatusConflict, "ethereum address already linked (keys are immutable)")
-			return
-		}
-		log.Printf("Storage error: %v", err)
-		writeErrorResponse(w, http.StatusInternalServerError, "failed to store linkage")
+	// Check if the address is already linked (immutability check)
+	if _, err := s.storage.Get(normalizedAddress); err == nil {
+		writeErrorResponse(w, http.StatusConflict, "ethereum address already linked (keys are immutable)")
 		return
 	}
+
+	// Store the linkage
+	s.storage.Set(normalizedAddress, req.SkavengePublicKey)
 
 	// Success response
 	w.Header().Set("Content-Type", "application/json")

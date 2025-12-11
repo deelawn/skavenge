@@ -9,74 +9,68 @@ import (
 // TestInMemoryStorage_Set tests the Set method of InMemoryStorage
 func TestInMemoryStorage_Set(t *testing.T) {
 	tests := []struct {
-		name      string
-		key       string
-		value     string
-		wantError error
+		name  string
+		key   string
+		value string
 	}{
 		{
-			name:      "set new key-value pair",
-			key:       "0x742d35cc6634c0532925a3b844bc9e7595f0beb",
-			value:     "skv1abc123",
-			wantError: nil,
+			name:  "set new key-value pair",
+			key:   "0x742d35cc6634c0532925a3b844bc9e7595f0beb",
+			value: "skv1abc123",
 		},
 		{
-			name:      "set another key-value pair",
-			key:       "0x1234567890abcdef",
-			value:     "skv1xyz789",
-			wantError: nil,
+			name:  "set another key-value pair",
+			key:   "0x1234567890abcdef",
+			value: "skv1xyz789",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := NewInMemoryStorage()
-			err := store.Set(tt.key, tt.value)
-
-			if !errors.Is(err, tt.wantError) {
-				t.Errorf("Set() error = %v, wantError %v", err, tt.wantError)
-			}
+			store.Set(tt.key, tt.value)
 
 			// Verify the value was actually stored
-			if err == nil {
-				got, err := store.Get(tt.key)
-				if err != nil {
-					t.Errorf("Get() after Set() failed: %v", err)
-				}
-				if got != tt.value {
-					t.Errorf("Get() = %v, want %v", got, tt.value)
-				}
+			got, err := store.Get(tt.key)
+			if err != nil {
+				t.Errorf("Get() after Set() failed: %v", err)
+			}
+			if got != tt.value {
+				t.Errorf("Get() = %v, want %v", got, tt.value)
 			}
 		})
 	}
 }
 
-// TestInMemoryStorage_Set_DuplicateKey tests that Set returns error for duplicate keys
-func TestInMemoryStorage_Set_DuplicateKey(t *testing.T) {
+// TestInMemoryStorage_Set_Overwrite tests that Set overwrites existing values
+func TestInMemoryStorage_Set_Overwrite(t *testing.T) {
 	store := NewInMemoryStorage()
 	key := "0x742d35cc6634c0532925a3b844bc9e7595f0beb"
 	value1 := "skv1abc123"
 	value2 := "skv1xyz789"
 
-	// First set should succeed
-	err := store.Set(key, value1)
-	if err != nil {
-		t.Fatalf("First Set() failed: %v", err)
-	}
+	// First set
+	store.Set(key, value1)
 
-	// Second set with same key should fail
-	err = store.Set(key, value2)
-	if !errors.Is(err, ErrKeyExists) {
-		t.Errorf("Set() with duplicate key error = %v, want ErrKeyExists", err)
-	}
-
-	// Verify the original value is still stored
+	// Verify first value is stored
 	got, err := store.Get(key)
 	if err != nil {
-		t.Fatalf("Get() failed: %v", err)
+		t.Fatalf("Get() after first Set() failed: %v", err)
 	}
 	if got != value1 {
-		t.Errorf("Get() = %v, want %v (original value should be preserved)", got, value1)
+		t.Errorf("Get() = %v, want %v", got, value1)
+	}
+
+	// Second set with same key should overwrite
+	store.Set(key, value2)
+
+	// Verify the new value overwrote the old one
+	got, err = store.Get(key)
+	if err != nil {
+		t.Fatalf("Get() after second Set() failed: %v", err)
+	}
+	if got != value2 {
+		t.Errorf("Get() = %v, want %v (value should be overwritten)", got, value2)
 	}
 }
 
@@ -87,10 +81,7 @@ func TestInMemoryStorage_Get(t *testing.T) {
 	value := "skv1abc123"
 
 	// Set a value first
-	err := store.Set(key, value)
-	if err != nil {
-		t.Fatalf("Set() failed: %v", err)
-	}
+	store.Set(key, value)
 
 	tests := []struct {
 		name      string
@@ -140,10 +131,7 @@ func TestInMemoryStorage_Concurrency(t *testing.T) {
 			defer wg.Done()
 			key := string(rune('a' + index))
 			value := string(rune('A' + index))
-			err := store.Set(key, value)
-			if err != nil {
-				t.Errorf("Concurrent Set() failed for key %s: %v", key, err)
-			}
+			store.Set(key, value)
 		}(i)
 	}
 	wg.Wait()
@@ -169,10 +157,7 @@ func TestInMemoryStorage_ConcurrentReads(t *testing.T) {
 	value := "skv1abc123"
 
 	// Set a value
-	err := store.Set(key, value)
-	if err != nil {
-		t.Fatalf("Set() failed: %v", err)
-	}
+	store.Set(key, value)
 
 	// Concurrently read the same key
 	numGoroutines := 100
@@ -194,15 +179,42 @@ func TestInMemoryStorage_ConcurrentReads(t *testing.T) {
 	wg.Wait()
 }
 
+// TestInMemoryStorage_ConcurrentWrites tests concurrent write operations to the same key
+func TestInMemoryStorage_ConcurrentWrites(t *testing.T) {
+	store := NewInMemoryStorage()
+	key := "test-key"
+	numGoroutines := 100
+	var wg sync.WaitGroup
+
+	// Concurrently write to the same key
+	wg.Add(numGoroutines)
+	for i := 0; i < numGoroutines; i++ {
+		go func(index int) {
+			defer wg.Done()
+			value := string(rune('A' + (index % 26)))
+			store.Set(key, value)
+		}(i)
+	}
+	wg.Wait()
+
+	// After all writes complete, there should be a valid value
+	// (we don't care which one, just that it doesn't crash or corrupt data)
+	got, err := store.Get(key)
+	if err != nil {
+		t.Errorf("Get() after concurrent writes failed: %v", err)
+	}
+	// Value should be one of the written values (A-Z)
+	if len(got) != 1 || got[0] < 'A' || got[0] > 'Z' {
+		t.Errorf("Get() = %v, want a letter A-Z", got)
+	}
+}
+
 // TestInMemoryStorage_EmptyKey tests behavior with empty key
 func TestInMemoryStorage_EmptyKey(t *testing.T) {
 	store := NewInMemoryStorage()
 
 	// Empty key should be allowed (storage doesn't validate keys)
-	err := store.Set("", "value")
-	if err != nil {
-		t.Errorf("Set() with empty key failed: %v", err)
-	}
+	store.Set("", "value")
 
 	got, err := store.Get("")
 	if err != nil {
@@ -219,10 +231,7 @@ func TestInMemoryStorage_EmptyValue(t *testing.T) {
 	key := "0x742d35cc6634c0532925a3b844bc9e7595f0beb"
 
 	// Empty value should be allowed
-	err := store.Set(key, "")
-	if err != nil {
-		t.Errorf("Set() with empty value failed: %v", err)
-	}
+	store.Set(key, "")
 
 	got, err := store.Get(key)
 	if err != nil {
