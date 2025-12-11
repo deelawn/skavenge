@@ -67,8 +67,17 @@ services:
       context: .
       dockerfile: Dockerfile.gateway
     container_name: skavenge-gateway
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      hardhat:
+        condition: service_healthy
     ports:
       - "4591:4591"
+    volumes:
+      - ./webapp/config.json:/app/config.json:ro
+    environment:
+      - CONFIG_FILE=/app/config.json
     networks:
       - skavenge-network
     restart: unless-stopped

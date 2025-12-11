@@ -1202,6 +1202,48 @@ async function handleMessage(request, isInternal = true) {
         }
       }
 
+      case 'signMessage': {
+        if (!password) {
+          return { success: false, error: 'Password required or session expired' };
+        }
+
+        if (!request.message) {
+          return { success: false, error: 'Missing required parameter: message' };
+        }
+
+        const keys = await retrieveKeys(password);
+        if (!keys) {
+          return { success: false, error: 'Invalid password or no keys found' };
+        }
+
+        try {
+          // Import the private key
+          const privateKey = await importRawPrivateKey(keys.privateKey);
+
+          // Hash the message with SHA-256
+          const encoder = new TextEncoder();
+          const messageBytes = encoder.encode(request.message);
+          const hashBuffer = await crypto.subtle.digest('SHA-256', messageBytes);
+
+          // Sign the hash using ECDSA with P-256
+          const signature = await crypto.subtle.sign(
+            {
+              name: 'ECDSA',
+              hash: { name: 'SHA-256' }
+            },
+            privateKey,
+            hashBuffer
+          );
+
+          // Convert signature to hex
+          const signatureHex = '0x' + bufferToHex(signature);
+
+          return { success: true, signature: signatureHex };
+        } catch (error) {
+          return { success: false, error: 'Failed to sign message: ' + error.message };
+        }
+      }
+
       default:
         return { success: false, error: 'Unknown action' };
     }

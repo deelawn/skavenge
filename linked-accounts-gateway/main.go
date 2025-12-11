@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -25,6 +27,22 @@ type LinkResponse struct {
 	SkavengePublicKey string `json:"skavenge_public_key,omitempty"`
 }
 
+// TransferCiphertextRequest represents the JSON payload for POST /transfers
+type TransferCiphertextRequest struct {
+	TransferID       string `json:"transfer_id"`
+	BuyerCiphertext  string `json:"buyer_ciphertext"`
+	SellerCiphertext string `json:"seller_ciphertext"`
+	Message          string `json:"message"`
+	Signature        string `json:"signature"`
+}
+
+// TransferCiphertextResponse represents the JSON response for GET /transfers
+type TransferCiphertextResponse struct {
+	Success          bool   `json:"success"`
+	BuyerCiphertext  string `json:"buyer_ciphertext,omitempty"`
+	SellerCiphertext string `json:"seller_ciphertext,omitempty"`
+}
+
 // ErrorResponse represents the JSON response for errors
 type ErrorResponse struct {
 	Success bool   `json:"success"`
@@ -33,13 +51,17 @@ type ErrorResponse struct {
 
 // Server holds the dependencies for the HTTP handlers
 type Server struct {
-	storage Storage
+	storage         Storage
+	transferStorage TransferCiphertextStorage
+	contractClient  ContractClientInterface
 }
 
 // NewServer creates a new Server instance
-func NewServer(store Storage) *Server {
+func NewServer(store Storage, transferStore TransferCiphertextStorage, client ContractClientInterface) *Server {
 	return &Server{
-		storage: store,
+		storage:         store,
+		transferStorage: transferStore,
+		contractClient:  client,
 	}
 }
 
@@ -155,6 +177,191 @@ func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleTransfers routes requests to the appropriate handler based on method
+func (s *Server) HandleTransfers(w http.ResponseWriter, r *http.Request) {
+	// Handle CORS preflight request
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPost:
+		s.handlePostTransfers(w, r)
+	case http.MethodGet:
+		s.handleGetTransfers(w, r)
+	default:
+		writeErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handlePostTransfers processes POST /transfers requests (seller stores ciphertext)
+func (s *Server) handlePostTransfers(w http.ResponseWriter, r *http.Request) {
+	var req TransferCiphertextRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid JSON payload")
+		return
+	}
+
+	// Validate required fields
+	if req.TransferID == "" || req.BuyerCiphertext == "" || req.SellerCiphertext == "" || req.Message == "" || req.Signature == "" {
+		writeErrorResponse(w, http.StatusBadRequest, "missing required fields")
+		return
+	}
+
+	// Decode transfer ID from hex to bytes32
+	transferIDBytes, err := hex.DecodeString(strings.TrimPrefix(req.TransferID, "0x"))
+	if err != nil || len(transferIDBytes) != 32 {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid transfer ID format")
+		return
+	}
+
+	var transferID [32]byte
+	copy(transferID[:], transferIDBytes)
+
+	// Retrieve transfer from blockchain
+	ctx := context.Background()
+	transfer, err := s.contractClient.GetTransferInfo(ctx, transferID)
+	if err != nil {
+		log.Printf("Failed to retrieve transfer: %v", err)
+		writeErrorResponse(w, http.StatusNotFound, "transfer not found: "+err.Error())
+		return
+	}
+
+	// Get the owner (seller) of the token being transferred
+	owner, err := s.contractClient.GetTokenOwner(ctx, transfer.TokenID)
+	if err != nil {
+		log.Printf("Failed to get token owner: %v", err)
+		writeErrorResponse(w, http.StatusInternalServerError, "failed to get token owner")
+		return
+	}
+
+	// Normalize the owner address
+	normalizedOwner := strings.ToLower(owner.Hex())
+
+	// Look up the seller's skavenge public key
+	sellerPublicKey, err := s.storage.Get(normalizedOwner)
+	if err != nil {
+		if errors.Is(err, ErrKeyNotFound) {
+			writeErrorResponse(w, http.StatusNotFound, "seller public key not found")
+			return
+		}
+		log.Printf("Storage error: %v", err)
+		writeErrorResponse(w, http.StatusInternalServerError, "failed to retrieve seller public key")
+		return
+	}
+
+	// Verify the signature was signed by the seller's skavenge private key
+	valid, err := VerifySkavengeSignature(req.Message, req.Signature, sellerPublicKey)
+	if err != nil {
+		log.Printf("Signature verification error: %v", err)
+		writeErrorResponse(w, http.StatusBadRequest, "signature verification failed: "+err.Error())
+		return
+	}
+
+	if !valid {
+		writeErrorResponse(w, http.StatusUnauthorized, "invalid signature")
+		return
+	}
+
+	// Store the ciphertext
+	s.transferStorage.SetTransferCiphertext(req.TransferID, req.BuyerCiphertext, req.SellerCiphertext)
+
+	// Success response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(LinkResponse{
+		Success: true,
+		Message: "transfer ciphertext stored successfully",
+	})
+}
+
+// handleGetTransfers processes GET /transfers requests (buyer retrieves ciphertext)
+func (s *Server) handleGetTransfers(w http.ResponseWriter, r *http.Request) {
+	// Get the transfer ID from query parameter
+	transferID := r.URL.Query().Get("transferId")
+	if transferID == "" {
+		writeErrorResponse(w, http.StatusBadRequest, "missing transferId query parameter")
+		return
+	}
+
+	// Get the signature and message from query parameters (or headers)
+	signature := r.URL.Query().Get("signature")
+	message := r.URL.Query().Get("message")
+
+	if signature == "" || message == "" {
+		writeErrorResponse(w, http.StatusBadRequest, "missing signature or message query parameters")
+		return
+	}
+
+	// Decode transfer ID from hex to bytes32
+	transferIDBytes, err := hex.DecodeString(strings.TrimPrefix(transferID, "0x"))
+	if err != nil || len(transferIDBytes) != 32 {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid transfer ID format")
+		return
+	}
+
+	var transferIDArray [32]byte
+	copy(transferIDArray[:], transferIDBytes)
+
+	// Retrieve transfer from blockchain
+	ctx := context.Background()
+	transfer, err := s.contractClient.GetTransferInfo(ctx, transferIDArray)
+	if err != nil {
+		log.Printf("Failed to retrieve transfer: %v", err)
+		writeErrorResponse(w, http.StatusNotFound, "transfer not found: "+err.Error())
+		return
+	}
+
+	// Normalize the buyer address
+	normalizedBuyer := strings.ToLower(transfer.Buyer.Hex())
+
+	// Look up the buyer's skavenge public key
+	buyerPublicKey, err := s.storage.Get(normalizedBuyer)
+	if err != nil {
+		if errors.Is(err, ErrKeyNotFound) {
+			writeErrorResponse(w, http.StatusNotFound, "buyer public key not found")
+			return
+		}
+		log.Printf("Storage error: %v", err)
+		writeErrorResponse(w, http.StatusInternalServerError, "failed to retrieve buyer public key")
+		return
+	}
+
+	// Verify the signature was signed by the buyer's skavenge private key
+	valid, err := VerifySkavengeSignature(message, signature, buyerPublicKey)
+	if err != nil {
+		log.Printf("Signature verification error: %v", err)
+		writeErrorResponse(w, http.StatusBadRequest, "signature verification failed: "+err.Error())
+		return
+	}
+
+	if !valid {
+		writeErrorResponse(w, http.StatusUnauthorized, "invalid signature")
+		return
+	}
+
+	// Retrieve the ciphertext
+	buyerCiphertext, sellerCiphertext, err := s.transferStorage.GetTransferCiphertext(transferID)
+	if err != nil {
+		if errors.Is(err, ErrKeyNotFound) {
+			writeErrorResponse(w, http.StatusNotFound, "transfer ciphertext not found")
+			return
+		}
+		log.Printf("Storage error: %v", err)
+		writeErrorResponse(w, http.StatusInternalServerError, "failed to retrieve transfer ciphertext")
+		return
+	}
+
+	// Success response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(TransferCiphertextResponse{
+		Success:          true,
+		BuyerCiphertext:  buyerCiphertext,
+		SellerCiphertext: sellerCiphertext,
+	})
+}
+
 // writeErrorResponse is a helper to write error responses
 func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
 	w.Header().Set("Content-Type", "application/json")
@@ -168,20 +375,37 @@ func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
 func main() {
 	// Parse command-line flags
 	port := flag.Int("port", 4591, "Port to listen on")
+	rpcURL := flag.String("rpc", "http://localhost:8545", "Blockchain RPC URL")
+	contractAddress := flag.String("contract", "", "Skavenge contract address")
 	flag.Parse()
+
+	if *contractAddress == "" {
+		log.Fatal("Contract address is required. Use -contract flag.")
+	}
 
 	// Initialize in-memory storage
 	store := NewInMemoryStorage()
+	transferStore := NewInMemoryTransferStorage()
+
+	// Initialize contract client
+	contractClient, err := NewContractClient(*rpcURL, *contractAddress)
+	if err != nil {
+		log.Fatalf("Failed to create contract client: %v", err)
+	}
+	defer contractClient.Close()
 
 	// Create server
-	server := NewServer(store)
+	server := NewServer(store, transferStore, contractClient)
 
 	// Register handlers with CORS middleware
 	http.HandleFunc("/link", corsMiddleware(server.HandleLink))
+	http.HandleFunc("/transfers", corsMiddleware(server.HandleTransfers))
 
 	// Start server
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("Starting linked accounts gateway server on %s", addr)
+	log.Printf("Connected to blockchain at %s", *rpcURL)
+	log.Printf("Using contract at %s", *contractAddress)
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}

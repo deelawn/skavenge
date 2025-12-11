@@ -17,6 +17,14 @@ type Storage interface {
 	Get(key string) (string, error)
 }
 
+// TransferCiphertextStorage defines the interface for storing transfer ciphertext data
+type TransferCiphertextStorage interface {
+	// SetTransferCiphertext stores buyer and seller ciphertext for a transfer ID
+	SetTransferCiphertext(transferID, buyerCiphertext, sellerCiphertext string)
+	// GetTransferCiphertext retrieves ciphertext for a transfer ID
+	GetTransferCiphertext(transferID string) (buyerCiphertext string, sellerCiphertext string, err error)
+}
+
 // InMemoryStorage implements Storage using an in-memory map
 type InMemoryStorage struct {
 	mu   sync.RWMutex
@@ -49,4 +57,47 @@ func (s *InMemoryStorage) Get(key string) (string, error) {
 	}
 
 	return value, nil
+}
+
+// TransferCiphertextData holds the ciphertext for a transfer
+type TransferCiphertextData struct {
+	BuyerCiphertext  string
+	SellerCiphertext string
+}
+
+// InMemoryTransferStorage implements TransferCiphertextStorage using an in-memory map
+type InMemoryTransferStorage struct {
+	mu   sync.RWMutex
+	data map[string]TransferCiphertextData
+}
+
+// NewInMemoryTransferStorage creates a new InMemoryTransferStorage instance
+func NewInMemoryTransferStorage() *InMemoryTransferStorage {
+	return &InMemoryTransferStorage{
+		data: make(map[string]TransferCiphertextData),
+	}
+}
+
+// SetTransferCiphertext stores buyer and seller ciphertext for a transfer ID
+func (s *InMemoryTransferStorage) SetTransferCiphertext(transferID, buyerCiphertext, sellerCiphertext string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.data[transferID] = TransferCiphertextData{
+		BuyerCiphertext:  buyerCiphertext,
+		SellerCiphertext: sellerCiphertext,
+	}
+}
+
+// GetTransferCiphertext retrieves ciphertext for a transfer ID
+func (s *InMemoryTransferStorage) GetTransferCiphertext(transferID string) (string, string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	data, exists := s.data[transferID]
+	if !exists {
+		return "", "", ErrKeyNotFound
+	}
+
+	return data.BuyerCiphertext, data.SellerCiphertext, nil
 }
