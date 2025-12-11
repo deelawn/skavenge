@@ -342,30 +342,22 @@ func TestVerifySignature_VValueConversion(t *testing.T) {
 		t.Fatalf("Failed to sign: %v", err)
 	}
 
+	// The original V value from crypto.Sign is 0 or 1
+	originalV := sig[64]
+
+	// Test both formats: raw (0 or 1) and Ethereum format (27 or 28)
+	// Note: We can only test the V values that match the original signature's R and S
 	tests := []struct {
-		name      string
-		vValue    byte
-		shouldAdd byte // What to add to V
+		name   string
+		vValue byte
 	}{
 		{
-			name:      "V = 0 (needs conversion to 27)",
-			vValue:    0,
-			shouldAdd: 27,
+			name:   fmt.Sprintf("V = %d (raw go-ethereum format)", originalV),
+			vValue: originalV,
 		},
 		{
-			name:      "V = 1 (needs conversion to 28)",
-			vValue:    1,
-			shouldAdd: 27,
-		},
-		{
-			name:      "V = 27 (already correct)",
-			vValue:    27,
-			shouldAdd: 0,
-		},
-		{
-			name:      "V = 28 (already correct)",
-			vValue:    28,
-			shouldAdd: 0,
+			name:   fmt.Sprintf("V = %d (Ethereum/MetaMask format)", originalV+27),
+			vValue: originalV + 27,
 		},
 	}
 
@@ -373,7 +365,7 @@ func TestVerifySignature_VValueConversion(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			testSig := make([]byte, 65)
 			copy(testSig, sig)
-			testSig[64] = tt.vValue + tt.shouldAdd
+			testSig[64] = tt.vValue
 
 			signature := hexutil.Encode(testSig)
 			valid, err := VerifySignature(message, signature, address.Hex())
@@ -381,7 +373,7 @@ func TestVerifySignature_VValueConversion(t *testing.T) {
 				t.Errorf("VerifySignature() error = %v", err)
 			}
 			if !valid {
-				t.Errorf("VerifySignature() with V=%d = false, want true", tt.vValue+tt.shouldAdd)
+				t.Errorf("VerifySignature() with V=%d = false, want true", tt.vValue)
 			}
 		})
 	}
