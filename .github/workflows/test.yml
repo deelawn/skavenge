@@ -38,3 +38,24 @@ jobs:
     - name: Cleanup
       if: always()
       run: docker compose down -v
+
+  gateway-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+
+    - name: Run linked-accounts-gateway tests
+      run: go test -v ./linked-accounts-gateway/...
+
+    - name: Run tests with coverage
+      run: go test -coverprofile=coverage.out ./linked-accounts-gateway/...
+
+    - name: Display coverage
+      run: go tool cover -func=coverage.out

@@ -37,10 +37,11 @@ start: start-with-setup
 
 .PHONY: start-services
 start-services:
-	docker compose up -d hardhat webapp
+	docker compose up -d hardhat webapp gateway
 	@echo "Services starting..."
 	@echo "Hardhat: http://localhost:8545"
 	@echo "Webapp: http://localhost:8080"
+	@echo "Gateway: http://localhost:4591"
 
 .PHONY: start-with-setup
 start-with-setup:
@@ -48,17 +49,18 @@ start-with-setup:
 	@echo "Waiting for Hardhat to be ready..."
 	@sleep 5
 	docker compose up --abort-on-container-exit setup
-	docker compose up -d webapp
+	docker compose up -d webapp gateway
 	@echo "Services started with contract deployment..."
 	@echo "Hardhat: http://localhost:8545"
 	@echo "Webapp: http://localhost:8080"
+	@echo "Gateway: http://localhost:4591"
 
 .PHONY: stop
 stop: stop-services
 
 .PHONY: stop-services
 stop-services:
-	docker compose stop hardhat webapp
+	docker compose stop hardhat webapp gateway
 
 .PHONY: docker-test
 docker-test:

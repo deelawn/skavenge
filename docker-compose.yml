@@ -62,6 +62,17 @@ services:
     networks:
       - skavenge-network
 
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    container_name: skavenge-gateway
+    ports:
+      - "4591:4591"
+    networks:
+      - skavenge-network
+    restart: unless-stopped
+
 networks:
   skavenge-network:
     driver: bridge
