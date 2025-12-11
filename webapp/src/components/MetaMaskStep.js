@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { loadConfig, CHAIN_ID } from '../config.js';
-import { getBrowserRpcUrl } from '../utils.js';
+import { getBrowserRpcUrl, getBrowserGatewayUrl } from '../utils.js';
 import { Web3 } from 'web3';
 
 /**
@@ -233,6 +233,67 @@ function clearVerifiedLinkage() {
 }
 
 /**
+ * Send linkage to the gateway server for verification and storage
+ * @param {string} ethereumAddress - The Ethereum address
+ * @param {string} skavengePublicKey - The Skavenge public key
+ * @param {string} message - The signed message
+ * @param {string} signature - The signature
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+async function sendLinkageToGateway(ethereumAddress, skavengePublicKey, message, signature) {
+  try {
+    // Load configuration to get gateway URL
+    const config = await loadConfig();
+    const gatewayUrl = getBrowserGatewayUrl(config.gatewayUrl);
+
+    // Send POST request to /link endpoint
+    const response = await fetch(`${gatewayUrl}/link`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ethereum_address: ethereumAddress,
+        skavenge_public_key: skavengePublicKey,
+        message: message,
+        signature: signature,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      // Handle different error cases
+      if (response.status === 409) {
+        // Address already linked to a different key
+        return {
+          success: false,
+          error: 'This Ethereum address is already linked to a different Skavenge key. Each address can only be linked once.',
+        };
+      } else if (response.status === 401) {
+        return {
+          success: false,
+          error: 'Signature verification failed on the server.',
+        };
+      } else {
+        return {
+          success: false,
+          error: data.error || 'Failed to link account on the server.',
+        };
+      }
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error sending linkage to gateway:', error);
+    return {
+      success: false,
+      error: 'Failed to connect to the gateway server. Please try again later.',
+    };
+  }
+}
+
+/**
  * MetaMask Step Component
  * Handles connecting to MetaMask wallet and verifying ownership
  *
@@ -297,6 +358,15 @@ function MetaMaskStep({ skavengerPublicKey, onAccountConnected, onToast }) {
 
           if (!isValid) {
             onToast('Signature verification failed for new account', 'error');
+            return;
+          }
+
+          // Send linkage to gateway server for verification and storage
+          onToast('Sending linkage to server for verification...', 'info');
+          const result = await sendLinkageToGateway(account, skavengerPublicKey, message, signature);
+
+          if (!result.success) {
+            onToast(result.error, 'error');
             return;
           }
 
@@ -381,11 +451,20 @@ function MetaMaskStep({ skavengerPublicKey, onAccountConnected, onToast }) {
       onToast('Please sign the message in MetaMask to verify ownership', 'info');
       const { signature, message } = await signLinkageMessage(account, skavengerPublicKey);
 
-      // Verify the signature
+      // Verify the signature locally
       const isValid = verifySignature(message, signature, account);
 
       if (!isValid) {
         onToast('Signature verification failed. Unable to confirm address ownership.', 'error');
+        return;
+      }
+
+      // Send linkage to gateway server for verification and storage
+      onToast('Sending linkage to server for verification...', 'info');
+      const result = await sendLinkageToGateway(account, skavengerPublicKey, message, signature);
+
+      if (!result.success) {
+        onToast(result.error, 'error');
         return;
       }
 

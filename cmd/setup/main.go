@@ -27,6 +27,7 @@ type WebappConfig struct {
 	ContractAddress string `json:"contractAddress"`
 	NetworkRpcUrl   string `json:"networkRpcUrl"`
 	ChainId         int64  `json:"chainId"`
+	GatewayUrl      string `json:"gatewayUrl"`
 }
 
 func main() {
@@ -172,11 +173,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Get gateway URL from environment, default to internal Docker service name
+	gatewayURL := os.Getenv("GATEWAY_URL")
+	if gatewayURL == "" {
+		gatewayURL = "http://gateway:4591"
+	}
+
 	// Update webapp config.json
 	webappConfig := WebappConfig{
 		ContractAddress: contractAddress.Hex(),
 		NetworkRpcUrl:   hardhatURL,
 		ChainId:         chainID.Int64(),
+		GatewayUrl:      gatewayURL,
 	}
 
 	configJSON, err := json.MarshalIndent(webappConfig, "", "  ")

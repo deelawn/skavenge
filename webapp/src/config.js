@@ -43,7 +43,7 @@ export const CHAIN_ID = {
  * Loads configuration from the config.json file
  * This file should be mounted in the container at /usr/share/nginx/html/config.json
  *
- * @returns {Promise<{contractAddress: string, networkRpcUrl: string, chainId: number}>}
+ * @returns {Promise<{contractAddress: string, networkRpcUrl: string, chainId: number, gatewayUrl: string}>}
  */
 export async function loadConfig() {
   // Return cached config if already loaded
@@ -70,10 +70,16 @@ export async function loadConfig() {
       throw new Error('Config file must contain chainId');
     }
 
+    // Validate gatewayUrl is present in config
+    if (!config.gatewayUrl) {
+      throw new Error('Config file must contain gatewayUrl');
+    }
+
     configCache = {
       contractAddress: config.contractAddress,
       networkRpcUrl: config.networkRpcUrl,
-      chainId: config.chainId
+      chainId: config.chainId,
+      gatewayUrl: config.gatewayUrl
     };
 
     return configCache;
@@ -84,7 +90,8 @@ export async function loadConfig() {
     return {
       contractAddress: '0x0000000000000000000000000000000000000000',
       networkRpcUrl: 'http://localhost:8545',
-      chainId: 1337
+      chainId: 1337,
+      gatewayUrl: 'http://localhost:4591'
     };
   }
 }
