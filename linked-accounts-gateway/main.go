@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -144,6 +146,10 @@ func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
 }
 
 func main() {
+	// Parse command-line flags
+	port := flag.Int("port", 4591, "Port to listen on")
+	flag.Parse()
+
 	// Initialize in-memory storage
 	store := NewInMemoryStorage()
 
@@ -154,9 +160,9 @@ func main() {
 	http.HandleFunc("/link", server.HandleLink)
 
 	// Start server
-	port := ":8080"
-	log.Printf("Starting linked accounts gateway server on %s", port)
-	if err := http.ListenAndServe(port, nil); err != nil {
+	addr := fmt.Sprintf(":%d", *port)
+	log.Printf("Starting linked accounts gateway server on %s", addr)
+	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }

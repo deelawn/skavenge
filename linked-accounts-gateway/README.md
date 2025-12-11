@@ -22,10 +22,27 @@ go mod tidy
 
 2. Run the server:
 ```bash
-go run main.go verify.go
+# Run with default port (4591)
+go run ./linked-accounts-gateway
+
+# Run with custom port
+go run ./linked-accounts-gateway -port 8080
 ```
 
-The server will start on port 8080 by default.
+The server will start on port 4591 by default.
+
+### Docker
+
+Run using Docker Compose:
+```bash
+# Start all services including gateway
+make start
+
+# Or start just the gateway
+docker compose up -d gateway
+```
+
+The gateway will be available at `http://localhost:4591`.
 
 ## API Endpoints
 
@@ -132,7 +149,7 @@ linked-accounts-gateway/
 
 1. **Link an account** (you'll need a real signature from MetaMask):
 ```bash
-curl -X POST http://localhost:8080/link \
+curl -X POST http://localhost:4591/link \
   -H "Content-Type: application/json" \
   -d '{
     "ethereumAddress": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
@@ -144,7 +161,7 @@ curl -X POST http://localhost:8080/link \
 
 2. **Retrieve a linked account**:
 ```bash
-curl "http://localhost:8080/link?ethereumAddress=0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+curl "http://localhost:4591/link?ethereumAddress=0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
 ```
 
 ## Future Enhancements
