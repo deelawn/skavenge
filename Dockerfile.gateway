@@ -9,6 +9,7 @@ RUN go mod download
 
 # Copy source code
 COPY linked-accounts-gateway/ ./linked-accounts-gateway/
+COPY eth/ ./eth/
 
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -o /gateway ./linked-accounts-gateway
@@ -16,15 +17,19 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /gateway ./linked-accounts-gateway
 # Runtime stage
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates
+RUN apk --no-cache add ca-certificates jq
 
 WORKDIR /root/
 
 # Copy the binary from builder
 COPY --from=builder /gateway .
 
+# Copy startup script
+COPY docker-entrypoint-gateway.sh /docker-entrypoint-gateway.sh
+RUN chmod +x /docker-entrypoint-gateway.sh
+
 # Expose the default port
 EXPOSE 4591
 
-# Run the gateway server
-ENTRYPOINT ["./gateway"]
+# Run the startup script
+ENTRYPOINT ["/docker-entrypoint-gateway.sh"]
