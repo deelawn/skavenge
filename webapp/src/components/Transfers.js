@@ -159,7 +159,7 @@ function Transfers({ metamaskAddress, config, onToast }) {
       }
 
       // Convert rValue to hex string
-      let rValueHex = BigInt(rValue).toString(16);
+      let rValueHex = window.BigInt(rValue).toString(16);
       if (rValueHex.length % 2 !== 0) rValueHex = '0' + rValueHex;
 
       // Step 3: Decrypt the clue content using the extension

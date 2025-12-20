@@ -144,7 +144,7 @@ export async function storeTransferCiphertext(transferId, buyerCiphertext, selle
 
     // Sign the message with the extension
     const signResponse = await new Promise((resolve) => {
-      chrome.runtime.sendMessage(extensionId, {
+      window.chrome.runtime.sendMessage(extensionId, {
         action: 'signMessage',
         message: message
       }, resolve);
