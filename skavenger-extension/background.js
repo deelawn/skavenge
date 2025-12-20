@@ -32,6 +32,15 @@ function hexToBuffer(hex) {
   return bytes.buffer;
 }
 
+// Convert hex string to Uint8Array
+function hexToBytes(hex) {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+  }
+  return bytes;
+}
+
 // Keccak-256 implementation (legacy Keccak, as used by Go's sha3 package)
 // Extracted from js-sha3 v0.9.3 (MIT License) by Chen, Yi-Cyuan
 // https://github.com/emn178/js-sha3
@@ -329,32 +338,6 @@ function keccak256(message) {
   return new Uint8Array(array);
 }
 
-// Convert base64url to hex
-function base64urlToHex(base64url) {
-  // Add padding if needed
-  let base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
-  while (base64.length % 4) {
-    base64 += '=';
-  }
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bufferToHex(bytes.buffer);
-}
-
-// Convert hex to base64url
-function hexToBase64url(hex) {
-  const bytes = new Uint8Array(hexToBuffer(hex));
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  const base64 = btoa(binary);
-  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
 // Derive encryption key from password using PBKDF2
 async function deriveKey(password, salt, iterations = 100000) {
   const encoder = new TextEncoder();
@@ -448,37 +431,40 @@ async function decryptData(encryptedObj, password) {
   return JSON.parse(decoder.decode(decrypted));
 }
 
-// Generate ECDSA P-256 key pair
+// Generate secp256k1 key pair
 async function generateKeyPair() {
-  const keyPair = await crypto.subtle.generateKey(
-    {
-      name: 'ECDSA',
-      namedCurve: 'P-256'
-    },
-    true,
-    ['sign', 'verify']
-  );
+  // Generate a random 32-byte private key
+  const privateKeyBytes = new Uint8Array(32);
+  crypto.getRandomValues(privateKeyBytes);
 
-  return keyPair;
+  // Convert to BigInt to check validity
+  const privateKeyD = BigInt('0x' + Array.from(privateKeyBytes).map(b => b.toString(16).padStart(2, '0')).join(''));
+
+  // Ensure it's in valid range [1, n-1]
+  if (privateKeyD === 0n || privateKeyD >= SECP256K1_N) {
+    // Rare case, try again
+    return generateKeyPair();
+  }
+
+  // Convert to hex string
+  const privateKeyHex = Array.from(privateKeyBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  // Derive public key
+  const publicKeyHex = derivePublicKey(privateKeyHex);
+
+  return {
+    privateKey: privateKeyHex,
+    publicKey: publicKeyHex
+  };
 }
-
-// Extract raw private key from ECDSA key (32 bytes for P-256)
-async function extractRawPrivateKey(privateKey) {
-  const jwk = await crypto.subtle.exportKey('jwk', privateKey);
-  // The 'd' parameter contains the base64url-encoded raw private key
-  return base64urlToHex(jwk.d);
-}
-
-// P-256 curve parameters (NIST curve for WebCrypto ECDSA)
-const P256_P = BigInt('0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff');
-const P256_A = BigInt('0xffffffff00000001000000000000000000000000fffffffffffffffffffffffc');
-const P256_GX = BigInt('0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296');
-const P256_GY = BigInt('0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5');
 
 // secp256k1 curve parameters (Bitcoin/Ethereum curve)
-// The Go backend uses secp256k1 for ElGamal encryption, so we must use the same curve for decryption
+// We use secp256k1 for all cryptographic operations (signing, encryption, key generation)
 const SECP256K1_P = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F');
 const SECP256K1_A = BigInt(0); // a = 0 for secp256k1
+const SECP256K1_N = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141'); // curve order
+const SECP256K1_GX = BigInt('0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798'); // generator point X
+const SECP256K1_GY = BigInt('0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8'); // generator point Y
 
 // Modular inverse using Extended Euclidean Algorithm
 function modInverse(a, m) {
@@ -495,29 +481,7 @@ function modInverse(a, m) {
   return ((oldS % m) + m) % m;
 }
 
-// EC point addition on P-256 (for WebCrypto key derivation)
-function pointAddP256(p1, p2) {
-  if (p1 === null) return p2;
-  if (p2 === null) return p1;
-
-  const [x1, y1] = p1;
-  const [x2, y2] = p2;
-
-  if (x1 === x2 && y1 === y2) {
-    // Point doubling
-    const s = (3n * x1 * x1 + P256_A) * modInverse(2n * y1, P256_P) % P256_P;
-    const x3 = (s * s - 2n * x1) % P256_P;
-    const y3 = (s * (x1 - x3) - y1) % P256_P;
-    return [(x3 + P256_P) % P256_P, (y3 + P256_P) % P256_P];
-  }
-
-  const s = (y2 - y1) * modInverse((x2 - x1 + P256_P) % P256_P, P256_P) % P256_P;
-  const x3 = (s * s - x1 - x2) % P256_P;
-  const y3 = (s * (x1 - x3) - y1) % P256_P;
-  return [(x3 + P256_P) % P256_P, (y3 + P256_P) % P256_P];
-}
-
-// EC point addition on secp256k1 (for ElGamal decryption)
+// EC point addition on secp256k1
 function pointAddSecp256k1(p1, p2) {
   if (p1 === null) return p2;
   if (p2 === null) return p1;
@@ -540,23 +504,7 @@ function pointAddSecp256k1(p1, p2) {
   return [(x3 + SECP256K1_P) % SECP256K1_P, (y3 + SECP256K1_P) % SECP256K1_P];
 }
 
-// Scalar multiplication on P-256 (for WebCrypto key derivation)
-function scalarMultP256(k, point) {
-  let result = null;
-  let addend = point;
-
-  while (k > 0n) {
-    if (k & 1n) {
-      result = pointAddP256(result, addend);
-    }
-    addend = pointAddP256(addend, addend);
-    k >>= 1n;
-  }
-
-  return result;
-}
-
-// Scalar multiplication on secp256k1 (for ElGamal decryption)
+// Scalar multiplication on secp256k1
 function scalarMultSecp256k1(k, point) {
   let result = null;
   let addend = point;
@@ -572,42 +520,190 @@ function scalarMultSecp256k1(k, point) {
   return result;
 }
 
-// Compute public key from private key on P-256 (for WebCrypto ECDSA)
+// HMAC-SHA256 implementation
+async function hmacSHA256(key, message) {
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    key,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, message);
+  return new Uint8Array(signature);
+}
+
+// RFC 6979 deterministic k-value generation for ECDSA
+async function generateDeterministicK(privateKeyBytes, messageHash) {
+  // RFC 6979 implementation
+  const hlen = 32; // SHA-256 hash length
+  const qlen = 32; // secp256k1 order length in bytes
+
+  // Step a: h1 = H(m) (already done, messageHash is the hash)
+  const h1 = new Uint8Array(messageHash);
+
+  // Step b: V = 0x01 0x01 0x01 ... 0x01 (hlen bytes)
+  let V = new Uint8Array(hlen);
+  V.fill(0x01);
+
+  // Step c: K = 0x00 0x00 0x00 ... 0x00 (hlen bytes)
+  let K = new Uint8Array(hlen);
+  K.fill(0x00);
+
+  // Step d: K = HMAC_K(V || 0x00 || int2octets(x) || bits2octets(h1))
+  let data = new Uint8Array(V.length + 1 + privateKeyBytes.length + h1.length);
+  data.set(V, 0);
+  data[V.length] = 0x00;
+  data.set(privateKeyBytes, V.length + 1);
+  data.set(h1, V.length + 1 + privateKeyBytes.length);
+  K = await hmacSHA256(K, data);
+
+  // Step e: V = HMAC_K(V)
+  V = await hmacSHA256(K, V);
+
+  // Step f: K = HMAC_K(V || 0x01 || int2octets(x) || bits2octets(h1))
+  data = new Uint8Array(V.length + 1 + privateKeyBytes.length + h1.length);
+  data.set(V, 0);
+  data[V.length] = 0x01;
+  data.set(privateKeyBytes, V.length + 1);
+  data.set(h1, V.length + 1 + privateKeyBytes.length);
+  K = await hmacSHA256(K, data);
+
+  // Step g: V = HMAC_K(V)
+  V = await hmacSHA256(K, V);
+
+  // Step h: Generate k
+  while (true) {
+    // 1. Set T to empty
+    let T = new Uint8Array(0);
+
+    // 2. While tlen < qlen, do: V = HMAC_K(V), T = T || V
+    while (T.length < qlen) {
+      V = await hmacSHA256(K, V);
+      const newT = new Uint8Array(T.length + V.length);
+      newT.set(T);
+      newT.set(V, T.length);
+      T = newT;
+    }
+
+    // 3. k = bits2int(T)
+    const kBytes = T.slice(0, qlen);
+    const k = BigInt('0x' + Array.from(kBytes).map(b => b.toString(16).padStart(2, '0')).join(''));
+
+    // 4. If k is in [1, q-1], return it
+    if (k >= 1n && k < SECP256K1_N) {
+      return k;
+    }
+
+    // Otherwise, update K and V and try again
+    data = new Uint8Array(V.length + 1);
+    data.set(V, 0);
+    data[V.length] = 0x00;
+    K = await hmacSHA256(K, data);
+    V = await hmacSHA256(K, V);
+  }
+}
+
+// ECDSA signing with secp256k1
+async function signSecp256k1(privateKeyHex, messageHash) {
+  const privateKeyD = BigInt('0x' + privateKeyHex);
+
+  // Ensure private key is in valid range
+  if (privateKeyD <= 0n || privateKeyD >= SECP256K1_N) {
+    throw new Error('Invalid private key');
+  }
+
+  // Convert private key and message hash to bytes
+  const privateKeyBytes = hexToBytes(privateKeyHex);
+  const messageHashBytes = new Uint8Array(messageHash);
+
+  // Generate deterministic k using RFC 6979
+  const k = await generateDeterministicK(privateKeyBytes, messageHashBytes);
+
+  // Calculate r = (k * G).x mod n
+  const [Rx, Ry] = scalarMultSecp256k1(k, [SECP256K1_GX, SECP256K1_GY]);
+  const r = Rx % SECP256K1_N;
+
+  if (r === 0n) {
+    throw new Error('Invalid r value (should never happen with RFC 6979)');
+  }
+
+  // Calculate e = H(m) as BigInt
+  const e = BigInt('0x' + Array.from(messageHashBytes).map(b => b.toString(16).padStart(2, '0')).join(''));
+
+  // Calculate s = k^-1 * (e + r * privateKey) mod n
+  const kInv = modInverse(k, SECP256K1_N);
+  let s = (kInv * (e + r * privateKeyD)) % SECP256K1_N;
+
+  // Ensure s is in lower half (BIP 62: use low-s values)
+  if (s > SECP256K1_N / 2n) {
+    s = SECP256K1_N - s;
+  }
+
+  if (s === 0n) {
+    throw new Error('Invalid s value (should never happen with RFC 6979)');
+  }
+
+  return { r, s };
+}
+
+// Encode ECDSA signature to ASN.1 DER format (to match Go backend)
+function encodeSignatureDER(r, s) {
+  // Convert r and s to byte arrays (big-endian, minimal encoding)
+  function bigIntToBytes(value) {
+    let hex = value.toString(16);
+    // Ensure even length
+    if (hex.length % 2 !== 0) {
+      hex = '0' + hex;
+    }
+    // Add leading 0x00 if high bit is set (to indicate positive number)
+    if (parseInt(hex.substring(0, 2), 16) >= 0x80) {
+      hex = '00' + hex;
+    }
+    return hexToBytes(hex);
+  }
+
+  const rBytes = bigIntToBytes(r);
+  const sBytes = bigIntToBytes(s);
+
+  // Build ASN.1 DER structure
+  // SEQUENCE { INTEGER r, INTEGER s }
+  const rEncoded = new Uint8Array(2 + rBytes.length);
+  rEncoded[0] = 0x02; // INTEGER tag
+  rEncoded[1] = rBytes.length;
+  rEncoded.set(rBytes, 2);
+
+  const sEncoded = new Uint8Array(2 + sBytes.length);
+  sEncoded[0] = 0x02; // INTEGER tag
+  sEncoded[1] = sBytes.length;
+  sEncoded.set(sBytes, 2);
+
+  const sequence = new Uint8Array(2 + rEncoded.length + sEncoded.length);
+  sequence[0] = 0x30; // SEQUENCE tag
+  sequence[1] = rEncoded.length + sEncoded.length;
+  sequence.set(rEncoded, 2);
+  sequence.set(sEncoded, 2 + rEncoded.length);
+
+  return sequence;
+}
+
+// Compute public key from private key on secp256k1
 function derivePublicKey(privateKeyHex) {
   const d = BigInt('0x' + privateKeyHex);
-  const [x, y] = scalarMultP256(d, [P256_GX, P256_GY]);
 
-  // Convert to base64url for JWK
+  // Ensure private key is in valid range
+  if (d <= 0n || d >= SECP256K1_N) {
+    throw new Error('Invalid private key');
+  }
+
+  const [x, y] = scalarMultSecp256k1(d, [SECP256K1_GX, SECP256K1_GY]);
+
+  // Convert to uncompressed format (0x04 || X || Y) - 65 bytes total
   const xHex = x.toString(16).padStart(64, '0');
   const yHex = y.toString(16).padStart(64, '0');
 
-  return {
-    x: hexToBase64url(xHex),
-    y: hexToBase64url(yHex)
-  };
-}
-
-// Import raw private key (64 hex chars) back to CryptoKey with derived public key
-async function importRawPrivateKey(rawPrivateKeyHex) {
-  const publicKeyCoords = derivePublicKey(rawPrivateKeyHex);
-
-  // Convert raw key to JWK format with public key coordinates
-  const jwk = {
-    kty: 'EC',
-    crv: 'P-256',
-    d: hexToBase64url(rawPrivateKeyHex),
-    x: publicKeyCoords.x,
-    y: publicKeyCoords.y,
-    ext: true
-  };
-
-  return await crypto.subtle.importKey(
-    'jwk',
-    jwk,
-    { name: 'ECDSA', namedCurve: 'P-256' },
-    true,
-    ['sign']
-  );
+  // Return as hex string in uncompressed format
+  return '0x04' + xHex + yHex;
 }
 
 // Convert ArrayBuffer to base64
@@ -1009,19 +1105,17 @@ async function handleMessage(request, isInternal = true) {
         }
 
         const keyPair = await generateKeyPair();
-        // Extract raw 32-byte private key (64 hex chars)
-        const rawPrivateKeyHex = await extractRawPrivateKey(keyPair.privateKey);
-        const publicKeyRaw = await crypto.subtle.exportKey('spki', keyPair.publicKey);
+        // keyPair now contains { privateKey: hex string, publicKey: hex string (uncompressed secp256k1) }
 
         await storeKeys({
-          privateKey: rawPrivateKeyHex,
-          publicKey: bufferToHex(publicKeyRaw)
+          privateKey: keyPair.privateKey,
+          publicKey: keyPair.publicKey
         }, password);
 
         // Always create session so webapp can access the public key
         await createSession(password);
 
-        return { success: true, publicKey: bufferToHex(publicKeyRaw) };
+        return { success: true, publicKey: keyPair.publicKey };
       }
 
       case 'exportKeys': {
@@ -1067,36 +1161,13 @@ async function handleMessage(request, isInternal = true) {
         }
 
         try {
-          // Import private key and derive public key
-          const privateKey = await importRawPrivateKey(rawPrivateKeyHex);
-
-          // Export the full JWK to get a complete keypair that we can use
-          const privateJwk = await crypto.subtle.exportKey('jwk', privateKey);
-
-          // Create public key from the coordinates
-          const publicJwk = {
-            kty: privateJwk.kty,
-            crv: privateJwk.crv,
-            x: privateJwk.x,
-            y: privateJwk.y,
-            ext: true
-          };
-
-          const publicKey = await crypto.subtle.importKey(
-            'jwk',
-            publicJwk,
-            { name: 'ECDSA', namedCurve: 'P-256' },
-            true,
-            ['verify']
-          );
-
-          // Export public key in SPKI format for storage
-          const publicKeyRaw = await crypto.subtle.exportKey('spki', publicKey);
+          // Derive secp256k1 public key from private key
+          const publicKeyHex = derivePublicKey(rawPrivateKeyHex);
 
           // Store both keys
           await storeKeys({
             privateKey: rawPrivateKeyHex,
-            publicKey: bufferToHex(publicKeyRaw)
+            publicKey: publicKeyHex
           }, password);
 
           // Always create session so webapp can access the public key
@@ -1217,26 +1288,19 @@ async function handleMessage(request, isInternal = true) {
         }
 
         try {
-          // Import the private key
-          const privateKey = await importRawPrivateKey(keys.privateKey);
-
           // Hash the message with SHA-256
           const encoder = new TextEncoder();
           const messageBytes = encoder.encode(request.message);
           const hashBuffer = await crypto.subtle.digest('SHA-256', messageBytes);
 
-          // Sign the hash using ECDSA with P-256
-          const signature = await crypto.subtle.sign(
-            {
-              name: 'ECDSA',
-              hash: { name: 'SHA-256' }
-            },
-            privateKey,
-            hashBuffer
-          );
+          // Sign using secp256k1 ECDSA
+          const { r, s } = await signSecp256k1(keys.privateKey, hashBuffer);
 
-          // Convert signature to hex
-          const signatureHex = '0x' + bufferToHex(signature);
+          // Encode signature in ASN.1 DER format (to match Go backend)
+          const signatureDER = encodeSignatureDER(r, s);
+
+          // Convert to hex
+          const signatureHex = '0x' + bufferToHex(signatureDER);
 
           return { success: true, signature: signatureHex };
         } catch (error) {

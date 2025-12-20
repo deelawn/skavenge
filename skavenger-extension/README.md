@@ -12,11 +12,13 @@ This extension has a stable ID generated from the public key in manifest.json. S
 
 ## Features
 
-- **Generate Keys**: Create ECDSA P-256 key pairs
-- **Export Keys**: Export keys in PEM format
-- **Import Keys**: Import existing PEM-formatted keys
+- **Generate Keys**: Create ECDSA secp256k1 key pairs
+- **Export Keys**: Export keys in hex format
+- **Import Keys**: Import existing hex-formatted keys
 - **Secure Storage**: Keys are encrypted with AES-256-GCM using a password-derived key (PBKDF2)
 - **Web App Integration**: Communicate with web applications via externally_connectable API
+- **Signing**: Sign messages using secp256k1 ECDSA with deterministic k-values (RFC 6979)
+- **ElGamal Decryption**: Decrypt ElGamal ciphertexts using secp256k1
 
 ## Installation
 
@@ -35,16 +37,14 @@ This extension has a stable ID generated from the public key in manifest.json. S
 
 ## Key Format
 
-Keys are exported/imported as JSON with hex-encoded keys:
+Keys are stored and exported as hex-encoded strings:
 
-```json
-{
-  "privateKey": "hex-encoded-pkcs8",
-  "publicKey": "hex-encoded-spki"
-}
-```
+- **Private Key**: 64 hex characters (32 bytes)
+- **Public Key**: 130 hex characters (65 bytes, uncompressed format: `0x04 || X || Y`)
 
-The keys use ECDSA with the P-256 curve (equivalent to Go's `ecdsa.GenerateKey` with `elliptic.P256()`).
+The keys use ECDSA with the secp256k1 curve (Bitcoin/Ethereum curve), compatible with Go's `ecdsa.GenerateKey` with `secp256k1.S256()`.
+
+Signatures are encoded in ASN.1 DER format to match the Go backend's signature verification.
 
 ## Web Application Integration
 
