@@ -190,8 +190,36 @@ function Transfers({ metamaskAddress, config, onToast }) {
       // Step 5: Compute the buyer ciphertext hash
       const buyerCiphertextHash = web3.utils.keccak256(proofResponse.buyerCiphertext);
 
+      // Debug logging
+      console.log('=== PROVIDE PROOF DEBUG ===');
+      console.log('Transfer ID:', transfer.transferId);
+      console.log('Proof (hex):', proofResponse.proof);
+      console.log('Proof length (bytes):', (proofResponse.proof.length - 2) / 2);
+      console.log('Buyer ciphertext hash:', buyerCiphertextHash);
+      console.log('Sending from:', metamaskAddress);
+      console.log('Token ID:', transfer.tokenId);
+      console.log('=== END DEBUG ===');
+
       // Step 6: Send the provideProof transaction via MetaMask
       onToast('Please confirm the transaction in MetaMask...', 'info');
+
+      // Try to estimate gas first to catch any revert reasons
+      try {
+        const gasEstimate = await contract.methods.provideProof(
+          transfer.transferId,
+          proofResponse.proof,
+          buyerCiphertextHash
+        ).estimateGas({ from: metamaskAddress });
+        console.log('Gas estimate:', gasEstimate);
+      } catch (gasError) {
+        console.error('Gas estimation failed:', gasError);
+        // Try to extract revert reason
+        if (gasError.message) {
+          throw new Error('Transaction would fail: ' + gasError.message);
+        }
+        throw gasError;
+      }
+
       const tx = await contract.methods.provideProof(
         transfer.transferId,
         proofResponse.proof,
