@@ -18,8 +18,9 @@ import (
 
 // Config holds the setup configuration
 type Config struct {
-	PrivateKey string `json:"privateKey"`
-	HardhatURL string `json:"hardhatUrl"`
+	PrivateKey         string `json:"privateKey"`
+	HardhatURL         string `json:"hardhatUrl"`
+	SkavengePrivateKey string `json:"skavengePrivateKey"`
 }
 
 // WebappConfig holds the webapp configuration
@@ -84,7 +85,7 @@ func main() {
 	fmt.Printf("Contract deployed at: %s\n", contractAddress.Hex())
 
 	// Load private key for encryption
-	privateKey, err := crypto.HexToECDSA(config.PrivateKey)
+	skavengePrivateKey, err := crypto.HexToECDSA(config.SkavengePrivateKey)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading private key: %v\n", err)
 		os.Exit(1)
@@ -106,7 +107,7 @@ func main() {
 	}
 
 	// Encrypt the clue content using ElGamal
-	encryptedCipher, err := ps.EncryptElGamal(clueContent, &privateKey.PublicKey, mintR)
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &skavengePrivateKey.PublicKey, mintR)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error encrypting clue content: %v\n", err)
 		os.Exit(1)
