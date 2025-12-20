@@ -1,11 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import Web3 from 'web3';
 import { SKAVENGE_ABI } from '../contractABI';
+import { getPublicKeyByEthereumAddress, storeTransferCiphertext } from '../utils';
+
+// Extension ID - hardcoded to match manifest.json
+const SKAVENGER_EXTENSION_ID = "hnbligdjmpihmhhgajlfjmckcnmnofbn";
+
+/**
+ * Send message to Skavenger extension
+ */
+async function sendToExtension(message) {
+  return new Promise((resolve, reject) => {
+    if (typeof window.chrome === 'undefined' || !window.chrome.runtime) {
+      reject(new Error('Chrome extension API not available'));
+      return;
+    }
+
+    window.chrome.runtime.sendMessage(SKAVENGER_EXTENSION_ID, message, (response) => {
+      if (window.chrome.runtime.lastError) {
+        reject(new Error(window.chrome.runtime.lastError.message));
+      } else if (response && response.success !== false) {
+        resolve(response);
+      } else {
+        reject(new Error(response?.error || 'Unknown error'));
+      }
+    });
+  });
+}
 
 function Transfers({ metamaskAddress, config, onToast }) {
   const [transfers, setTransfers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [processingTransfer, setProcessingTransfer] = useState(null); // transferId being processed
 
   useEffect(() => {
     if (metamaskAddress && config) {
@@ -94,6 +121,145 @@ function Transfers({ metamaskAddress, config, onToast }) {
       setError('Failed to load transfers. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  /**
+   * Handle providing proof for a transfer
+   * This is the seller's action after a buyer initiates a purchase
+   */
+  const handleProvideProof = async (transfer) => {
+    setProcessingTransfer(transfer.transferId);
+
+    try {
+      const web3 = new Web3(window.ethereum);
+      const contract = new web3.eth.Contract(SKAVENGE_ABI, config.contractAddress);
+
+      // Step 1: Get the buyer's Skavenge public key from the gateway
+      onToast('Getting buyer public key...', 'info');
+      const buyerPubKeyResult = await getPublicKeyByEthereumAddress(transfer.buyer);
+      if (!buyerPubKeyResult.success) {
+        throw new Error(buyerPubKeyResult.error || 'Failed to get buyer public key');
+      }
+      const buyerPublicKey = buyerPubKeyResult.publicKey;
+
+      // Step 2: Get the clue contents and r value from the contract
+      onToast('Retrieving clue data...', 'info');
+      const encryptedContents = await contract.methods.getClueContents(transfer.tokenId).call({
+        from: metamaskAddress
+      });
+      const rValue = await contract.methods.getRValue(transfer.tokenId).call({
+        from: metamaskAddress
+      });
+
+      // Remove '0x' prefix if present for the encrypted contents
+      let encryptedHex = encryptedContents;
+      if (encryptedHex.startsWith('0x')) {
+        encryptedHex = encryptedHex.slice(2);
+      }
+
+      // Convert rValue to hex string
+      let rValueHex = window.BigInt(rValue).toString(16);
+      if (rValueHex.length % 2 !== 0) rValueHex = '0' + rValueHex;
+
+      // Step 3: Decrypt the clue content using the extension
+      onToast('Decrypting clue content...', 'info');
+      const decryptResponse = await sendToExtension({
+        action: 'decryptElGamal',
+        encryptedHex: encryptedHex,
+        rValueHex: rValueHex
+      });
+
+      if (!decryptResponse.success) {
+        throw new Error(decryptResponse.error || 'Failed to decrypt clue content');
+      }
+      const plaintext = decryptResponse.plaintext;
+
+      // Step 4: Generate the transfer proof using the extension
+      onToast('Generating transfer proof...', 'info');
+      const proofResponse = await sendToExtension({
+        action: 'generateTransferProof',
+        plaintext: plaintext,
+        buyerPublicKey: buyerPublicKey
+      });
+
+      if (!proofResponse.success) {
+        throw new Error(proofResponse.error || 'Failed to generate transfer proof');
+      }
+
+      // Step 5: Compute the buyer ciphertext hash
+      const buyerCiphertextHash = web3.utils.keccak256(proofResponse.buyerCiphertext);
+
+      // Debug logging
+      console.log('=== PROVIDE PROOF DEBUG ===');
+      console.log('Transfer ID:', transfer.transferId);
+      console.log('Proof (hex):', proofResponse.proof);
+      console.log('Proof length (bytes):', (proofResponse.proof.length - 2) / 2);
+      console.log('Buyer ciphertext hash:', buyerCiphertextHash);
+      console.log('Sending from:', metamaskAddress);
+      console.log('Token ID:', transfer.tokenId);
+      console.log('=== END DEBUG ===');
+
+      // Step 6: Send the provideProof transaction via MetaMask
+      onToast('Please confirm the transaction in MetaMask...', 'info');
+
+      // Try to estimate gas first to catch any revert reasons
+      try {
+        const gasEstimate = await contract.methods.provideProof(
+          transfer.transferId,
+          proofResponse.proof,
+          buyerCiphertextHash
+        ).estimateGas({ from: metamaskAddress });
+        console.log('Gas estimate:', gasEstimate);
+      } catch (gasError) {
+        console.error('Gas estimation failed:', gasError);
+        // Try to extract revert reason
+        if (gasError.message) {
+          throw new Error('Transaction would fail: ' + gasError.message);
+        }
+        throw gasError;
+      }
+
+      const tx = await contract.methods.provideProof(
+        transfer.transferId,
+        proofResponse.proof,
+        buyerCiphertextHash
+      ).send({
+        from: metamaskAddress
+      });
+
+      console.log('ProvideProof transaction:', tx);
+      onToast('Proof provided successfully! Storing ciphertexts...', 'success');
+
+      // Step 7: Store the ciphertexts on the gateway
+      const storeResult = await storeTransferCiphertext(
+        transfer.transferId,
+        proofResponse.buyerCiphertext,
+        proofResponse.sellerCiphertext,
+        SKAVENGER_EXTENSION_ID
+      );
+
+      if (!storeResult.success) {
+        console.warn('Failed to store ciphertexts on gateway:', storeResult.error);
+        onToast('Proof provided but failed to store ciphertexts: ' + storeResult.error, 'warning');
+      } else {
+        onToast('Transfer proof submitted successfully!', 'success');
+      }
+
+      // Reload transfers to update the UI
+      await loadTransfers();
+
+    } catch (err) {
+      console.error('Error providing proof:', err);
+
+      // Handle user rejection
+      if (err.code === 4001 || err.message?.includes('User denied')) {
+        onToast('Transaction was cancelled', 'info');
+      } else {
+        onToast('Failed to provide proof: ' + err.message, 'error');
+      }
+    } finally {
+      setProcessingTransfer(null);
     }
   };
 
@@ -290,6 +456,41 @@ function Transfers({ metamaskAddress, config, onToast }) {
                   </div>
                 )}
               </div>
+
+              {/* Action Buttons */}
+              {transfer.userRole === 'seller' && transfer.status === 'initiated' && (
+                <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                  <button
+                    onClick={() => handleProvideProof(transfer)}
+                    disabled={processingTransfer === transfer.transferId}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      backgroundColor: processingTransfer === transfer.transferId ? '#adb5bd' : '#667eea',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: processingTransfer === transfer.transferId ? 'not-allowed' : 'pointer',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    {processingTransfer === transfer.transferId ? 'Processing...' : 'Provide Proof'}
+                  </button>
+                  <p style={{
+                    fontSize: '12px',
+                    color: '#718096',
+                    marginTop: '8px',
+                    textAlign: 'center'
+                  }}>
+                    Generate and submit the transfer proof for the buyer
+                  </p>
+                </div>
+              )}
             </div>
           ))}
         </div>

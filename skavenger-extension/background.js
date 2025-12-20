@@ -990,6 +990,293 @@ function bigIntToBytes(value) {
   return bytes;
 }
 
+// Marshal EC point to bytes (uncompressed format)
+// Format: 0x04 | X (32 bytes) | Y (32 bytes)
+function marshalECPoint(x, y) {
+  const xHex = x.toString(16).padStart(64, '0');
+  const yHex = y.toString(16).padStart(64, '0');
+  const pointHex = '04' + xHex + yHex;
+  return hexToBytes(pointHex);
+}
+
+// Generate a cryptographically secure random BigInt in range [1, max-1]
+function generateRandomBigInt(max) {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  let value = 0n;
+  for (let i = 0; i < bytes.length; i++) {
+    value = (value << 8n) | BigInt(bytes[i]);
+  }
+  // Ensure value is in range [1, max-1]
+  value = (value % (max - 1n)) + 1n;
+  return value;
+}
+
+// Encrypt ElGamal - mirrors Go's EncryptElGamal function
+// This encrypts a message for a recipient using their public key
+function encryptElGamal(message, recipientPubKeyHex, r) {
+  // Parse recipient public key (format: 0x04 or 04 || X || Y)
+  let pubKeyHex = recipientPubKeyHex;
+  if (pubKeyHex.startsWith('0x')) {
+    pubKeyHex = pubKeyHex.slice(2);
+  }
+  if (!pubKeyHex.startsWith('04')) {
+    throw new Error('Invalid public key format - expected uncompressed format');
+  }
+
+  const pubKeyBytes = hexToBytes(pubKeyHex);
+  const [recipientPubX, recipientPubY] = parseECPoint(pubKeyBytes);
+
+  // Ensure r is valid
+  if (r <= 0n || r >= SECP256K1_N) {
+    throw new Error('Invalid r value');
+  }
+
+  // C1 = g^r (ephemeral public key)
+  const [c1x, c1y] = scalarMultSecp256k1(r, [SECP256K1_GX, SECP256K1_GY]);
+  const c1Bytes = marshalECPoint(c1x, c1y);
+
+  // Shared secret: S = recipientPub^r
+  const [sx, sy] = scalarMultSecp256k1(r, [recipientPubX, recipientPubY]);
+  const sharedSecretBytes = marshalECPoint(sx, sy);
+
+  // Derive symmetric key from r AND the shared secret
+  // key = Keccak256(r || sx)
+  const rBytes = bigIntToBytes(r);
+  const sxBytes = bigIntToBytes(sx);
+  const keyInput = new Uint8Array(rBytes.length + sxBytes.length);
+  keyInput.set(rBytes, 0);
+  keyInput.set(sxBytes, rBytes.length);
+  const key = keccak256(keyInput);
+
+  // XOR message with key to get C2
+  const messageBytes = typeof message === 'string'
+    ? new TextEncoder().encode(message)
+    : new Uint8Array(message);
+  const c2 = new Uint8Array(messageBytes.length);
+  for (let i = 0; i < messageBytes.length; i++) {
+    c2[i] = messageBytes[i] ^ key[i % key.length];
+  }
+
+  return {
+    c1: c1Bytes,
+    c2: c2,
+    sharedSecret: sharedSecretBytes
+  };
+}
+
+// Marshal ElGamalCiphertext to bytes
+// Format: len(C1) | C1 | len(C2) | C2 | len(SharedSecret) | SharedSecret
+function marshalElGamalCiphertext(ciphertext) {
+  const result = [];
+
+  // C1 length (4 bytes, big endian)
+  result.push((ciphertext.c1.length >> 24) & 0xff);
+  result.push((ciphertext.c1.length >> 16) & 0xff);
+  result.push((ciphertext.c1.length >> 8) & 0xff);
+  result.push(ciphertext.c1.length & 0xff);
+  // C1 data
+  for (let i = 0; i < ciphertext.c1.length; i++) {
+    result.push(ciphertext.c1[i]);
+  }
+
+  // C2 length (4 bytes, big endian)
+  result.push((ciphertext.c2.length >> 24) & 0xff);
+  result.push((ciphertext.c2.length >> 16) & 0xff);
+  result.push((ciphertext.c2.length >> 8) & 0xff);
+  result.push(ciphertext.c2.length & 0xff);
+  // C2 data
+  for (let i = 0; i < ciphertext.c2.length; i++) {
+    result.push(ciphertext.c2[i]);
+  }
+
+  // SharedSecret length (4 bytes, big endian)
+  result.push((ciphertext.sharedSecret.length >> 24) & 0xff);
+  result.push((ciphertext.sharedSecret.length >> 16) & 0xff);
+  result.push((ciphertext.sharedSecret.length >> 8) & 0xff);
+  result.push(ciphertext.sharedSecret.length & 0xff);
+  // SharedSecret data
+  for (let i = 0; i < ciphertext.sharedSecret.length; i++) {
+    result.push(ciphertext.sharedSecret[i]);
+  }
+
+  return new Uint8Array(result);
+}
+
+// Generate DLEQ proof
+// Proves that log_g(C1) == log_sellerPub(S_seller) == log_buyerPub(S_buyer)
+// i.e., the same r was used for all operations
+function generateDLEQProof(r, sellerPubKeyHex, buyerPubKeyHex, sellerCipher, buyerCipher) {
+  // Parse seller public key
+  let sellerPubHex = sellerPubKeyHex;
+  if (sellerPubHex.startsWith('0x')) {
+    sellerPubHex = sellerPubHex.slice(2);
+  }
+  const sellerPubBytes = hexToBytes(sellerPubHex);
+  const [sellerPubX, sellerPubY] = parseECPoint(sellerPubBytes);
+
+  // Parse buyer public key
+  let buyerPubHex = buyerPubKeyHex;
+  if (buyerPubHex.startsWith('0x')) {
+    buyerPubHex = buyerPubHex.slice(2);
+  }
+  const buyerPubBytes = hexToBytes(buyerPubHex);
+  const [buyerPubX, buyerPubY] = parseECPoint(buyerPubBytes);
+
+  // Generate random w
+  const w = generateRandomBigInt(SECP256K1_N);
+
+  // A1 = g^w
+  const [a1x, a1y] = scalarMultSecp256k1(w, [SECP256K1_GX, SECP256K1_GY]);
+  const a1Bytes = marshalECPoint(a1x, a1y);
+
+  // A2 = sellerPub^w
+  const [a2x, a2y] = scalarMultSecp256k1(w, [sellerPubX, sellerPubY]);
+  const a2Bytes = marshalECPoint(a2x, a2y);
+
+  // A3 = buyerPub^w
+  const [a3x, a3y] = scalarMultSecp256k1(w, [buyerPubX, buyerPubY]);
+  const a3Bytes = marshalECPoint(a3x, a3y);
+
+  // Compute r hash commitment: rHash = Keccak256(r)
+  const rBytes = bigIntToBytes(r);
+  const rHash = keccak256(rBytes);
+
+  // Generate challenge: c = Keccak256(sellerPub || buyerPub || A1 || A2 || A3 || rHash)
+  const challengeInput = new Uint8Array(
+    sellerPubBytes.length + buyerPubBytes.length +
+    a1Bytes.length + a2Bytes.length + a3Bytes.length + 32
+  );
+  let offset = 0;
+  challengeInput.set(sellerPubBytes, offset); offset += sellerPubBytes.length;
+  challengeInput.set(buyerPubBytes, offset); offset += buyerPubBytes.length;
+  challengeInput.set(a1Bytes, offset); offset += a1Bytes.length;
+  challengeInput.set(a2Bytes, offset); offset += a2Bytes.length;
+  challengeInput.set(a3Bytes, offset); offset += a3Bytes.length;
+  challengeInput.set(rHash, offset);
+
+  const challengeBytes = keccak256(challengeInput);
+  let c = 0n;
+  for (let i = 0; i < challengeBytes.length; i++) {
+    c = (c << 8n) | BigInt(challengeBytes[i]);
+  }
+  c = c % SECP256K1_N;
+
+  // Response: z = w + c*r mod n
+  let z = (w + c * r) % SECP256K1_N;
+
+  return {
+    a1: a1Bytes,
+    a2: a2Bytes,
+    a3: a3Bytes,
+    z: z,
+    c: c,
+    rHash: rHash
+  };
+}
+
+// Marshal DLEQ proof to bytes
+// Format: len(A1) | A1 | len(A2) | A2 | len(A3) | A3 | len(Z) | Z | len(C) | C | RHash
+function marshalDLEQProof(proof) {
+  const result = [];
+
+  // Helper to add length-prefixed data
+  const addLengthPrefixed = (data) => {
+    result.push((data.length >> 24) & 0xff);
+    result.push((data.length >> 16) & 0xff);
+    result.push((data.length >> 8) & 0xff);
+    result.push(data.length & 0xff);
+    for (let i = 0; i < data.length; i++) {
+      result.push(data[i]);
+    }
+  };
+
+  // A1
+  addLengthPrefixed(proof.a1);
+
+  // A2
+  addLengthPrefixed(proof.a2);
+
+  // A3
+  addLengthPrefixed(proof.a3);
+
+  // Z (BigInt to bytes)
+  let zHex = proof.z.toString(16);
+  if (zHex.length % 2 !== 0) zHex = '0' + zHex;
+  const zBytes = hexToBytes(zHex);
+  addLengthPrefixed(zBytes);
+
+  // C (BigInt to bytes)
+  let cHex = proof.c.toString(16);
+  if (cHex.length % 2 !== 0) cHex = '0' + cHex;
+  const cBytes = hexToBytes(cHex);
+  addLengthPrefixed(cBytes);
+
+  // RHash (fixed 32 bytes)
+  for (let i = 0; i < proof.rHash.length; i++) {
+    result.push(proof.rHash[i]);
+  }
+
+  return new Uint8Array(result);
+}
+
+// Generate verifiable ElGamal transfer
+// Creates two ciphertexts (one for seller, one for buyer) and a DLEQ proof
+// that they encrypt the same plaintext
+async function generateVerifiableElGamalTransfer(plaintext, sellerPrivKeyHex, buyerPubKeyHex) {
+  // Derive seller's public key from private key
+  const sellerPubKeyHex = derivePublicKey(sellerPrivKeyHex);
+
+  // Generate random salt for commitment
+  const salt = new Uint8Array(32);
+  crypto.getRandomValues(salt);
+
+  // Create commitment = Keccak256(plaintext || salt)
+  const plaintextBytes = typeof plaintext === 'string'
+    ? new TextEncoder().encode(plaintext)
+    : new Uint8Array(plaintext);
+  const commitmentInput = new Uint8Array(plaintextBytes.length + salt.length);
+  commitmentInput.set(plaintextBytes, 0);
+  commitmentInput.set(salt, plaintextBytes.length);
+  const commitment = keccak256(commitmentInput);
+
+  // Generate random r (used for BOTH encryptions!)
+  const r = generateRandomBigInt(SECP256K1_N);
+
+  // Encrypt for seller
+  const sellerCipher = encryptElGamal(plaintextBytes, sellerPubKeyHex, r);
+
+  // Encrypt for buyer (SAME r value!)
+  const buyerCipher = encryptElGamal(plaintextBytes, buyerPubKeyHex, r);
+
+  // Generate DLEQ proof that both ciphers use same r
+  const dleqProof = generateDLEQProof(r, sellerPubKeyHex, buyerPubKeyHex, sellerCipher, buyerCipher);
+
+  // Parse public keys for return
+  let sellerPubHex = sellerPubKeyHex;
+  if (sellerPubHex.startsWith('0x')) {
+    sellerPubHex = sellerPubHex.slice(2);
+  }
+  const sellerPubBytes = hexToBytes(sellerPubHex);
+
+  let buyerPubHex = buyerPubKeyHex;
+  if (buyerPubHex.startsWith('0x')) {
+    buyerPubHex = buyerPubHex.slice(2);
+  }
+  const buyerPubBytes = hexToBytes(buyerPubHex);
+
+  return {
+    sellerCipher: sellerCipher,
+    buyerCipher: buyerCipher,
+    dleqProof: dleqProof,
+    commitment: commitment,
+    salt: salt,
+    sellerPubKey: sellerPubBytes,
+    buyerPubKey: buyerPubBytes,
+    sharedR: r  // Seller keeps this secret until after payment!
+  };
+}
+
 // Decrypt ElGamal ciphertext
 // This mirrors the DecryptElGamal function in elgamal.go
 async function decryptElGamal(encryptedHex, rValueHex, privateKeyHex) {
@@ -1305,6 +1592,67 @@ async function handleMessage(request, isInternal = true) {
           return { success: true, signature: signatureHex };
         } catch (error) {
           return { success: false, error: 'Failed to sign message: ' + error.message };
+        }
+      }
+
+      case 'generateTransferProof': {
+        // Generates a verifiable ElGamal transfer proof for selling a clue
+        // Requires: password, plaintext (the clue content), buyerPublicKey
+        if (!password) {
+          return { success: false, error: 'Password required or session expired' };
+        }
+
+        if (!request.plaintext) {
+          return { success: false, error: 'Missing required parameter: plaintext' };
+        }
+
+        if (!request.buyerPublicKey) {
+          return { success: false, error: 'Missing required parameter: buyerPublicKey' };
+        }
+
+        const keys = await retrieveKeys(password);
+        if (!keys) {
+          return { success: false, error: 'Invalid password or no keys found' };
+        }
+
+        try {
+          console.log('=== GENERATE TRANSFER PROOF ===');
+          console.log('Buyer public key:', request.buyerPublicKey);
+
+          // Generate the verifiable transfer
+          const transfer = await generateVerifiableElGamalTransfer(
+            request.plaintext,
+            keys.privateKey,
+            request.buyerPublicKey
+          );
+
+          // Marshal the ciphertexts and proof
+          const sellerCiphertextBytes = marshalElGamalCiphertext(transfer.sellerCipher);
+          const buyerCiphertextBytes = marshalElGamalCiphertext(transfer.buyerCipher);
+          const proofBytes = marshalDLEQProof(transfer.dleqProof);
+
+          // Convert sharedR to hex string for storage (will be revealed later)
+          let sharedRHex = transfer.sharedR.toString(16);
+          if (sharedRHex.length % 2 !== 0) sharedRHex = '0' + sharedRHex;
+
+          console.log('Seller ciphertext length:', sellerCiphertextBytes.length);
+          console.log('Buyer ciphertext length:', buyerCiphertextBytes.length);
+          console.log('Proof length:', proofBytes.length);
+          console.log('=== END GENERATE TRANSFER PROOF ===');
+
+          return {
+            success: true,
+            sellerCiphertext: '0x' + bufferToHex(sellerCiphertextBytes),
+            buyerCiphertext: '0x' + bufferToHex(buyerCiphertextBytes),
+            proof: '0x' + bufferToHex(proofBytes),
+            sellerPublicKey: '0x' + bufferToHex(transfer.sellerPubKey),
+            buyerPublicKey: '0x' + bufferToHex(transfer.buyerPubKey),
+            sharedR: '0x' + sharedRHex,
+            commitment: '0x' + bufferToHex(transfer.commitment)
+          };
+        } catch (error) {
+          console.error('Failed to generate transfer proof:', error);
+          return { success: false, error: 'Failed to generate transfer proof: ' + error.message };
         }
       }
 

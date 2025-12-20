@@ -79,3 +79,113 @@ export async function checkLinkageOnGateway(ethereumAddress) {
     };
   }
 }
+
+/**
+ * Get Skavenge public key for an Ethereum address from the gateway
+ * @param {string} ethereumAddress - The Ethereum address to look up
+ * @returns {Promise<{success: boolean, publicKey?: string, error?: string}>}
+ */
+export async function getPublicKeyByEthereumAddress(ethereumAddress) {
+  try {
+    const config = await loadConfig();
+    const gatewayUrl = getBrowserGatewayUrl(config.gatewayUrl);
+
+    const response = await fetch(`${gatewayUrl}/link?ethereumAddress=${encodeURIComponent(ethereumAddress)}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (response.status === 404) {
+      return {
+        success: false,
+        error: 'Buyer has not linked their Skavenge account',
+      };
+    }
+
+    if (!response.ok) {
+      const data = await response.json();
+      return {
+        success: false,
+        error: data.error || 'Failed to get public key from gateway',
+      };
+    }
+
+    const data = await response.json();
+    return {
+      success: true,
+      publicKey: data.skavenge_public_key,
+    };
+  } catch (error) {
+    console.error('Error getting public key from gateway:', error);
+    return {
+      success: false,
+      error: 'Failed to connect to the gateway server',
+    };
+  }
+}
+
+/**
+ * Store transfer ciphertexts on the gateway after proof submission
+ * @param {string} transferId - The transfer ID (hex string with 0x prefix)
+ * @param {string} buyerCiphertext - The buyer's ciphertext (hex string)
+ * @param {string} sellerCiphertext - The seller's ciphertext (hex string)
+ * @param {string} extensionId - The extension ID for signing
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+export async function storeTransferCiphertext(transferId, buyerCiphertext, sellerCiphertext, extensionId) {
+  try {
+    const config = await loadConfig();
+    const gatewayUrl = getBrowserGatewayUrl(config.gatewayUrl);
+
+    // Create message to sign
+    const message = `Store transfer ciphertext for ${transferId}`;
+
+    // Sign the message with the extension
+    const signResponse = await new Promise((resolve) => {
+      window.chrome.runtime.sendMessage(extensionId, {
+        action: 'signMessage',
+        message: message
+      }, resolve);
+    });
+
+    if (!signResponse || !signResponse.success) {
+      return {
+        success: false,
+        error: signResponse?.error || 'Failed to sign message with extension',
+      };
+    }
+
+    // Store the ciphertexts on the gateway
+    const response = await fetch(`${gatewayUrl}/transfers`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        transfer_id: transferId,
+        buyer_ciphertext: buyerCiphertext,
+        seller_ciphertext: sellerCiphertext,
+        message: message,
+        signature: signResponse.signature,
+      }),
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      return {
+        success: false,
+        error: data.error || 'Failed to store ciphertexts on gateway',
+      };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error storing ciphertexts on gateway:', error);
+    return {
+      success: false,
+      error: 'Failed to connect to the gateway server',
+    };
+  }
+}
