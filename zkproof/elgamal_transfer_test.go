@@ -46,8 +46,7 @@ func TestElGamalTransfer_HonestCase(t *testing.T) {
 		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
-		transfer.DLEQProof,
-		transfer.PlaintextProof,
+		transfer.Proof,
 		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
@@ -116,8 +115,7 @@ func TestElGamalTransfer_BuyerCannotDecryptWithoutR(t *testing.T) {
 		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
-		transfer.DLEQProof,
-		transfer.PlaintextProof,
+		transfer.Proof,
 		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
@@ -188,8 +186,7 @@ func TestElGamalTransfer_ProofRejectsDifferentPlaintexts(t *testing.T) {
 		originalCipher,
 		transfer.SellerCipher,     // Real cipher
 		fakeTransfer.BuyerCipher,  // FAKE cipher (different plaintext)
-		transfer.DLEQProof,        // Original proof
-		transfer.PlaintextProof,
+		transfer.Proof,            // Original proof
 		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
@@ -228,8 +225,7 @@ func TestElGamalTransfer_InvalidProofRejected(t *testing.T) {
 		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
-		transfer.DLEQProof,
-		transfer.PlaintextProof,
+		transfer.Proof,
 		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
@@ -237,13 +233,18 @@ func TestElGamalTransfer_InvalidProofRejected(t *testing.T) {
 	require.True(t, valid, "Valid proof should verify")
 
 	// ATTACK: Tamper with proof
-	tamperedProof := &DLEQProof{
-		A1:    transfer.DLEQProof.A1,
-		A2:    transfer.DLEQProof.A2,
-		A3:    transfer.DLEQProof.A3,
+	tamperedDLEQ := &DLEQProof{
+		A1:    transfer.Proof.DLEQ.A1,
+		A2:    transfer.Proof.DLEQ.A2,
+		A3:    transfer.Proof.DLEQ.A3,
 		Z:     new(big.Int).SetInt64(99999), // TAMPERED!
-		C:     transfer.DLEQProof.C,
-		RHash: transfer.DLEQProof.RHash,
+		C:     transfer.Proof.DLEQ.C,
+		RHash: transfer.Proof.DLEQ.RHash,
+	}
+
+	tamperedProof := &TransferProof{
+		DLEQ:      tamperedDLEQ,
+		Plaintext: transfer.Proof.Plaintext,
 	}
 
 	valid = ps.VerifyElGamalTransfer(
@@ -251,7 +252,6 @@ func TestElGamalTransfer_InvalidProofRejected(t *testing.T) {
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
 		tamperedProof,
-		transfer.PlaintextProof,
 		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
@@ -356,8 +356,7 @@ func TestElGamalTransfer_CompleteFlow(t *testing.T) {
 		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
-		transfer.DLEQProof,
-		transfer.PlaintextProof,
+		transfer.Proof,
 		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
@@ -448,8 +447,7 @@ func TestElGamalTransfer_ContentAlterationDetected(t *testing.T) {
 		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
-		transfer.DLEQProof,
-		transfer.PlaintextProof,
+		transfer.Proof,
 		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
@@ -523,8 +521,7 @@ func BenchmarkDLEQProofVerification(b *testing.B) {
 			originalCipher,
 			transfer.SellerCipher,
 			transfer.BuyerCipher,
-			transfer.DLEQProof,
-			transfer.PlaintextProof,
+			transfer.Proof,
 			mintR,
 			transfer.SellerPubKey,
 			transfer.BuyerPubKey,

@@ -51,8 +51,7 @@ func TestDLEQProofStandalone(t *testing.T) {
 		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
-		transfer.DLEQProof,
-		transfer.PlaintextProof,
+		transfer.Proof,
 		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
@@ -122,8 +121,7 @@ func TestDLEQProofRejectsTampering(t *testing.T) {
 		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
-		transfer.DLEQProof,
-		transfer.PlaintextProof,
+		transfer.Proof,
 		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
@@ -133,13 +131,18 @@ func TestDLEQProofRejectsTampering(t *testing.T) {
 	}
 
 	// Tamper with A1
-	tamperedProof := &DLEQProof{
+	tamperedDLEQ := &DLEQProof{
 		A1:    []byte{1, 2, 3, 4}, // Invalid point
-		A2:    transfer.DLEQProof.A2,
-		A3:    transfer.DLEQProof.A3,
-		Z:     transfer.DLEQProof.Z,
-		C:     transfer.DLEQProof.C,
-		RHash: transfer.DLEQProof.RHash,
+		A2:    transfer.Proof.DLEQ.A2,
+		A3:    transfer.Proof.DLEQ.A3,
+		Z:     transfer.Proof.DLEQ.Z,
+		C:     transfer.Proof.DLEQ.C,
+		RHash: transfer.Proof.DLEQ.RHash,
+	}
+
+	tamperedProof := &TransferProof{
+		DLEQ:      tamperedDLEQ,
+		Plaintext: transfer.Proof.Plaintext,
 	}
 
 	valid = ps.VerifyElGamalTransfer(
@@ -147,7 +150,6 @@ func TestDLEQProofRejectsTampering(t *testing.T) {
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
 		tamperedProof,
-		transfer.PlaintextProof,
 		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
@@ -325,8 +327,7 @@ func TestPlaintextEqualityProofDetectsAlteredContent(t *testing.T) {
 		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
-		transfer.DLEQProof,
-		transfer.PlaintextProof,
+		transfer.Proof,
 		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
@@ -370,8 +371,7 @@ func TestPlaintextEqualityProofAcceptsCorrectContent(t *testing.T) {
 		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
-		transfer.DLEQProof,
-		transfer.PlaintextProof,
+		transfer.Proof,
 		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
@@ -418,19 +418,22 @@ func TestPlaintextEqualityProofMarshalUnmarshal(t *testing.T) {
 		&buyerKey.PublicKey,
 	)
 
-	// Marshal the plaintext proof
-	proofBytes := transfer.PlaintextProof.Marshal()
+	// Marshal the transfer proof
+	proofBytes := transfer.Proof.Marshal()
 
 	// Unmarshal into new struct
-	unmarshaled := &CrossRPlaintextEqualityProof{}
+	unmarshaled := &TransferProof{}
 	err := unmarshaled.Unmarshal(proofBytes)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal: %v", err)
 	}
 
 	// Verify the unmarshaled proof matches original
-	if !bytes.Equal(transfer.PlaintextProof.KeyBuyer[:], unmarshaled.KeyBuyer[:]) {
-		t.Fatal("Unmarshaled KeyBuyer doesn't match original")
+	if !bytes.Equal(transfer.Proof.Plaintext.KeyBuyer[:], unmarshaled.Plaintext.KeyBuyer[:]) {
+		t.Fatal("Unmarshaled Plaintext KeyBuyer doesn't match original")
+	}
+	if !bytes.Equal(transfer.Proof.DLEQ.RHash[:], unmarshaled.DLEQ.RHash[:]) {
+		t.Fatal("Unmarshaled DLEQ RHash doesn't match original")
 	}
 
 	// Verify unmarshaled proof still works for verification
@@ -438,7 +441,6 @@ func TestPlaintextEqualityProofMarshalUnmarshal(t *testing.T) {
 		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
-		transfer.DLEQProof,
 		unmarshaled, // Use unmarshaled proof
 		mintR,
 		transfer.SellerPubKey,
