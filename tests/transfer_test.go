@@ -550,38 +550,21 @@ func TestInvalidProofVerification(t *testing.T) {
 
 	// Marshal entire transfer proof and CORRUPT it
 	validProof := transfer.Proof.Marshal()
-	invalidProof := append([]byte{0xFF}, validProof[1:]...) // Corrupt first byte
+	invalidProof := append([]byte{0xFF}, validProof[1:]...) // Corrupt first byte (length field)
 
-	// Provide the invalid proof to the contract
+	// Try to provide the invalid proof to the contract
+	// The transaction should revert because the contract validates the proof structure
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	proofTx, err := contract.ProvideProof(minterAuth, transferId, invalidProof, buyerCiphertextHash)
-	require.NoError(t, err)
-	_, err = util.WaitForTransaction(client, proofTx)
-	require.NoError(t, err)
+	_, err = contract.ProvideProof(minterAuth, transferId, invalidProof, buyerCiphertextHash)
+	require.Error(t, err, "Contract should reject invalid proof structure")
+	require.Contains(t, err.Error(), "Invalid proof structure", "Should fail with proof structure error")
 
-	// Buyer verifies the proof off-chain
-	transferData, err := contract.Transfers(&bind.CallOpts{}, transferId)
-	require.NoError(t, err)
+	t.Log("✅ Contract correctly rejected proof with corrupted structure")
 
-	// Try to unmarshal the entire transfer proof - should fail or produce invalid proof
-	proof := &zkproof.TransferProof{}
-	err = proof.Unmarshal(transferData.Proof)
-	// Unmarshaling might fail or succeed depending on corruption
-	// If it succeeds, verification should fail
-	if err == nil {
-		valid := ps.VerifyElGamalTransfer(
-			encryptedCipher, // Original on-chain cipher
-			transfer.SellerCipher,
-			transfer.BuyerCipher,
-			proof,
-			mintR, // Public r from mint
-			transfer.SellerPubKey,
-			transfer.BuyerPubKey,
-		)
-		require.False(t, valid, "Invalid proof should not verify")
-	}
+	// The transfer should still be in ProofPending state since the invalid proof was rejected
+	// We can verify the buyer can cancel since no valid proof was provided
 
 	// Cancel the transfer
 	buyerAuth, err = util.NewTransactOpts(client, buyer)

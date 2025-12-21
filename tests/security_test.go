@@ -356,9 +356,9 @@ func TestSecurity_AttackPrevented_FakeRHashInProof(t *testing.T) {
 	)
 	require.True(t, valid, "Valid proof should verify")
 
-	// ATTACK: Seller tries to tamper with the rHash in the proof
-	// Marshal the entire transfer proof
-	proofBytes := transfer.Proof.Marshal()
+	// ATTACK: Seller tries to tamper with the rHash in the DLEQ proof
+	// Marshal just the DLEQ proof to tamper with it
+	dleqBytes := transfer.Proof.DLEQ.Marshal()
 
 	// Generate a fake rHash (different from the real one)
 	fakeRHash := [32]byte{}
@@ -366,18 +366,18 @@ func TestSecurity_AttackPrevented_FakeRHashInProof(t *testing.T) {
 		fakeRHash[i] = 0xFF // All ones (obviously different from real hash)
 	}
 
-	// Replace the last 32 bytes (rHash) with fake value
-	copy(proofBytes[len(proofBytes)-32:], fakeRHash[:])
+	// Replace the last 32 bytes (rHash) of the DLEQ proof with fake value
+	copy(dleqBytes[len(dleqBytes)-32:], fakeRHash[:])
 
-	// Unmarshal the tampered proof
+	// Unmarshal the tampered DLEQ proof
 	tamperedDLEQ := &zkproof.DLEQProof{}
-	err = tamperedDLEQ.Unmarshal(proofBytes)
-	require.NoError(t, err, "Tampered proof should unmarshal")
+	err = tamperedDLEQ.Unmarshal(dleqBytes)
+	require.NoError(t, err, "Tampered DLEQ proof should unmarshal")
 
 	// Verify that the rHash was actually replaced
 	require.NotEqual(t, transfer.Proof.DLEQ.RHash, tamperedDLEQ.RHash, "RHash should be different")
 
-	// Create tampered transfer proof
+	// Create tampered transfer proof with the tampered DLEQ but original Plaintext proof
 	tamperedProof := &zkproof.TransferProof{
 		DLEQ:      tamperedDLEQ,
 		Plaintext: transfer.Proof.Plaintext,
@@ -899,7 +899,7 @@ func TestSecurity_ConcurrentPurchasePrevention(t *testing.T) {
 	require.NoError(t, err)
 
 	minterAuth, err = util.NewTransactOpts(client, testMinter)
-	proofBytes := transfer.Proof.DLEQ.Marshal()
+	proofBytes := transfer.Proof.Marshal()
 	tx, err = contract.ProvideProof(minterAuth, transferId2, proofBytes, buyerCiphertextHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
