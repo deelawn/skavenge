@@ -12,9 +12,9 @@ import (
 
 // ElGamalCiphertext represents an ElGamal encrypted message
 type ElGamalCiphertext struct {
-	C1            []byte // g^r (ephemeral public key point)
-	C2            []byte // message XOR Hash(recipientPub^r)
-	SharedSecret  []byte // recipientPub^r (needed for DLEQ proof)
+	C1           []byte // g^r (ephemeral public key point)
+	C2           []byte // message XOR Hash(recipientPub^r)
+	SharedSecret []byte // recipientPub^r (needed for DLEQ proof)
 }
 
 // DLEQProof proves that two ciphertexts encrypt the same plaintext
@@ -53,17 +53,22 @@ type CrossRPlaintextEqualityProof struct {
 	KeyBuyer [32]byte
 }
 
+// TransferProof contains both DLEQ and plaintext equality proofs
+type TransferProof struct {
+	DLEQ      *DLEQProof
+	Plaintext *CrossRPlaintextEqualityProof
+}
+
 // VerifiableElGamalTransfer contains everything needed for a verifiable transfer
 type VerifiableElGamalTransfer struct {
-	SellerCipher     *ElGamalCiphertext
-	BuyerCipher      *ElGamalCiphertext
-	DLEQProof        *DLEQProof
-	PlaintextProof   *CrossRPlaintextEqualityProof // Proves content matches original
-	Commitment       [32]byte                      // Hash(plaintext || salt)
-	Salt             []byte
-	SellerPubKey     []byte
-	BuyerPubKey      []byte
-	SharedR          *big.Int // Kept secret until after payment!
+	SellerCipher *ElGamalCiphertext
+	BuyerCipher  *ElGamalCiphertext
+	Proof        *TransferProof // Consolidated proof containing DLEQ and Plaintext proofs
+	Commitment   [32]byte       // Hash(plaintext || salt)
+	Salt         []byte
+	SellerPubKey []byte
+	BuyerPubKey  []byte
+	SharedR      *big.Int // Kept secret until after payment!
 }
 
 // EncryptElGamal encrypts a message using ElGamal encryption
@@ -100,8 +105,8 @@ func (ps *ProofSystem) EncryptElGamal(
 	sharedSecret := sx.Bytes()
 
 	keyHash := sha3.NewLegacyKeccak256()
-	keyHash.Write(r.Bytes())      // Prevents early decryption (needs r)
-	keyHash.Write(sharedSecret)   // Prevents public decryption (needs private key)
+	keyHash.Write(r.Bytes())    // Prevents early decryption (needs r)
+	keyHash.Write(sharedSecret) // Prevents public decryption (needs private key)
 	key := keyHash.Sum(nil)
 
 	// For simplicity, we'll encode message as a curve point
@@ -147,8 +152,8 @@ func (ps *ProofSystem) DecryptElGamal(
 
 	// Derive decryption key (same as encryption)
 	keyHash := sha3.NewLegacyKeccak256()
-	keyHash.Write(r.Bytes())      // Uses revealed r value
-	keyHash.Write(sharedSecret)   // Uses computed shared secret (needs private key)
+	keyHash.Write(r.Bytes())    // Uses revealed r value
+	keyHash.Write(sharedSecret) // Uses computed shared secret (needs private key)
 	key := keyHash.Sum(nil)
 
 	// XOR to decrypt
@@ -165,7 +170,9 @@ func (ps *ProofSystem) DecryptElGamal(
 //
 // The proof commits to KeyBuyer = Hash(newR || S_buyer.X).
 // During verification, the buyer computes the expected key from public values:
-//   expectedKeyBuyer = keyOrig XOR (C2_orig XOR C2_buyer)
+//
+//	expectedKeyBuyer = keyOrig XOR (C2_orig XOR C2_buyer)
+//
 // If plaintexts match, expectedKeyBuyer == KeyBuyer.
 func (ps *ProofSystem) GeneratePlaintextEqualityProof(
 	newR *big.Int,
@@ -255,16 +262,21 @@ func (ps *ProofSystem) GenerateVerifiableElGamalTransfer(
 	sellerPubBytes := elliptic.Marshal(ps.Curve, sellerPrivKey.PublicKey.X, sellerPrivKey.PublicKey.Y)
 	buyerPubBytes := elliptic.Marshal(ps.Curve, buyerPubKey.X, buyerPubKey.Y)
 
+	// Create consolidated proof
+	proof := &TransferProof{
+		DLEQ:      dleqProof,
+		Plaintext: plaintextProof,
+	}
+
 	return &VerifiableElGamalTransfer{
-		SellerCipher:   sellerCipher,
-		BuyerCipher:    buyerCipher,
-		DLEQProof:      dleqProof,
-		PlaintextProof: plaintextProof,
-		Commitment:     commitment,
-		Salt:           salt,
-		SellerPubKey:   sellerPubBytes,
-		BuyerPubKey:    buyerPubBytes,
-		SharedR:        newR, // Seller keeps this secret until after payment!
+		SellerCipher: sellerCipher,
+		BuyerCipher:  buyerCipher,
+		Proof:        proof,
+		Commitment:   commitment,
+		Salt:         salt,
+		SellerPubKey: sellerPubBytes,
+		BuyerPubKey:  buyerPubBytes,
+		SharedR:      newR, // Seller keeps this secret until after payment!
 	}, nil
 }
 
@@ -342,16 +354,14 @@ func (ps *ProofSystem) GenerateDLEQProof(
 // - originalCipher: The on-chain cipher from minting
 // - sellerCipher: Fresh cipher for seller (with newR)
 // - buyerCipher: Fresh cipher for buyer (with newR)
-// - dleqProof: Proves sellerCipher and buyerCipher use same newR
-// - plaintextProof: Proves buyerCipher encrypts same content as originalCipher
+// - proof: Consolidated proof containing DLEQ and plaintext equality proofs
 // - mintR: The r value from minting (publicly visible)
 // - sellerPubKey, buyerPubKey: Public keys of seller and buyer
 func (ps *ProofSystem) VerifyElGamalTransfer(
 	originalCipher *ElGamalCiphertext,
 	sellerCipher *ElGamalCiphertext,
 	buyerCipher *ElGamalCiphertext,
-	dleqProof *DLEQProof,
-	plaintextProof *CrossRPlaintextEqualityProof,
+	proof *TransferProof,
 	mintR *big.Int,
 	sellerPubKey []byte,
 	buyerPubKey []byte,
@@ -360,6 +370,9 @@ func (ps *ProofSystem) VerifyElGamalTransfer(
 	// ==========================================
 	// PART 1: Verify DLEQ Proof (same newR for both new ciphers)
 	// ==========================================
+
+	dleqProof := proof.DLEQ
+	plaintextProof := proof.Plaintext
 
 	curveN := ps.Curve.Params().N
 
@@ -784,5 +797,61 @@ func (p *CrossRPlaintextEqualityProof) Unmarshal(data []byte) error {
 		return fmt.Errorf("data too short for CrossRPlaintextEqualityProof")
 	}
 	copy(p.KeyBuyer[:], data[:32])
+	return nil
+}
+
+// Marshal serializes a TransferProof to bytes
+func (p *TransferProof) Marshal() []byte {
+	// Format: len(DLEQ) | DLEQ | Plaintext (32 bytes)
+	result := make([]byte, 0)
+
+	// Marshal DLEQ proof
+	dleqBytes := p.DLEQ.Marshal()
+	dleqLen := make([]byte, 4)
+	dleqLen[0] = byte(len(dleqBytes) >> 24)
+	dleqLen[1] = byte(len(dleqBytes) >> 16)
+	dleqLen[2] = byte(len(dleqBytes) >> 8)
+	dleqLen[3] = byte(len(dleqBytes))
+	result = append(result, dleqLen...)
+	result = append(result, dleqBytes...)
+
+	// Marshal Plaintext proof (fixed 32 bytes)
+	plaintextBytes := p.Plaintext.Marshal()
+	result = append(result, plaintextBytes...)
+
+	return result
+}
+
+// Unmarshal deserializes bytes into a TransferProof
+func (p *TransferProof) Unmarshal(data []byte) error {
+	if len(data) < 4 {
+		return fmt.Errorf("data too short for TransferProof")
+	}
+
+	offset := 0
+
+	// DLEQ proof
+	dleqLen := int(data[offset])<<24 | int(data[offset+1])<<16 | int(data[offset+2])<<8 | int(data[offset+3])
+	offset += 4
+	if offset+dleqLen > len(data) {
+		return fmt.Errorf("invalid DLEQ proof length")
+	}
+
+	p.DLEQ = &DLEQProof{}
+	if err := p.DLEQ.Unmarshal(data[offset : offset+dleqLen]); err != nil {
+		return fmt.Errorf("failed to unmarshal DLEQ proof: %v", err)
+	}
+	offset += dleqLen
+
+	// Plaintext proof (fixed 32 bytes)
+	if offset+32 > len(data) {
+		return fmt.Errorf("data too short for Plaintext proof")
+	}
+
+	p.Plaintext = &CrossRPlaintextEqualityProof{}
+	if err := p.Plaintext.Unmarshal(data[offset : offset+32]); err != nil {
+		return fmt.Errorf("failed to unmarshal Plaintext proof: %v", err)
+	}
+
 	return nil
 }

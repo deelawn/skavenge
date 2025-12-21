@@ -67,8 +67,7 @@ func TestSecurity_AttackPrevented_DifferentPlaintexts(t *testing.T) {
 		originalCipher,            // Original on-chain cipher
 		realTransfer.SellerCipher, // Seller's real cipher
 		fakeTransfer.BuyerCipher,  // Buyer's FAKE cipher (different plaintext!)
-		realTransfer.DLEQProof,    // Proof for real cipher
-		realTransfer.PlaintextProof,
+		realTransfer.Proof,        // Proof for real cipher
 		mintR,
 		realTransfer.SellerPubKey,
 		realTransfer.BuyerPubKey,
@@ -177,8 +176,8 @@ func TestSecurity_AttackPrevented_WrongRValue(t *testing.T) {
 	buyerCiphertextBytes := transfer.BuyerCipher.Marshal()
 	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
 
-	// Seller commits to REAL r (rHash is embedded in DLEQ proof)
-	proofBytes := transfer.DLEQProof.Marshal()
+	// Seller commits to REAL r and provides complete transfer proof
+	proofBytes := transfer.Proof.Marshal()
 
 	// Provide proof (contract extracts rHash from proof)
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
@@ -242,8 +241,7 @@ func TestSecurity_BuyerCannotDecryptEarly(t *testing.T) {
 		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
-		transfer.DLEQProof,
-		transfer.PlaintextProof,
+		transfer.Proof,
 		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
@@ -351,17 +349,16 @@ func TestSecurity_AttackPrevented_FakeRHashInProof(t *testing.T) {
 		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
-		transfer.DLEQProof,
-		transfer.PlaintextProof,
+		transfer.Proof,
 		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
 	require.True(t, valid, "Valid proof should verify")
 
-	// ATTACK: Seller tries to tamper with the rHash in the proof
-	// Marshal the proof
-	proofBytes := transfer.DLEQProof.Marshal()
+	// ATTACK: Seller tries to tamper with the rHash in the DLEQ proof
+	// Marshal just the DLEQ proof to tamper with it
+	dleqBytes := transfer.Proof.DLEQ.Marshal()
 
 	// Generate a fake rHash (different from the real one)
 	fakeRHash := [32]byte{}
@@ -369,16 +366,22 @@ func TestSecurity_AttackPrevented_FakeRHashInProof(t *testing.T) {
 		fakeRHash[i] = 0xFF // All ones (obviously different from real hash)
 	}
 
-	// Replace the last 32 bytes (rHash) with fake value
-	copy(proofBytes[len(proofBytes)-32:], fakeRHash[:])
+	// Replace the last 32 bytes (rHash) of the DLEQ proof with fake value
+	copy(dleqBytes[len(dleqBytes)-32:], fakeRHash[:])
 
-	// Unmarshal the tampered proof
-	tamperedProof := &zkproof.DLEQProof{}
-	err = tamperedProof.Unmarshal(proofBytes)
-	require.NoError(t, err, "Tampered proof should unmarshal")
+	// Unmarshal the tampered DLEQ proof
+	tamperedDLEQ := &zkproof.DLEQProof{}
+	err = tamperedDLEQ.Unmarshal(dleqBytes)
+	require.NoError(t, err, "Tampered DLEQ proof should unmarshal")
 
 	// Verify that the rHash was actually replaced
-	require.NotEqual(t, transfer.DLEQProof.RHash, tamperedProof.RHash, "RHash should be different")
+	require.NotEqual(t, transfer.Proof.DLEQ.RHash, tamperedDLEQ.RHash, "RHash should be different")
+
+	// Create tampered transfer proof with the tampered DLEQ but original Plaintext proof
+	tamperedProof := &zkproof.TransferProof{
+		DLEQ:      tamperedDLEQ,
+		Plaintext: transfer.Proof.Plaintext,
+	}
 
 	// Try to verify with tampered proof
 	tamperedValid := ps.VerifyElGamalTransfer(
@@ -386,7 +389,6 @@ func TestSecurity_AttackPrevented_FakeRHashInProof(t *testing.T) {
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
 		tamperedProof, // Using tampered proof with fake rHash
-		transfer.PlaintextProof,
 		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
@@ -515,7 +517,7 @@ func TestSecurity_BuyerCannotCancelAfterVerification(t *testing.T) {
 	// Seller provides proof
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	require.NoError(t, err)
-	proofBytes := transfer.DLEQProof.Marshal()
+	proofBytes := transfer.Proof.Marshal()
 	tx, err = contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
@@ -648,7 +650,7 @@ func TestSecurity_FrontrunningAttackPrevented(t *testing.T) {
 	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
 
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
-	proofBytes := transfer.DLEQProof.Marshal()
+	proofBytes := transfer.Proof.Marshal()
 	tx, err = contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
@@ -897,7 +899,7 @@ func TestSecurity_ConcurrentPurchasePrevention(t *testing.T) {
 	require.NoError(t, err)
 
 	minterAuth, err = util.NewTransactOpts(client, testMinter)
-	proofBytes := transfer.DLEQProof.Marshal()
+	proofBytes := transfer.Proof.Marshal()
 	tx, err = contract.ProvideProof(minterAuth, transferId2, proofBytes, buyerCiphertextHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)

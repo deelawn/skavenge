@@ -1252,6 +1252,18 @@ async function generateVerifiableElGamalTransfer(plaintext, sellerPrivKeyHex, bu
   // Generate DLEQ proof that both ciphers use same r
   const dleqProof = generateDLEQProof(r, sellerPubKeyHex, buyerPubKeyHex, sellerCipher, buyerCipher);
 
+  // TODO: Generate plaintext equality proof
+  // For now, we only have DLEQ proof. The plaintext proof would verify that
+  // the buyer cipher encrypts the same content as the original on-chain cipher.
+  // This requires the original cipher and mintR as parameters.
+  const plaintextProof = null; // Placeholder - needs implementation
+
+  // Create consolidated proof object matching Go structure
+  const proof = {
+    dleq: dleqProof,
+    plaintext: plaintextProof
+  };
+
   // Parse public keys for return
   let sellerPubHex = sellerPubKeyHex;
   if (sellerPubHex.startsWith('0x')) {
@@ -1268,7 +1280,7 @@ async function generateVerifiableElGamalTransfer(plaintext, sellerPrivKeyHex, bu
   return {
     sellerCipher: sellerCipher,
     buyerCipher: buyerCipher,
-    dleqProof: dleqProof,
+    proof: proof,  // Consolidated proof with DLEQ and Plaintext
     commitment: commitment,
     salt: salt,
     sellerPubKey: sellerPubBytes,
@@ -1629,7 +1641,10 @@ async function handleMessage(request, isInternal = true) {
           // Marshal the ciphertexts and proof
           const sellerCiphertextBytes = marshalElGamalCiphertext(transfer.sellerCipher);
           const buyerCiphertextBytes = marshalElGamalCiphertext(transfer.buyerCipher);
-          const proofBytes = marshalDLEQProof(transfer.dleqProof);
+
+          // TODO: Implement full TransferProof marshaling (DLEQ + Plaintext)
+          // For now, we only marshal the DLEQ proof since plaintext proof is not yet implemented
+          const proofBytes = marshalDLEQProof(transfer.proof.dleq);
 
           // Convert sharedR to hex string for storage (will be revealed later)
           let sharedRHex = transfer.sharedR.toString(16);

@@ -377,7 +377,7 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     /**
      * @dev Provide proof for a clue transfer
      * @param transferId ID of the transfer
-     * @param proof DLEQ proof (includes rHash in last 32 bytes)
+     * @param proof Complete TransferProof (DLEQ + Plaintext proofs)
      * @param newClueHash Hash of the new encrypted clue for the buyer
      */
     function provideProof(
@@ -395,10 +395,22 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
             "Transfer expired"
         );
 
-        // Extract rHash from the last 32 bytes of the proof
-        // This ensures the seller commits to a specific r value in the DLEQ proof
-        require(proof.length >= 32, "Proof too short");
-        bytes32 extractedRHash = bytes32(proof[proof.length - 32:]);
+        // Extract rHash from the TransferProof structure
+        // Format: len(DLEQ) | DLEQ_bytes | Plaintext_bytes(32)
+        // The rHash is at the end of the DLEQ portion
+        require(proof.length >= 36, "Proof too short"); // At least 4 bytes for length + 32 for rHash
+
+        // Read DLEQ length from first 4 bytes (big-endian)
+        uint32 dleqLen = (uint32(uint8(proof[0])) << 24) |
+            (uint32(uint8(proof[1])) << 16) |
+            (uint32(uint8(proof[2])) << 8) |
+            uint32(uint8(proof[3]));
+
+        require(proof.length >= 4 + dleqLen + 32, "Invalid proof structure");
+
+        // rHash is the last 32 bytes of the DLEQ proof
+        // Position: 4 + dleqLen - 32 to 4 + dleqLen
+        bytes32 extractedRHash = bytes32(proof[4 + dleqLen - 32:4 + dleqLen]);
 
         transfer.proof = proof;
         transfer.newClueHash = newClueHash;

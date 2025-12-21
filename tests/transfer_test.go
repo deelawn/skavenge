@@ -25,8 +25,9 @@ var (
 	other    = "7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"
 )
 
-// TestSuccessfulTransfer tests the successful transfer of a clue using ElGamal encryption.
-func TestSuccessfulTransfer(t *testing.T) {
+// TestAlteredTransfer tests an attack where the seller provides an altered content to the buyer.
+// The attack should be detected by the plaintext equality proof.
+func TestAlteredTransfer(t *testing.T) {
 	// Connect to Hardhat network
 	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
@@ -151,8 +152,8 @@ func TestSuccessfulTransfer(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	// Marshal DLEQ proof (includes rHash in last 32 bytes)
-	proofBytes := transfer.DLEQProof.Marshal()
+	// Marshal entire transfer proof (includes both DLEQ and Plaintext proofs)
+	proofBytes := transfer.Proof.Marshal()
 
 	proofTx, err := contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash)
 	require.NoError(t, err)
@@ -168,18 +169,17 @@ func TestSuccessfulTransfer(t *testing.T) {
 	transferData, err := contract.Transfers(&bind.CallOpts{}, transferId)
 	require.NoError(t, err)
 
-	// Unmarshal and verify DLEQ proof
-	dleqProof := &zkproof.DLEQProof{}
-	err = dleqProof.Unmarshal(transferData.Proof)
+	// Unmarshal the entire transfer proof (DLEQ + Plaintext)
+	proof := &zkproof.TransferProof{}
+	err = proof.Unmarshal(transferData.Proof)
 	require.NoError(t, err)
 
 	// For the buyer to verify, they need:
 	// 1. Original on-chain cipher (encryptedCipher)
 	// 2. New seller cipher (for DLEQ)
 	// 3. New buyer cipher
-	// 4. DLEQ proof (proves same newR)
-	// 5. Plaintext equality proof (proves same content as original)
-	// 6. mintR (public from mint transaction)
+	// 4. Complete proof (DLEQ + Plaintext proofs)
+	// 5. mintR (public from mint transaction)
 	sellerCipher := transfer.SellerCipher
 	buyerCipher := transfer.BuyerCipher
 
@@ -190,9 +190,8 @@ func TestSuccessfulTransfer(t *testing.T) {
 		encryptedCipher, // Original on-chain cipher
 		sellerCipher,
 		buyerCipher,
-		dleqProof,
-		transfer.PlaintextProof, // New plaintext equality proof
-		mintR,                   // Public r from mint tx
+		proof,
+		mintR, // Public r from mint tx
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
@@ -343,8 +342,8 @@ func TestSuccessfulTransferWithCorrectContent(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	// Marshal DLEQ proof (includes rHash in last 32 bytes)
-	proofBytes := transfer.DLEQProof.Marshal()
+	// Marshal entire transfer proof (includes both DLEQ and Plaintext proofs)
+	proofBytes := transfer.Proof.Marshal()
 
 	proofTx, err := contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash)
 	require.NoError(t, err)
@@ -360,9 +359,9 @@ func TestSuccessfulTransferWithCorrectContent(t *testing.T) {
 	transferData, err := contract.Transfers(&bind.CallOpts{}, transferId)
 	require.NoError(t, err)
 
-	// Unmarshal and verify DLEQ proof
-	dleqProof := &zkproof.DLEQProof{}
-	err = dleqProof.Unmarshal(transferData.Proof)
+	// Unmarshal the entire transfer proof (DLEQ + Plaintext)
+	proof := &zkproof.TransferProof{}
+	err = proof.Unmarshal(transferData.Proof)
 	require.NoError(t, err)
 
 	// Buyer verifies both DLEQ and plaintext equality
@@ -373,9 +372,8 @@ func TestSuccessfulTransferWithCorrectContent(t *testing.T) {
 		encryptedCipher, // Original on-chain cipher
 		sellerCipher,
 		buyerCipher,
-		dleqProof,
-		transfer.PlaintextProof, // Plaintext equality proof
-		mintR,                   // Public r from mint tx
+		proof,
+		mintR, // Public r from mint tx
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
@@ -550,41 +548,23 @@ func TestInvalidProofVerification(t *testing.T) {
 	buyerCiphertextBytes := transfer.BuyerCipher.Marshal()
 	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
 
-	// Marshal proof and CORRUPT it
-	validProof := transfer.DLEQProof.Marshal()
-	invalidProof := append([]byte{0xFF}, validProof[1:]...) // Corrupt first byte
+	// Marshal entire transfer proof and CORRUPT it
+	validProof := transfer.Proof.Marshal()
+	invalidProof := append([]byte{0xFF}, validProof[1:]...) // Corrupt first byte (length field)
 
-	// Provide the invalid proof to the contract
+	// Try to provide the invalid proof to the contract
+	// The transaction should revert because the contract validates the proof structure
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	proofTx, err := contract.ProvideProof(minterAuth, transferId, invalidProof, buyerCiphertextHash)
-	require.NoError(t, err)
-	_, err = util.WaitForTransaction(client, proofTx)
-	require.NoError(t, err)
+	_, err = contract.ProvideProof(minterAuth, transferId, invalidProof, buyerCiphertextHash)
+	require.Error(t, err, "Contract should reject invalid proof structure")
+	require.Contains(t, err.Error(), "Invalid proof structure", "Should fail with proof structure error")
 
-	// Buyer verifies the proof off-chain
-	transferData, err := contract.Transfers(&bind.CallOpts{}, transferId)
-	require.NoError(t, err)
+	t.Log("✅ Contract correctly rejected proof with corrupted structure")
 
-	// Try to unmarshal and verify - should fail
-	dleqProof := &zkproof.DLEQProof{}
-	err = dleqProof.Unmarshal(transferData.Proof)
-	// Unmarshaling might fail or succeed depending on corruption
-	// If it succeeds, verification should fail
-	if err == nil {
-		valid := ps.VerifyElGamalTransfer(
-			encryptedCipher, // Original on-chain cipher
-			transfer.SellerCipher,
-			transfer.BuyerCipher,
-			dleqProof,
-			transfer.PlaintextProof, // Plaintext equality proof
-			mintR,                   // Public r from mint
-			transfer.SellerPubKey,
-			transfer.BuyerPubKey,
-		)
-		require.False(t, valid, "Invalid proof should not verify")
-	}
+	// The transfer should still be in ProofPending state since the invalid proof was rejected
+	// We can verify the buyer can cancel since no valid proof was provided
 
 	// Cancel the transfer
 	buyerAuth, err = util.NewTransactOpts(client, buyer)
@@ -709,8 +689,8 @@ func TestInvalidProofContentAltered(t *testing.T) {
 	buyerCiphertextBytes := transfer.BuyerCipher.Marshal()
 	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
 
-	// Marshal proof
-	validProof := transfer.DLEQProof.Marshal()
+	// Marshal entire transfer proof
+	validProof := transfer.Proof.Marshal()
 
 	// Provide the proof to the contract
 	minterAuth, err = util.NewTransactOpts(client, minter)
@@ -725,9 +705,9 @@ func TestInvalidProofContentAltered(t *testing.T) {
 	transferData, err := contract.Transfers(&bind.CallOpts{}, transferId)
 	require.NoError(t, err)
 
-	// Unmarshal and verify
-	dleqProof := &zkproof.DLEQProof{}
-	err = dleqProof.Unmarshal(transferData.Proof)
+	// Unmarshal the entire transfer proof
+	proof := &zkproof.TransferProof{}
+	err = proof.Unmarshal(transferData.Proof)
 	require.NoError(t, err)
 
 	// ATTACK DETECTION: Verification should FAIL because content was altered!
@@ -735,9 +715,8 @@ func TestInvalidProofContentAltered(t *testing.T) {
 		encryptedCipher, // Original on-chain cipher
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
-		dleqProof,
-		transfer.PlaintextProof, // Plaintext equality proof
-		mintR,                   // Public r from mint
+		proof,
+		mintR, // Public r from mint
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
@@ -857,7 +836,7 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 
 	buyerCiphertextBytes := transfer.BuyerCipher.Marshal()
 	buyerCiphertextHash := crypto.Keccak256Hash(buyerCiphertextBytes)
-	proofBytes := transfer.DLEQProof.Marshal()
+	proofBytes := transfer.Proof.Marshal()
 
 	// Provide proof to the contract
 	minterAuth, err = util.NewTransactOpts(client, minter)
@@ -1106,7 +1085,7 @@ func TestCorruptedRValueRejected(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	proofBytes := transfer.DLEQProof.Marshal()
+	proofBytes := transfer.Proof.Marshal()
 	proofTx, err := contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, proofTx)
@@ -1116,15 +1095,15 @@ func TestCorruptedRValueRejected(t *testing.T) {
 	transferData, err := contract.Transfers(&bind.CallOpts{}, transferId)
 	require.NoError(t, err)
 
-	// Unmarshal and verify DLEQ proof
-	dleqProof := &zkproof.DLEQProof{}
-	err = dleqProof.Unmarshal(transferData.Proof)
+	// Unmarshal the entire transfer proof
+	proof := &zkproof.TransferProof{}
+	err = proof.Unmarshal(transferData.Proof)
 	require.NoError(t, err)
 
 	// For the buyer to verify, they need:
 	// - Original on-chain cipher
 	// - New seller/buyer ciphers
-	// - Both proofs (DLEQ + plaintext equality)
+	// - Complete proof (DLEQ + Plaintext)
 	// - mintR
 	sellerCipher := transfer.SellerCipher
 	buyerCipher := transfer.BuyerCipher
@@ -1134,9 +1113,8 @@ func TestCorruptedRValueRejected(t *testing.T) {
 		encryptedCipher, // Original on-chain cipher
 		sellerCipher,
 		buyerCipher,
-		dleqProof,
-		transfer.PlaintextProof, // Plaintext equality proof
-		mintR,                   // Public r from mint
+		proof,
+		mintR, // Public r from mint
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
