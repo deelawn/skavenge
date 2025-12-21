@@ -34,9 +34,17 @@ func TestSecurity_AttackPrevented_DifferentPlaintexts(t *testing.T) {
 	realContent := []byte("The treasure is buried under the old oak tree")
 	fakeContent := []byte("The treasure is in a volcano (FAKE!)")
 
+	// Create "original" cipher (as if minted on-chain)
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err)
+	originalCipher, err := ps.EncryptElGamal(realContent, &sellerKey.PublicKey, mintR)
+	require.NoError(t, err)
+
 	// Attacker generates transfer for REAL content
 	realTransfer, err := ps.GenerateVerifiableElGamalTransfer(
 		realContent,
+		originalCipher,
+		mintR,
 		sellerKey,
 		&buyerKey.PublicKey,
 	)
@@ -46,6 +54,8 @@ func TestSecurity_AttackPrevented_DifferentPlaintexts(t *testing.T) {
 	// but using the same DLEQ proof
 	fakeTransfer, err := ps.GenerateVerifiableElGamalTransfer(
 		fakeContent,
+		originalCipher,
+		mintR,
 		sellerKey,
 		&buyerKey.PublicKey,
 	)
@@ -54,9 +64,12 @@ func TestSecurity_AttackPrevented_DifferentPlaintexts(t *testing.T) {
 	// Try to verify with mismatched ciphertexts
 	// Real seller cipher + Fake buyer cipher + Real proof
 	valid := ps.VerifyElGamalTransfer(
+		originalCipher,            // Original on-chain cipher
 		realTransfer.SellerCipher, // Seller's real cipher
 		fakeTransfer.BuyerCipher,  // Buyer's FAKE cipher (different plaintext!)
 		realTransfer.DLEQProof,    // Proof for real cipher
+		realTransfer.PlaintextProof,
+		mintR,
 		realTransfer.SellerPubKey,
 		realTransfer.BuyerPubKey,
 	)
@@ -154,6 +167,8 @@ func TestSecurity_AttackPrevented_WrongRValue(t *testing.T) {
 	// Generate verifiable transfer
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		clueContent,
+		encryptedCipher, // Original on-chain cipher
+		mintR,           // Public r from mint
 		minterPrivKey,
 		&buyerPrivKey.PublicKey,
 	)
@@ -206,9 +221,17 @@ func TestSecurity_BuyerCannotDecryptEarly(t *testing.T) {
 
 	plaintext := []byte("Secret clue content")
 
+	// Create "original" cipher (as if minted on-chain)
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err)
+	originalCipher, err := ps.EncryptElGamal(plaintext, &sellerKey.PublicKey, mintR)
+	require.NoError(t, err)
+
 	// Generate transfer
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		plaintext,
+		originalCipher,
+		mintR,
 		sellerKey,
 		&buyerKey.PublicKey,
 	)
@@ -216,9 +239,12 @@ func TestSecurity_BuyerCannotDecryptEarly(t *testing.T) {
 
 	// Buyer has the ciphertext and can verify the proof
 	valid := ps.VerifyElGamalTransfer(
+		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
 		transfer.DLEQProof,
+		transfer.PlaintextProof,
+		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
@@ -255,9 +281,17 @@ func TestSecurity_OnlyBuyerCanDecrypt(t *testing.T) {
 
 	plaintext := []byte("Secret clue content")
 
+	// Create "original" cipher (as if minted on-chain)
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err)
+	originalCipher, err := ps.EncryptElGamal(plaintext, &sellerKey.PublicKey, mintR)
+	require.NoError(t, err)
+
 	// Generate transfer
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		plaintext,
+		originalCipher,
+		mintR,
 		sellerKey,
 		&buyerKey.PublicKey,
 	)
@@ -296,9 +330,17 @@ func TestSecurity_AttackPrevented_FakeRHashInProof(t *testing.T) {
 
 	plaintext := []byte("Secret clue content")
 
+	// Create "original" cipher (as if minted on-chain)
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err)
+	originalCipher, err := ps.EncryptElGamal(plaintext, &sellerKey.PublicKey, mintR)
+	require.NoError(t, err)
+
 	// Generate valid transfer with real r
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		plaintext,
+		originalCipher,
+		mintR,
 		sellerKey,
 		&buyerKey.PublicKey,
 	)
@@ -306,9 +348,12 @@ func TestSecurity_AttackPrevented_FakeRHashInProof(t *testing.T) {
 
 	// Proof should verify with real rHash
 	valid := ps.VerifyElGamalTransfer(
+		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
 		transfer.DLEQProof,
+		transfer.PlaintextProof,
+		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
@@ -337,9 +382,12 @@ func TestSecurity_AttackPrevented_FakeRHashInProof(t *testing.T) {
 
 	// Try to verify with tampered proof
 	tamperedValid := ps.VerifyElGamalTransfer(
+		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
 		tamperedProof, // Using tampered proof with fake rHash
+		transfer.PlaintextProof,
+		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
@@ -454,6 +502,8 @@ func TestSecurity_BuyerCannotCancelAfterVerification(t *testing.T) {
 	// Generate verifiable transfer
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		clueContent,
+		encryptedCipher, // Original on-chain cipher
+		mintR,           // Public r from mint
 		minterPrivKey,
 		&buyerPrivKey.PublicKey,
 	)
@@ -587,6 +637,8 @@ func TestSecurity_FrontrunningAttackPrevented(t *testing.T) {
 	t.Log("\n[2] Seller provides DLEQ proof")
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		clueContent,
+		encryptedCipher, // Original on-chain cipher
+		mintR,           // Public r from mint
 		minterPrivKey,
 		&buyerPrivKey.PublicKey,
 	)
@@ -830,6 +882,8 @@ func TestSecurity_ConcurrentPurchasePrevention(t *testing.T) {
 	// Generate verifiable transfer
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		clueContent,
+		encryptedCipher, // Original on-chain cipher
+		mintR,           // Public r from mint
 		minterPrivKey,
 		&buyer2PrivKey.PublicKey,
 	)
