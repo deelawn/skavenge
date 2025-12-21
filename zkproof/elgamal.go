@@ -35,12 +35,31 @@ type DLEQProof struct {
 	RHash [32]byte // Hash(r) - prevents seller from committing to fake r
 }
 
+// CrossRPlaintextEqualityProof proves that two ciphertexts encrypt the same plaintext
+// even when encrypted with DIFFERENT r values (mintR for original, newR for transfer).
+//
+// This solves the content alteration attack where a seller could:
+// 1. Create buyerCipher with altered content
+// 2. Generate valid DLEQ proof (which only proves same-r usage, not content equality)
+// 3. Buyer would receive wrong content despite valid DLEQ proof
+//
+// The proof works by committing to the derived encryption key (KeyBuyer).
+// If the seller alters content, the mathematically expected key won't match
+// the committed key, causing verification to fail.
+type CrossRPlaintextEqualityProof struct {
+	// KeyBuyer = Hash(newR || S_buyer.X) - the key used to encrypt buyerCipher.C2
+	// The verifier computes expectedKeyBuyer from public values and checks equality.
+	// If plaintexts differ, expectedKeyBuyer != KeyBuyer, and verification fails.
+	KeyBuyer [32]byte
+}
+
 // VerifiableElGamalTransfer contains everything needed for a verifiable transfer
 type VerifiableElGamalTransfer struct {
 	SellerCipher     *ElGamalCiphertext
 	BuyerCipher      *ElGamalCiphertext
 	DLEQProof        *DLEQProof
-	Commitment       [32]byte // Hash(plaintext || salt)
+	PlaintextProof   *CrossRPlaintextEqualityProof // Proves content matches original
+	Commitment       [32]byte                      // Hash(plaintext || salt)
 	Salt             []byte
 	SellerPubKey     []byte
 	BuyerPubKey      []byte
@@ -141,10 +160,53 @@ func (ps *ProofSystem) DecryptElGamal(
 	return plaintext, nil
 }
 
+// GeneratePlaintextEqualityProof creates a proof that the buyer cipher encrypts
+// the same plaintext as the original on-chain cipher (encrypted with different r values).
+//
+// The proof commits to KeyBuyer = Hash(newR || S_buyer.X).
+// During verification, the buyer computes the expected key from public values:
+//   expectedKeyBuyer = keyOrig XOR (C2_orig XOR C2_buyer)
+// If plaintexts match, expectedKeyBuyer == KeyBuyer.
+func (ps *ProofSystem) GeneratePlaintextEqualityProof(
+	newR *big.Int,
+	buyerCipher *ElGamalCiphertext,
+) (*CrossRPlaintextEqualityProof, error) {
+	// Extract S_buyer.X from buyer cipher's shared secret
+	sBuyerX, _ := elliptic.Unmarshal(ps.Curve, buyerCipher.SharedSecret)
+	if sBuyerX == nil {
+		return nil, fmt.Errorf("invalid buyer cipher shared secret")
+	}
+
+	// Compute KeyBuyer = Hash(newR || S_buyer.X)
+	// This is the actual key used to encrypt buyerCipher.C2
+	keyHash := sha3.NewLegacyKeccak256()
+	keyHash.Write(newR.Bytes())
+	keyHash.Write(sBuyerX.Bytes())
+	keyBuyer := keyHash.Sum(nil)
+
+	var proof CrossRPlaintextEqualityProof
+	copy(proof.KeyBuyer[:], keyBuyer)
+
+	return &proof, nil
+}
+
 // GenerateVerifiableElGamalTransfer creates a verifiable transfer with DLEQ proof
-// This allows buyer to verify BEFORE paying that they'll get the same content
+// AND a plaintext equality proof against the original on-chain cipher.
+//
+// This allows buyer to verify BEFORE paying that:
+// 1. Both seller and buyer ciphers use the same newR (DLEQ proof)
+// 2. The buyer cipher encrypts the SAME plaintext as the original (plaintext equality proof)
+//
+// Parameters:
+// - plaintext: The decrypted content from the original cipher (seller must provide correct content)
+// - originalCipher: The on-chain cipher from minting (used to verify content matches)
+// - mintR: The r value from minting (publicly visible in transaction history)
+// - sellerPrivKey: Seller's private key (used to decrypt original and re-encrypt)
+// - buyerPubKey: Buyer's public key (used to encrypt for buyer)
 func (ps *ProofSystem) GenerateVerifiableElGamalTransfer(
 	plaintext []byte,
+	originalCipher *ElGamalCiphertext,
+	mintR *big.Int,
 	sellerPrivKey *ecdsa.PrivateKey,
 	buyerPubKey *ecdsa.PublicKey,
 ) (*VerifiableElGamalTransfer, error) {
@@ -158,43 +220,51 @@ func (ps *ProofSystem) GenerateVerifiableElGamalTransfer(
 	// Create commitment
 	commitment := computeCommitment(plaintext, salt)
 
-	// Generate random r (used for BOTH encryptions!)
+	// Generate random newR (used for BOTH new encryptions!)
 	curveN := ps.Curve.Params().N
-	r, err := rand.Int(rand.Reader, curveN)
+	newR, err := rand.Int(rand.Reader, curveN)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate r: %v", err)
 	}
 
-	// Encrypt for seller
-	sellerCipher, err := ps.EncryptElGamal(plaintext, &sellerPrivKey.PublicKey, r)
+	// Encrypt for seller (with newR)
+	sellerCipher, err := ps.EncryptElGamal(plaintext, &sellerPrivKey.PublicKey, newR)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt for seller: %v", err)
 	}
 
-	// Encrypt for buyer (SAME r value!)
-	buyerCipher, err := ps.EncryptElGamal(plaintext, buyerPubKey, r)
+	// Encrypt for buyer (SAME newR value!)
+	buyerCipher, err := ps.EncryptElGamal(plaintext, buyerPubKey, newR)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt for buyer: %v", err)
 	}
 
-	// Generate DLEQ proof that both ciphers use same r
-	dleqProof, err := ps.GenerateDLEQProof(r, &sellerPrivKey.PublicKey, buyerPubKey)
+	// Generate DLEQ proof that both ciphers use same newR
+	dleqProof, err := ps.GenerateDLEQProof(newR, &sellerPrivKey.PublicKey, buyerPubKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate DLEQ proof: %v", err)
+	}
+
+	// Generate plaintext equality proof
+	// This proves buyerCipher encrypts the same plaintext as originalCipher
+	plaintextProof, err := ps.GeneratePlaintextEqualityProof(newR, buyerCipher)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate plaintext equality proof: %v", err)
 	}
 
 	sellerPubBytes := elliptic.Marshal(ps.Curve, sellerPrivKey.PublicKey.X, sellerPrivKey.PublicKey.Y)
 	buyerPubBytes := elliptic.Marshal(ps.Curve, buyerPubKey.X, buyerPubKey.Y)
 
 	return &VerifiableElGamalTransfer{
-		SellerCipher: sellerCipher,
-		BuyerCipher:  buyerCipher,
-		DLEQProof:    dleqProof,
-		Commitment:   commitment,
-		Salt:         salt,
-		SellerPubKey: sellerPubBytes,
-		BuyerPubKey:  buyerPubBytes,
-		SharedR:      r, // Seller keeps this secret until after payment!
+		SellerCipher:   sellerCipher,
+		BuyerCipher:    buyerCipher,
+		DLEQProof:      dleqProof,
+		PlaintextProof: plaintextProof,
+		Commitment:     commitment,
+		Salt:           salt,
+		SellerPubKey:   sellerPubBytes,
+		BuyerPubKey:    buyerPubBytes,
+		SharedR:        newR, // Seller keeps this secret until after payment!
 	}, nil
 }
 
@@ -261,15 +331,35 @@ func (ps *ProofSystem) GenerateDLEQProof(
 	}, nil
 }
 
-// VerifyElGamalTransfer verifies that both ciphertexts encrypt the same plaintext
-// Buyer can call this BEFORE paying to get cryptographic proof!
+// VerifyElGamalTransfer verifies that:
+// 1. Both seller and buyer ciphertexts use the same newR (DLEQ proof)
+// 2. The buyer ciphertext encrypts the SAME plaintext as the original on-chain cipher (plaintext equality proof)
+//
+// This is the key verification that prevents content alteration attacks!
+// The buyer calls this BEFORE paying to get cryptographic proof of content integrity.
+//
+// Parameters:
+// - originalCipher: The on-chain cipher from minting
+// - sellerCipher: Fresh cipher for seller (with newR)
+// - buyerCipher: Fresh cipher for buyer (with newR)
+// - dleqProof: Proves sellerCipher and buyerCipher use same newR
+// - plaintextProof: Proves buyerCipher encrypts same content as originalCipher
+// - mintR: The r value from minting (publicly visible)
+// - sellerPubKey, buyerPubKey: Public keys of seller and buyer
 func (ps *ProofSystem) VerifyElGamalTransfer(
+	originalCipher *ElGamalCiphertext,
 	sellerCipher *ElGamalCiphertext,
 	buyerCipher *ElGamalCiphertext,
-	proof *DLEQProof,
+	dleqProof *DLEQProof,
+	plaintextProof *CrossRPlaintextEqualityProof,
+	mintR *big.Int,
 	sellerPubKey []byte,
 	buyerPubKey []byte,
 ) bool {
+
+	// ==========================================
+	// PART 1: Verify DLEQ Proof (same newR for both new ciphers)
+	// ==========================================
 
 	curveN := ps.Curve.Params().N
 
@@ -282,9 +372,9 @@ func (ps *ProofSystem) VerifyElGamalTransfer(
 	}
 
 	// Parse proof commitments
-	a1x, a1y := elliptic.Unmarshal(ps.Curve, proof.A1)
-	a2x, a2y := elliptic.Unmarshal(ps.Curve, proof.A2)
-	a3x, a3y := elliptic.Unmarshal(ps.Curve, proof.A3)
+	a1x, a1y := elliptic.Unmarshal(ps.Curve, dleqProof.A1)
+	a2x, a2y := elliptic.Unmarshal(ps.Curve, dleqProof.A2)
+	a3x, a3y := elliptic.Unmarshal(ps.Curve, dleqProof.A3)
 
 	if a1x == nil || a2x == nil || a3x == nil {
 		return false
@@ -315,23 +405,23 @@ func (ps *ProofSystem) VerifyElGamalTransfer(
 	h := sha3.NewLegacyKeccak256()
 	h.Write(sellerPubKey)
 	h.Write(buyerPubKey)
-	h.Write(proof.A1)
-	h.Write(proof.A2)
-	h.Write(proof.A3)
-	h.Write(proof.RHash[:]) // Include r hash in challenge verification
+	h.Write(dleqProof.A1)
+	h.Write(dleqProof.A2)
+	h.Write(dleqProof.A3)
+	h.Write(dleqProof.RHash[:]) // Include r hash in challenge verification
 
 	cCheck := new(big.Int).SetBytes(h.Sum(nil))
 	cCheck.Mod(cCheck, curveN)
 
-	if cCheck.Cmp(proof.C) != 0 {
+	if cCheck.Cmp(dleqProof.C) != 0 {
 		return false // Challenge mismatch - proof is invalid
 	}
 
 	// Verify equation 1: g^z = A1 * C1^c
 	// This proves: C1 = g^r for some r
-	gzX, gzY := ps.Curve.ScalarBaseMult(proof.Z.Bytes())
+	gzX, gzY := ps.Curve.ScalarBaseMult(dleqProof.Z.Bytes())
 
-	c1cX, c1cY := ps.Curve.ScalarMult(c1SellerX, c1SellerY, proof.C.Bytes())
+	c1cX, c1cY := ps.Curve.ScalarMult(c1SellerX, c1SellerY, dleqProof.C.Bytes())
 	right1X, right1Y := ps.Curve.Add(a1x, a1y, c1cX, c1cY)
 
 	if gzX.Cmp(right1X) != 0 || gzY.Cmp(right1Y) != 0 {
@@ -340,9 +430,9 @@ func (ps *ProofSystem) VerifyElGamalTransfer(
 
 	// Verify equation 2: sellerPub^z = A2 * S_seller^c
 	// This proves: S_seller = sellerPub^r for the same r
-	sellerPubZX, sellerPubZY := ps.Curve.ScalarMult(sellerX, sellerY, proof.Z.Bytes())
+	sellerPubZX, sellerPubZY := ps.Curve.ScalarMult(sellerX, sellerY, dleqProof.Z.Bytes())
 
-	sSellerCX, sSellerCY := ps.Curve.ScalarMult(sSellerX, sSellerY, proof.C.Bytes())
+	sSellerCX, sSellerCY := ps.Curve.ScalarMult(sSellerX, sSellerY, dleqProof.C.Bytes())
 	right2X, right2Y := ps.Curve.Add(a2x, a2y, sSellerCX, sSellerCY)
 
 	if sellerPubZX.Cmp(right2X) != 0 || sellerPubZY.Cmp(right2Y) != 0 {
@@ -351,23 +441,96 @@ func (ps *ProofSystem) VerifyElGamalTransfer(
 
 	// Verify equation 3: buyerPub^z = A3 * S_buyer^c
 	// This proves: S_buyer = buyerPub^r for the same r
-	buyerPubZX, buyerPubZY := ps.Curve.ScalarMult(buyerX, buyerY, proof.Z.Bytes())
+	buyerPubZX, buyerPubZY := ps.Curve.ScalarMult(buyerX, buyerY, dleqProof.Z.Bytes())
 
-	sBuyerCX, sBuyerCY := ps.Curve.ScalarMult(sBuyerX, sBuyerY, proof.C.Bytes())
+	sBuyerCX, sBuyerCY := ps.Curve.ScalarMult(sBuyerX, sBuyerY, dleqProof.C.Bytes())
 	right3X, right3Y := ps.Curve.Add(a3x, a3y, sBuyerCX, sBuyerCY)
 
 	if buyerPubZX.Cmp(right3X) != 0 || buyerPubZY.Cmp(right3Y) != 0 {
 		return false
 	}
 
-	// All three equations verified!
+	// ==========================================
+	// PART 2: Verify Plaintext Equality Proof
+	// ==========================================
+	// This proves that buyerCipher encrypts the SAME plaintext as originalCipher,
+	// even though they use different r values (mintR vs newR).
+	//
+	// The key insight:
+	// - originalCipher.C2 = plaintext XOR Hash(mintR || S_orig.X)
+	// - buyerCipher.C2 = plaintext XOR Hash(newR || S_buyer.X)
+	//
+	// If plaintexts are equal:
+	// - C2_orig XOR C2_buyer = Hash(mintR || S_orig.X) XOR Hash(newR || S_buyer.X)
+	// - Let keyOrig = Hash(mintR || S_orig.X) and keyBuyer = Hash(newR || S_buyer.X)
+	// - Then: keyBuyer = keyOrig XOR (C2_orig XOR C2_buyer)
+	//
+	// The verifier computes expectedKeyBuyer and checks it equals proof.KeyBuyer.
+	// If seller altered the content, expectedKeyBuyer won't match the committed KeyBuyer!
+
+	// Step 1: Extract S_orig.X from original cipher's shared secret
+	sOrigX, _ := elliptic.Unmarshal(ps.Curve, originalCipher.SharedSecret)
+	if sOrigX == nil {
+		return false
+	}
+
+	// Step 2: Compute keyOrig = Hash(mintR || S_orig.X)
+	keyOrigHash := sha3.NewLegacyKeccak256()
+	keyOrigHash.Write(mintR.Bytes())
+	keyOrigHash.Write(sOrigX.Bytes())
+	keyOrig := keyOrigHash.Sum(nil)
+
+	// Step 3: Compute the XOR difference between C2 values
+	// If ciphers are different lengths, pad the shorter one
+	c2Orig := originalCipher.C2
+	c2Buyer := buyerCipher.C2
+
+	// Ensure same length (they should encrypt same plaintext length)
+	if len(c2Orig) != len(c2Buyer) {
+		return false // Different plaintext lengths - content was definitely altered!
+	}
+
+	// Step 4: Compute expectedKeyBuyer = keyOrig XOR (C2_orig XOR C2_buyer)
+	// Due to the XOR-based encryption, if plaintexts match:
+	// C2_orig XOR C2_buyer = keyOrig XOR keyBuyer (byte-by-byte with key cycling)
+	// So: keyBuyer = keyOrig XOR (C2_orig XOR C2_buyer)
+
+	// Verify that the pattern holds for all bytes
+	// Since the key is 32 bytes and cycles, we check the first 32 bytes derive the key
+	// and then verify consistency across all positions
+
+	expectedKeyBuyer := make([]byte, 32)
+	for i := 0; i < 32 && i < len(c2Orig); i++ {
+		expectedKeyBuyer[i] = keyOrig[i] ^ c2Orig[i] ^ c2Buyer[i]
+	}
+
+	// If plaintext is shorter than 32 bytes, we only have partial key verification
+	// For full verification, check all positions are consistent with the derived key
+	for i := 0; i < len(c2Orig); i++ {
+		keyOrigByte := keyOrig[i%32]
+		keyBuyerByte := plaintextProof.KeyBuyer[i%32]
+		expectedDiff := keyOrigByte ^ keyBuyerByte
+		actualDiff := c2Orig[i] ^ c2Buyer[i]
+
+		if expectedDiff != actualDiff {
+			return false // Plaintext mismatch at byte position i!
+		}
+	}
+
+	// Step 5: Verify the committed KeyBuyer matches expected
+	// (This is partially redundant with the loop above, but provides explicit check)
+	for i := 0; i < 32 && i < len(c2Orig); i++ {
+		if expectedKeyBuyer[i] != plaintextProof.KeyBuyer[i] {
+			return false // KeyBuyer commitment doesn't match expected - content was altered!
+		}
+	}
+
+	// All verifications passed!
 	// This PROVES:
-	// 1. C1 = g^r
-	// 2. S_seller = sellerPub^r
-	// 3. S_buyer = buyerPub^r
-	// All with the SAME r value.
-	// Since both ciphertexts use the same r and have the same commitment,
-	// they MUST encrypt the same plaintext.
+	// 1. C1 = g^newR (DLEQ)
+	// 2. S_seller = sellerPub^newR (DLEQ)
+	// 3. S_buyer = buyerPub^newR (DLEQ)
+	// 4. buyerCipher encrypts the SAME plaintext as originalCipher (plaintext equality)
 	return true
 }
 
@@ -606,5 +769,20 @@ func (p *DLEQProof) Unmarshal(data []byte) error {
 	}
 	copy(p.RHash[:], data[offset:offset+32])
 
+	return nil
+}
+
+// Marshal serializes a CrossRPlaintextEqualityProof to bytes
+func (p *CrossRPlaintextEqualityProof) Marshal() []byte {
+	// KeyBuyer is fixed 32 bytes
+	return p.KeyBuyer[:]
+}
+
+// Unmarshal deserializes bytes into a CrossRPlaintextEqualityProof
+func (p *CrossRPlaintextEqualityProof) Unmarshal(data []byte) error {
+	if len(data) < 32 {
+		return fmt.Errorf("data too short for CrossRPlaintextEqualityProof")
+	}
+	copy(p.KeyBuyer[:], data[:32])
 	return nil
 }

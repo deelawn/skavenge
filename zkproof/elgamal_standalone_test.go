@@ -2,6 +2,7 @@ package zkproof
 
 import (
 	"bytes"
+	"crypto/rand"
 	"math/big"
 	"testing"
 )
@@ -23,9 +24,21 @@ func TestDLEQProofStandalone(t *testing.T) {
 
 	plaintext := []byte("Test message for DLEQ proof")
 
+	// Create "original" cipher (as if minted on-chain)
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	if err != nil {
+		t.Fatalf("Failed to generate mintR: %v", err)
+	}
+	originalCipher, err := ps.EncryptElGamal(plaintext, &sellerKey.PublicKey, mintR)
+	if err != nil {
+		t.Fatalf("Failed to encrypt original cipher: %v", err)
+	}
+
 	// Generate verifiable transfer
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		plaintext,
+		originalCipher,
+		mintR,
 		sellerKey,
 		&buyerKey.PublicKey,
 	)
@@ -35,9 +48,12 @@ func TestDLEQProofStandalone(t *testing.T) {
 
 	// Verify the transfer (BEFORE payment)
 	valid := ps.VerifyElGamalTransfer(
+		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
 		transfer.DLEQProof,
+		transfer.PlaintextProof,
+		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
@@ -86,8 +102,14 @@ func TestDLEQProofRejectsTampering(t *testing.T) {
 
 	plaintext := []byte("Test message")
 
+	// Create "original" cipher (as if minted on-chain)
+	mintR, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
+	originalCipher, _ := ps.EncryptElGamal(plaintext, &sellerKey.PublicKey, mintR)
+
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		plaintext,
+		originalCipher,
+		mintR,
 		sellerKey,
 		&buyerKey.PublicKey,
 	)
@@ -97,9 +119,12 @@ func TestDLEQProofRejectsTampering(t *testing.T) {
 
 	// Valid proof should verify
 	valid := ps.VerifyElGamalTransfer(
+		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
 		transfer.DLEQProof,
+		transfer.PlaintextProof,
+		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
@@ -109,17 +134,21 @@ func TestDLEQProofRejectsTampering(t *testing.T) {
 
 	// Tamper with A1
 	tamperedProof := &DLEQProof{
-		A1: []byte{1, 2, 3, 4}, // Invalid point
-		A2: transfer.DLEQProof.A2,
-		A3: transfer.DLEQProof.A3,
-		Z:  transfer.DLEQProof.Z,
-		C:  transfer.DLEQProof.C,
+		A1:    []byte{1, 2, 3, 4}, // Invalid point
+		A2:    transfer.DLEQProof.A2,
+		A3:    transfer.DLEQProof.A3,
+		Z:     transfer.DLEQProof.Z,
+		C:     transfer.DLEQProof.C,
+		RHash: transfer.DLEQProof.RHash,
 	}
 
 	valid = ps.VerifyElGamalTransfer(
+		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
 		tamperedProof,
+		transfer.PlaintextProof,
+		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
@@ -137,9 +166,15 @@ func TestDecryptionRequiresCorrectR(t *testing.T) {
 	buyerKey, _ := ps.GenerateKeyPair()
 	plaintext := []byte("Secret message that requires r to decrypt")
 
+	// Create "original" cipher (as if minted on-chain)
+	mintR, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
+	originalCipher, _ := ps.EncryptElGamal(plaintext, &buyerKey.PublicKey, mintR)
+
 	// Generate transfer
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		plaintext,
+		originalCipher,
+		mintR,
 		buyerKey, // Seller is same as buyer for this test
 		&buyerKey.PublicKey,
 	)
@@ -200,9 +235,15 @@ func TestDecryptionRequiresPrivateKey(t *testing.T) {
 	attackerKey, _ := ps.GenerateKeyPair() // Different private key
 	plaintext := []byte("Secret message only buyer should decrypt")
 
+	// Create "original" cipher (as if minted on-chain)
+	mintR, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
+	originalCipher, _ := ps.EncryptElGamal(plaintext, &buyerKey.PublicKey, mintR)
+
 	// Generate transfer for buyer
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		plaintext,
+		originalCipher,
+		mintR,
 		buyerKey, // Seller is same as buyer for this test
 		&buyerKey.PublicKey,
 	)
@@ -249,6 +290,166 @@ func TestDecryptionRequiresPrivateKey(t *testing.T) {
 
 	t.Log("✅ Buyer with correct private key decrypted successfully")
 	t.Log("✅ PRIVACY VERIFIED: Decryption requires buyer's private key")
+}
+
+// TestPlaintextEqualityProofDetectsAlteredContent verifies that altered content is detected
+func TestPlaintextEqualityProofDetectsAlteredContent(t *testing.T) {
+	ps := NewProofSystem()
+
+	sellerKey, _ := ps.GenerateKeyPair()
+	buyerKey, _ := ps.GenerateKeyPair()
+
+	originalContent := []byte("The treasure is buried under the old oak tree")
+	alteredContent := []byte("FAKE CONTENT - this is not the real clue!")
+
+	// Create "original" cipher (as if minted on-chain with the correct content)
+	mintR, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
+	originalCipher, _ := ps.EncryptElGamal(originalContent, &sellerKey.PublicKey, mintR)
+
+	// ATTACK: Seller generates transfer with ALTERED content
+	// The seller provides the wrong content hoping buyer won't notice
+	transfer, err := ps.GenerateVerifiableElGamalTransfer(
+		alteredContent, // ATTACK: different from originalContent!
+		originalCipher,
+		mintR,
+		sellerKey,
+		&buyerKey.PublicKey,
+	)
+	if err != nil {
+		t.Fatalf("Failed to generate transfer: %v", err)
+	}
+
+	// ATTACK DETECTION: Buyer verifies the proof
+	// This should FAIL because the content doesn't match
+	valid := ps.VerifyElGamalTransfer(
+		originalCipher,
+		transfer.SellerCipher,
+		transfer.BuyerCipher,
+		transfer.DLEQProof,
+		transfer.PlaintextProof,
+		mintR,
+		transfer.SellerPubKey,
+		transfer.BuyerPubKey,
+	)
+
+	if valid {
+		t.Fatal("❌ SECURITY FAILURE: Altered content was NOT detected!")
+	}
+
+	t.Log("✅ ATTACK PREVENTED: Altered content was detected")
+	t.Log("   Plaintext equality proof correctly rejected fraudulent transfer")
+}
+
+// TestPlaintextEqualityProofAcceptsCorrectContent verifies correct content passes verification
+func TestPlaintextEqualityProofAcceptsCorrectContent(t *testing.T) {
+	ps := NewProofSystem()
+
+	sellerKey, _ := ps.GenerateKeyPair()
+	buyerKey, _ := ps.GenerateKeyPair()
+
+	content := []byte("The treasure is buried under the old oak tree")
+
+	// Create "original" cipher (as if minted on-chain)
+	mintR, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
+	originalCipher, _ := ps.EncryptElGamal(content, &sellerKey.PublicKey, mintR)
+
+	// Honest seller generates transfer with CORRECT content
+	transfer, err := ps.GenerateVerifiableElGamalTransfer(
+		content, // Same as original content
+		originalCipher,
+		mintR,
+		sellerKey,
+		&buyerKey.PublicKey,
+	)
+	if err != nil {
+		t.Fatalf("Failed to generate transfer: %v", err)
+	}
+
+	// Buyer verifies the proof - should PASS
+	valid := ps.VerifyElGamalTransfer(
+		originalCipher,
+		transfer.SellerCipher,
+		transfer.BuyerCipher,
+		transfer.DLEQProof,
+		transfer.PlaintextProof,
+		mintR,
+		transfer.SellerPubKey,
+		transfer.BuyerPubKey,
+	)
+
+	if !valid {
+		t.Fatal("❌ Correct content should pass verification!")
+	}
+
+	t.Log("✅ Correct content passed verification")
+
+	// Buyer should be able to decrypt and get the original content
+	decrypted, err := ps.DecryptElGamal(transfer.BuyerCipher, transfer.SharedR, buyerKey)
+	if err != nil {
+		t.Fatalf("Failed to decrypt: %v", err)
+	}
+
+	if !bytes.Equal(content, decrypted) {
+		t.Fatal("❌ Decrypted content doesn't match original!")
+	}
+
+	t.Log("✅ Buyer received correct content after decryption")
+	t.Log("✅ Complete honest transfer flow verified!")
+}
+
+// TestPlaintextEqualityProofMarshalUnmarshal tests marshaling/unmarshaling
+func TestPlaintextEqualityProofMarshalUnmarshal(t *testing.T) {
+	ps := NewProofSystem()
+
+	sellerKey, _ := ps.GenerateKeyPair()
+	buyerKey, _ := ps.GenerateKeyPair()
+
+	content := []byte("Test marshaling content")
+
+	// Create cipher and transfer
+	mintR, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
+	originalCipher, _ := ps.EncryptElGamal(content, &sellerKey.PublicKey, mintR)
+
+	transfer, _ := ps.GenerateVerifiableElGamalTransfer(
+		content,
+		originalCipher,
+		mintR,
+		sellerKey,
+		&buyerKey.PublicKey,
+	)
+
+	// Marshal the plaintext proof
+	proofBytes := transfer.PlaintextProof.Marshal()
+
+	// Unmarshal into new struct
+	unmarshaled := &CrossRPlaintextEqualityProof{}
+	err := unmarshaled.Unmarshal(proofBytes)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal: %v", err)
+	}
+
+	// Verify the unmarshaled proof matches original
+	if !bytes.Equal(transfer.PlaintextProof.KeyBuyer[:], unmarshaled.KeyBuyer[:]) {
+		t.Fatal("Unmarshaled KeyBuyer doesn't match original")
+	}
+
+	// Verify unmarshaled proof still works for verification
+	valid := ps.VerifyElGamalTransfer(
+		originalCipher,
+		transfer.SellerCipher,
+		transfer.BuyerCipher,
+		transfer.DLEQProof,
+		unmarshaled, // Use unmarshaled proof
+		mintR,
+		transfer.SellerPubKey,
+		transfer.BuyerPubKey,
+	)
+
+	if !valid {
+		t.Fatal("Unmarshaled proof should verify!")
+	}
+
+	t.Log("✅ Marshal/Unmarshal works correctly")
 }
 
 func min(a, b int) int {

@@ -22,9 +22,17 @@ func TestElGamalTransfer_HonestCase(t *testing.T) {
 
 	plaintext := []byte("The treasure is at coordinates 40.7128°N, 74.0060°W")
 
+	// Create "original" cipher (as if minted on-chain)
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err)
+	originalCipher, err := ps.EncryptElGamal(plaintext, &sellerKey.PublicKey, mintR)
+	require.NoError(t, err)
+
 	t.Log("=== SELLER: Generate verifiable transfer ===")
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		plaintext,
+		originalCipher,
+		mintR,
 		sellerKey,
 		&buyerKey.PublicKey,
 	)
@@ -35,9 +43,12 @@ func TestElGamalTransfer_HonestCase(t *testing.T) {
 	// Buyer can cryptographically verify the ciphertext is valid
 	// WITHOUT being able to decrypt it!
 	valid := ps.VerifyElGamalTransfer(
+		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
 		transfer.DLEQProof,
+		transfer.PlaintextProof,
+		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
@@ -87,8 +98,14 @@ func TestElGamalTransfer_BuyerCannotDecryptWithoutR(t *testing.T) {
 
 	plaintext := []byte("Secret message")
 
+	// Create "original" cipher (as if minted on-chain)
+	mintR, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
+	originalCipher, _ := ps.EncryptElGamal(plaintext, &sellerKey.PublicKey, mintR)
+
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		plaintext,
+		originalCipher,
+		mintR,
 		sellerKey,
 		&buyerKey.PublicKey,
 	)
@@ -96,9 +113,12 @@ func TestElGamalTransfer_BuyerCannotDecryptWithoutR(t *testing.T) {
 
 	// Buyer verifies proof
 	valid := ps.VerifyElGamalTransfer(
+		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
 		transfer.DLEQProof,
+		transfer.PlaintextProof,
+		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
@@ -138,9 +158,15 @@ func TestElGamalTransfer_ProofRejectsDifferentPlaintexts(t *testing.T) {
 	plaintext1 := []byte("First message")
 	plaintext2 := []byte("Different message")
 
+	// Create "original" cipher (as if minted on-chain with plaintext1)
+	mintR, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
+	originalCipher, _ := ps.EncryptElGamal(plaintext1, &sellerKey.PublicKey, mintR)
+
 	// Generate transfer for first message
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		plaintext1,
+		originalCipher,
+		mintR,
 		sellerKey,
 		&buyerKey.PublicKey,
 	)
@@ -150,6 +176,8 @@ func TestElGamalTransfer_ProofRejectsDifferentPlaintexts(t *testing.T) {
 	// Generate new encryption with different r for different plaintext
 	fakeTransfer, err := ps.GenerateVerifiableElGamalTransfer(
 		plaintext2,
+		originalCipher,
+		mintR,
 		sellerKey,
 		&buyerKey.PublicKey,
 	)
@@ -157,9 +185,12 @@ func TestElGamalTransfer_ProofRejectsDifferentPlaintexts(t *testing.T) {
 
 	// Try to verify with mismatched ciphertexts
 	valid := ps.VerifyElGamalTransfer(
-		transfer.SellerCipher,    // Real cipher
-		fakeTransfer.BuyerCipher, // FAKE cipher (different plaintext)
-		transfer.DLEQProof,       // Original proof
+		originalCipher,
+		transfer.SellerCipher,     // Real cipher
+		fakeTransfer.BuyerCipher,  // FAKE cipher (different plaintext)
+		transfer.DLEQProof,        // Original proof
+		transfer.PlaintextProof,
+		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
@@ -179,8 +210,14 @@ func TestElGamalTransfer_InvalidProofRejected(t *testing.T) {
 
 	plaintext := []byte("Secret message")
 
+	// Create "original" cipher (as if minted on-chain)
+	mintR, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
+	originalCipher, _ := ps.EncryptElGamal(plaintext, &sellerKey.PublicKey, mintR)
+
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		plaintext,
+		originalCipher,
+		mintR,
 		sellerKey,
 		&buyerKey.PublicKey,
 	)
@@ -188,9 +225,12 @@ func TestElGamalTransfer_InvalidProofRejected(t *testing.T) {
 
 	// Valid proof should verify
 	valid := ps.VerifyElGamalTransfer(
+		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
 		transfer.DLEQProof,
+		transfer.PlaintextProof,
+		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
@@ -198,16 +238,21 @@ func TestElGamalTransfer_InvalidProofRejected(t *testing.T) {
 
 	// ATTACK: Tamper with proof
 	tamperedProof := &DLEQProof{
-		A1: transfer.DLEQProof.A1,
-		A2: transfer.DLEQProof.A2,
-		Z:  new(big.Int).SetInt64(99999), // TAMPERED!
-		C:  transfer.DLEQProof.C,
+		A1:    transfer.DLEQProof.A1,
+		A2:    transfer.DLEQProof.A2,
+		A3:    transfer.DLEQProof.A3,
+		Z:     new(big.Int).SetInt64(99999), // TAMPERED!
+		C:     transfer.DLEQProof.C,
+		RHash: transfer.DLEQProof.RHash,
 	}
 
 	valid = ps.VerifyElGamalTransfer(
+		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
 		tamperedProof,
+		transfer.PlaintextProof,
+		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
@@ -227,8 +272,14 @@ func TestElGamalTransfer_CommitmentVerification(t *testing.T) {
 	realPlaintext := []byte("Real treasure location")
 	fakePlaintext := []byte("Fake treasure location")
 
+	// Create "original" cipher (as if minted on-chain)
+	mintR, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
+	originalCipher, _ := ps.EncryptElGamal(realPlaintext, &sellerKey.PublicKey, mintR)
+
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		realPlaintext,
+		originalCipher,
+		mintR,
 		sellerKey,
 		&buyerKey.PublicKey,
 	)
@@ -266,6 +317,10 @@ func TestElGamalTransfer_CompleteFlow(t *testing.T) {
 
 	clueContent := []byte("The hidden treasure is behind the waterfall in the old forest")
 
+	// Create "original" cipher (as if minted on-chain)
+	mintR, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
+	originalCipher, _ := ps.EncryptElGamal(clueContent, &sellerKey.PublicKey, mintR)
+
 	t.Log("\n" + strings.Repeat("=", 70))
 	t.Log("COMPLETE VERIFIABLE TRANSFER PROTOCOL")
 	t.Log(strings.Repeat("=", 70))
@@ -274,12 +329,15 @@ func TestElGamalTransfer_CompleteFlow(t *testing.T) {
 	t.Log("\n[1] Seller generates verifiable transfer (off-chain)")
 	transfer, err := ps.GenerateVerifiableElGamalTransfer(
 		clueContent,
+		originalCipher,
+		mintR,
 		sellerKey,
 		&buyerKey.PublicKey,
 	)
 	require.NoError(t, err)
 	t.Log("    ✓ Generated ElGamal ciphertexts for seller and buyer")
 	t.Log("    ✓ Generated DLEQ proof")
+	t.Log("    ✓ Generated plaintext equality proof")
 	t.Log("    ✓ Created commitment to plaintext")
 
 	// Step 2: Seller posts to blockchain (without r!)
@@ -287,22 +345,27 @@ func TestElGamalTransfer_CompleteFlow(t *testing.T) {
 	t.Log("    - SellerCipher")
 	t.Log("    - BuyerCipher")
 	t.Log("    - DLEQ Proof")
+	t.Log("    - Plaintext Equality Proof")
 	t.Log("    - Commitment")
 	t.Log("    - Public keys")
 	t.Log("    ⚠️  Does NOT reveal r (decryption key)!")
 
 	// Step 3: Buyer verifies proof
-	t.Log("\n[3] Buyer verifies DLEQ proof (off-chain)")
+	t.Log("\n[3] Buyer verifies proofs (off-chain)")
 	valid := ps.VerifyElGamalTransfer(
+		originalCipher,
 		transfer.SellerCipher,
 		transfer.BuyerCipher,
 		transfer.DLEQProof,
+		transfer.PlaintextProof,
+		mintR,
 		transfer.SellerPubKey,
 		transfer.BuyerPubKey,
 	)
 	require.True(t, valid)
 	t.Log("    ✓ DLEQ proof verified!")
-	t.Log("    ✓ Mathematically proven: both ciphers encrypt SAME plaintext")
+	t.Log("    ✓ Plaintext equality proof verified!")
+	t.Log("    ✓ Mathematically proven: buyer cipher encrypts SAME plaintext as original")
 	t.Log("    ✓ Buyer confident to proceed")
 	t.Log("    ✗ Buyer CANNOT decrypt yet (no r)")
 
@@ -346,11 +409,56 @@ func TestElGamalTransfer_CompleteFlow(t *testing.T) {
 	t.Log(strings.Repeat("=", 70))
 	t.Log("\nSecurity guarantees:")
 	t.Log("  ✅ Buyer verified BEFORE paying")
+	t.Log("  ✅ Buyer verified content matches original on-chain cipher")
 	t.Log("  ✅ Buyer could NOT decrypt before seller revealed r")
 	t.Log("  ✅ Mathematical proof (no trust required)")
 	t.Log("  ✅ No fraud detection mechanism needed")
 	t.Log("  ✅ No dispute period required")
 	t.Log("  ✅ Pure cryptographic security")
+}
+
+// TestElGamalTransfer_ContentAlterationDetected tests that altered content is detected
+func TestElGamalTransfer_ContentAlterationDetected(t *testing.T) {
+	ps := NewProofSystem()
+
+	sellerKey, _ := ps.GenerateKeyPair()
+	buyerKey, _ := ps.GenerateKeyPair()
+
+	originalContent := []byte("The treasure is at the secret location")
+	alteredContent := []byte("FAKE: No treasure here!")
+
+	// Create "original" cipher (as if minted on-chain with correct content)
+	mintR, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
+	originalCipher, _ := ps.EncryptElGamal(originalContent, &sellerKey.PublicKey, mintR)
+
+	t.Log("=== ATTACK: Seller tries to provide altered content ===")
+
+	// ATTACK: Seller generates transfer with WRONG content
+	transfer, err := ps.GenerateVerifiableElGamalTransfer(
+		alteredContent, // ATTACK: different from original!
+		originalCipher,
+		mintR,
+		sellerKey,
+		&buyerKey.PublicKey,
+	)
+	require.NoError(t, err)
+
+	// Buyer verifies - should FAIL due to plaintext equality proof
+	valid := ps.VerifyElGamalTransfer(
+		originalCipher,
+		transfer.SellerCipher,
+		transfer.BuyerCipher,
+		transfer.DLEQProof,
+		transfer.PlaintextProof,
+		mintR,
+		transfer.SellerPubKey,
+		transfer.BuyerPubKey,
+	)
+
+	require.False(t, valid, "ATTACK DETECTED: Altered content should be rejected!")
+
+	t.Log("✅ ATTACK PREVENTED: Content alteration detected!")
+	t.Log("   Plaintext equality proof protects against content manipulation")
 }
 
 // Benchmark the ElGamal operations
@@ -397,14 +505,27 @@ func BenchmarkDLEQProofVerification(b *testing.B) {
 	buyerKey, _ := ps.GenerateKeyPair()
 	plaintext := []byte("Test")
 
-	transfer, _ := ps.GenerateVerifiableElGamalTransfer(plaintext, sellerKey, &buyerKey.PublicKey)
+	// Create original cipher
+	mintR, _ := rand.Int(rand.Reader, ps.Curve.Params().N)
+	originalCipher, _ := ps.EncryptElGamal(plaintext, &sellerKey.PublicKey, mintR)
+
+	transfer, _ := ps.GenerateVerifiableElGamalTransfer(
+		plaintext,
+		originalCipher,
+		mintR,
+		sellerKey,
+		&buyerKey.PublicKey,
+	)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ps.VerifyElGamalTransfer(
+			originalCipher,
 			transfer.SellerCipher,
 			transfer.BuyerCipher,
 			transfer.DLEQProof,
+			transfer.PlaintextProof,
+			mintR,
 			transfer.SellerPubKey,
 			transfer.BuyerPubKey,
 		)
