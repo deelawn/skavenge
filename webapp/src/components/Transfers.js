@@ -163,7 +163,7 @@ function Transfers({ metamaskAddress, config, onToast }) {
 
       // Step 4: Get the buyer's ciphertext from the gateway
       onToast('Retrieving buyer ciphertext from gateway...', 'info');
-      const transferCiphertexts = await getTransferCiphertext(transfer.transferId);
+      const transferCiphertexts = await getTransferCiphertext(transfer.transferId, SKAVENGER_EXTENSION_ID);
       if (!transferCiphertexts.success) {
         throw new Error(transferCiphertexts.error || 'Failed to get buyer ciphertext');
       }

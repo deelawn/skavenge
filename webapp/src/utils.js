@@ -193,19 +193,41 @@ export async function storeTransferCiphertext(transferId, buyerCiphertext, selle
 /**
  * Fetch transfer ciphertexts from the gateway
  * @param {string} transferId - The transfer ID (hex string with 0x prefix)
+ * @param {string} extensionId - The extension ID for signing
  * @returns {Promise<{success: boolean, buyerCiphertext?: string, sellerCiphertext?: string, error?: string}>}
  */
-export async function getTransferCiphertext(transferId) {
+export async function getTransferCiphertext(transferId, extensionId) {
   try {
     const config = await loadConfig();
     const gatewayUrl = getBrowserGatewayUrl(config.gatewayUrl);
 
-    const response = await fetch(`${gatewayUrl}/transfers?transferId=${encodeURIComponent(transferId)}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+    // Create message to sign
+    const message = `Get transfer ciphertext for ${transferId}`;
+
+    // Sign the message with the extension
+    const signResponse = await new Promise((resolve) => {
+      window.chrome.runtime.sendMessage(extensionId, {
+        action: 'signMessage',
+        message: message
+      }, resolve);
     });
+
+    if (!signResponse || !signResponse.success) {
+      return {
+        success: false,
+        error: signResponse?.error || 'Failed to sign message with extension',
+      };
+    }
+
+    const response = await fetch(
+      `${gatewayUrl}/transfers?transferId=${encodeURIComponent(transferId)}&message=${encodeURIComponent(message)}&signature=${encodeURIComponent(signResponse.signature)}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
 
     if (response.status === 404) {
       return {
