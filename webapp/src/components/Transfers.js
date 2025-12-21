@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Web3 from 'web3';
 import { SKAVENGE_ABI } from '../contractABI';
-import { getPublicKeyByEthereumAddress, storeTransferCiphertext } from '../utils';
+import { getPublicKeyByEthereumAddress, storeTransferCiphertext, getTransferCiphertext } from '../utils';
+import { verifyElGamalTransfer } from '../elgamal';
 
 // Extension ID - hardcoded to match manifest.json
 const SKAVENGER_EXTENSION_ID = "hnbligdjmpihmhhgajlfjmckcnmnofbn";
@@ -121,6 +122,123 @@ function Transfers({ metamaskAddress, config, onToast }) {
       setError('Failed to load transfers. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  /**
+   * Handle verifying proof for a transfer
+   * This is the buyer's action after the seller provides a proof
+   */
+  const handleVerifyProof = async (transfer) => {
+    setProcessingTransfer(transfer.transferId);
+
+    try {
+      const web3 = new Web3(window.ethereum);
+      const contract = new web3.eth.Contract(SKAVENGE_ABI, config.contractAddress);
+
+      // Step 1: Get buyer's Skavenge public key from the extension
+      onToast('Getting your Skavenge public key...', 'info');
+      const pubKeyResponse = await sendToExtension({
+        action: 'getPublicKey'
+      });
+
+      if (!pubKeyResponse.success) {
+        throw new Error(pubKeyResponse.error || 'Failed to get public key from extension');
+      }
+      const buyerPublicKey = pubKeyResponse.publicKey;
+
+      // Step 2: Get seller's Skavenge public key from the gateway
+      onToast('Getting seller public key...', 'info');
+      const sellerPubKeyResult = await getPublicKeyByEthereumAddress(transfer.seller);
+      if (!sellerPubKeyResult.success) {
+        throw new Error(sellerPubKeyResult.error || 'Failed to get seller public key');
+      }
+      const sellerPublicKey = sellerPubKeyResult.publicKey;
+
+      // Step 3: Get the seller's ciphertext from the smart contract clue data
+      onToast('Retrieving seller ciphertext from smart contract...', 'info');
+      const encryptedContents = await contract.methods.getClueContents(transfer.tokenId).call({
+        from: metamaskAddress
+      });
+
+      // Step 4: Get the buyer's ciphertext from the gateway
+      onToast('Retrieving buyer ciphertext from gateway...', 'info');
+      const transferCiphertexts = await getTransferCiphertext(transfer.transferId);
+      if (!transferCiphertexts.success) {
+        throw new Error(transferCiphertexts.error || 'Failed to get buyer ciphertext');
+      }
+      const buyerCiphertext = transferCiphertexts.buyerCiphertext;
+
+      // Step 5: Get the DLEQ proof from the smart contract transfer data
+      onToast('Retrieving DLEQ proof from smart contract...', 'info');
+      const transferData = await contract.methods.transfers(transfer.transferId).call();
+      const proof = transferData.proof;
+
+      console.log('=== VERIFY PROOF DEBUG ===');
+      console.log('Transfer ID:', transfer.transferId);
+      console.log('Seller ciphertext (from contract):', encryptedContents);
+      console.log('Buyer ciphertext (from gateway):', buyerCiphertext);
+      console.log('Proof (from contract):', proof);
+      console.log('Seller public key:', sellerPublicKey);
+      console.log('Buyer public key:', buyerPublicKey);
+      console.log('=== END DEBUG ===');
+
+      // Step 6: Verify the DLEQ proof
+      onToast('Verifying proof...', 'info');
+      const isValid = verifyElGamalTransfer(
+        encryptedContents,
+        buyerCiphertext,
+        proof,
+        sellerPublicKey,
+        buyerPublicKey
+      );
+
+      if (!isValid) {
+        throw new Error('Proof verification failed! The seller may have provided an invalid proof.');
+      }
+
+      onToast('Proof verified successfully! Submitting to contract...', 'success');
+
+      // Step 7: Send the verifyProof transaction via MetaMask
+      onToast('Please confirm the transaction in MetaMask...', 'info');
+
+      // Try to estimate gas first to catch any revert reasons
+      try {
+        const gasEstimate = await contract.methods.verifyProof(
+          transfer.transferId
+        ).estimateGas({ from: metamaskAddress });
+        console.log('Gas estimate:', gasEstimate);
+      } catch (gasError) {
+        console.error('Gas estimation failed:', gasError);
+        if (gasError.message) {
+          throw new Error('Transaction would fail: ' + gasError.message);
+        }
+        throw gasError;
+      }
+
+      const tx = await contract.methods.verifyProof(
+        transfer.transferId
+      ).send({
+        from: metamaskAddress
+      });
+
+      console.log('VerifyProof transaction:', tx);
+      onToast('Proof verified on-chain successfully!', 'success');
+
+      // Reload transfers to update the UI
+      await loadTransfers();
+
+    } catch (err) {
+      console.error('Error verifying proof:', err);
+
+      // Handle user rejection
+      if (err.code === 4001 || err.message?.includes('User denied')) {
+        onToast('Transaction was cancelled', 'info');
+      } else {
+        onToast('Failed to verify proof: ' + err.message, 'error');
+      }
+    } finally {
+      setProcessingTransfer(null);
     }
   };
 
@@ -488,6 +606,40 @@ function Transfers({ metamaskAddress, config, onToast }) {
                     textAlign: 'center'
                   }}>
                     Generate and submit the transfer proof for the buyer
+                  </p>
+                </div>
+              )}
+
+              {transfer.userRole === 'buyer' && transfer.status === 'proof provided' && (
+                <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                  <button
+                    onClick={() => handleVerifyProof(transfer)}
+                    disabled={processingTransfer === transfer.transferId}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      backgroundColor: processingTransfer === transfer.transferId ? '#adb5bd' : '#2b8a3e',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: processingTransfer === transfer.transferId ? 'not-allowed' : 'pointer',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    {processingTransfer === transfer.transferId ? 'Verifying...' : 'Verify Proof'}
+                  </button>
+                  <p style={{
+                    fontSize: '12px',
+                    color: '#718096',
+                    marginTop: '8px',
+                    textAlign: 'center'
+                  }}>
+                    Verify the seller's proof and confirm the transfer
                   </p>
                 </div>
               )}

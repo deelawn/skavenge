@@ -189,3 +189,50 @@ export async function storeTransferCiphertext(transferId, buyerCiphertext, selle
     };
   }
 }
+
+/**
+ * Fetch transfer ciphertexts from the gateway
+ * @param {string} transferId - The transfer ID (hex string with 0x prefix)
+ * @returns {Promise<{success: boolean, buyerCiphertext?: string, sellerCiphertext?: string, error?: string}>}
+ */
+export async function getTransferCiphertext(transferId) {
+  try {
+    const config = await loadConfig();
+    const gatewayUrl = getBrowserGatewayUrl(config.gatewayUrl);
+
+    const response = await fetch(`${gatewayUrl}/transfers?transferId=${encodeURIComponent(transferId)}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (response.status === 404) {
+      return {
+        success: false,
+        error: 'Transfer ciphertexts not found',
+      };
+    }
+
+    if (!response.ok) {
+      const data = await response.json();
+      return {
+        success: false,
+        error: data.error || 'Failed to fetch transfer ciphertexts from gateway',
+      };
+    }
+
+    const data = await response.json();
+    return {
+      success: true,
+      buyerCiphertext: data.buyer_ciphertext,
+      sellerCiphertext: data.seller_ciphertext,
+    };
+  } catch (error) {
+    console.error('Error fetching transfer ciphertexts from gateway:', error);
+    return {
+      success: false,
+      error: 'Failed to connect to the gateway server',
+    };
+  }
+}

@@ -85,6 +85,7 @@ function SkavengerStep({ onKeysFound, onToast }) {
   // Check for keys on mount
   useEffect(() => {
     checkInitialStatus();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkInitialStatus = async () => {
