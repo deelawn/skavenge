@@ -1220,9 +1220,65 @@ function marshalDLEQProof(proof) {
   return new Uint8Array(result);
 }
 
+// Generate plaintext equality proof
+// This proves that the buyer cipher encrypts the same plaintext as the original cipher
+// by committing to KeyBuyer = Hash(newR || S_buyer.X)
+function generatePlaintextEqualityProof(newR, buyerCipher) {
+  // Extract S_buyer.X from buyer cipher's shared secret
+  // The shared secret is in the format: 0x04 | X (32 bytes) | Y (32 bytes)
+  const [sBuyerX, ] = parseECPoint(buyerCipher.sharedSecret);
+
+  // Compute KeyBuyer = Keccak256(newR || S_buyer.X)
+  // This is the actual key used to encrypt buyerCipher.c2
+  const newRBytes = bigIntToBytes(newR);
+  const sBuyerXBytes = bigIntToBytes(sBuyerX);
+  const keyInput = new Uint8Array(newRBytes.length + sBuyerXBytes.length);
+  keyInput.set(newRBytes, 0);
+  keyInput.set(sBuyerXBytes, newRBytes.length);
+  const keyBuyer = keccak256(keyInput);
+
+  return {
+    keyBuyer: keyBuyer  // 32 bytes
+  };
+}
+
+// Marshal plaintext equality proof to bytes
+// Format: KeyBuyer (fixed 32 bytes)
+function marshalPlaintextProof(proof) {
+  return new Uint8Array(proof.keyBuyer);
+}
+
+// Marshal TransferProof to bytes (DLEQ + Plaintext)
+// Format: len(DLEQ) | DLEQ | Plaintext (32 bytes)
+function marshalTransferProof(proof) {
+  const result = [];
+
+  // Marshal DLEQ proof
+  const dleqBytes = marshalDLEQProof(proof.dleq);
+
+  // DLEQ length (4 bytes, big endian)
+  result.push((dleqBytes.length >> 24) & 0xff);
+  result.push((dleqBytes.length >> 16) & 0xff);
+  result.push((dleqBytes.length >> 8) & 0xff);
+  result.push(dleqBytes.length & 0xff);
+
+  // DLEQ data
+  for (let i = 0; i < dleqBytes.length; i++) {
+    result.push(dleqBytes[i]);
+  }
+
+  // Plaintext proof (fixed 32 bytes)
+  const plaintextBytes = marshalPlaintextProof(proof.plaintext);
+  for (let i = 0; i < plaintextBytes.length; i++) {
+    result.push(plaintextBytes[i]);
+  }
+
+  return new Uint8Array(result);
+}
+
 // Generate verifiable ElGamal transfer
-// Creates two ciphertexts (one for seller, one for buyer) and a DLEQ proof
-// that they encrypt the same plaintext
+// Creates two ciphertexts (one for seller, one for buyer) and a unified TransferProof
+// containing both DLEQ proof (same r for both ciphers) and plaintext equality proof
 async function generateVerifiableElGamalTransfer(plaintext, sellerPrivKeyHex, buyerPubKeyHex) {
   // Derive seller's public key from private key
   const sellerPubKeyHex = derivePublicKey(sellerPrivKeyHex);
@@ -1252,11 +1308,9 @@ async function generateVerifiableElGamalTransfer(plaintext, sellerPrivKeyHex, bu
   // Generate DLEQ proof that both ciphers use same r
   const dleqProof = generateDLEQProof(r, sellerPubKeyHex, buyerPubKeyHex, sellerCipher, buyerCipher);
 
-  // TODO: Generate plaintext equality proof
-  // For now, we only have DLEQ proof. The plaintext proof would verify that
-  // the buyer cipher encrypts the same content as the original on-chain cipher.
-  // This requires the original cipher and mintR as parameters.
-  const plaintextProof = null; // Placeholder - needs implementation
+  // Generate plaintext equality proof
+  // This proves buyerCipher encrypts the same content as the original on-chain cipher
+  const plaintextProof = generatePlaintextEqualityProof(r, buyerCipher);
 
   // Create consolidated proof object matching Go structure
   const proof = {
@@ -1642,9 +1696,8 @@ async function handleMessage(request, isInternal = true) {
           const sellerCiphertextBytes = marshalElGamalCiphertext(transfer.sellerCipher);
           const buyerCiphertextBytes = marshalElGamalCiphertext(transfer.buyerCipher);
 
-          // TODO: Implement full TransferProof marshaling (DLEQ + Plaintext)
-          // For now, we only marshal the DLEQ proof since plaintext proof is not yet implemented
-          const proofBytes = marshalDLEQProof(transfer.proof.dleq);
+          // Marshal the unified TransferProof (DLEQ + Plaintext)
+          const proofBytes = marshalTransferProof(transfer.proof);
 
           // Convert sharedR to hex string for storage (will be revealed later)
           let sharedRHex = transfer.sharedR.toString(16);
