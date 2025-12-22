@@ -59,7 +59,6 @@ start-with-setup:
 	docker compose up -d hardhat
 	@echo "Waiting for Hardhat to be ready..."
 	@sleep 5
-	docker compose up --abort-on-container-exit setup
 	docker compose up -d webapp gateway
 	@echo "Services started with contract deployment..."
 	@echo "Hardhat: http://localhost:8545"

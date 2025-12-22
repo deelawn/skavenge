@@ -53,8 +53,8 @@ services:
       dockerfile: Dockerfile
     container_name: skavenge-webapp
     depends_on:
-      setup:
-        condition: service_completed_successfully
+      gateway:
+        condition: service_healthy
     ports:
       - "8080:80"
     volumes:
@@ -81,6 +81,12 @@ services:
     networks:
       - skavenge-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4591/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
 networks:
   skavenge-network:
