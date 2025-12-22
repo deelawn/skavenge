@@ -247,6 +247,15 @@ function Transfers({ metamaskAddress, config, onToast }) {
         onToast('Transfer proof submitted successfully!', 'success');
       }
 
+      // Step 8: Store the sharedR value in local storage for later use
+      try {
+        localStorage.setItem(`sharedR_${transfer.transferId}`, proofResponse.sharedR);
+        console.log('Stored sharedR in local storage for transfer:', transfer.transferId);
+      } catch (storageError) {
+        console.warn('Failed to store sharedR in local storage:', storageError);
+        onToast('Warning: Failed to store sharedR locally', 'warning');
+      }
+
       // Reload transfers to update the UI
       await loadTransfers();
 
@@ -393,6 +402,102 @@ function Transfers({ metamaskAddress, config, onToast }) {
         onToast('Transaction was cancelled', 'info');
       } else {
         onToast('Failed to verify proof: ' + err.message, 'error');
+      }
+    } finally {
+      setProcessingTransfer(null);
+    }
+  };
+
+  /**
+   * Handle completing a transfer after the buyer has verified the proof
+   * This is the seller's action to finalize the transfer and receive payment
+   */
+  const handleCompleteTransfer = async (transfer) => {
+    setProcessingTransfer(transfer.transferId);
+
+    try {
+      const web3 = new Web3(window.ethereum);
+      const contract = new web3.eth.Contract(SKAVENGE_ABI, config.contractAddress);
+
+      // Step 1: Retrieve the buyer ciphertext from the gateway
+      onToast('Retrieving buyer ciphertext from gateway...', 'info');
+      const ciphertextResult = await getTransferCiphertext(
+        transfer.transferId,
+        SKAVENGER_EXTENSION_ID
+      );
+
+      if (!ciphertextResult.success) {
+        throw new Error(ciphertextResult.error || 'Failed to get buyer ciphertext from gateway');
+      }
+
+      const buyerCiphertext = ciphertextResult.buyerCiphertext;
+
+      // Step 2: Retrieve the sharedR value from local storage
+      const sharedRHex = localStorage.getItem(`sharedR_${transfer.transferId}`);
+      if (!sharedRHex) {
+        throw new Error('sharedR value not found in local storage. Please provide proof again.');
+      }
+
+      // Convert sharedR from hex string to BigInt
+      let rValueHex = sharedRHex;
+      if (rValueHex.startsWith('0x')) {
+        rValueHex = rValueHex.slice(2);
+      }
+      const rValue = window.BigInt('0x' + rValueHex);
+
+      // Debug logging
+      console.log('=== COMPLETE TRANSFER DEBUG ===');
+      console.log('Transfer ID:', transfer.transferId);
+      console.log('Buyer ciphertext:', buyerCiphertext);
+      console.log('Buyer ciphertext length:', (buyerCiphertext.length - 2) / 2);
+      console.log('R value (hex):', rValueHex);
+      console.log('R value (decimal):', rValue.toString());
+      console.log('=== END DEBUG ===');
+
+      // Step 3: Call completeTransfer on the smart contract
+      onToast('Please confirm the transaction in MetaMask...', 'info');
+
+      // Try to estimate gas first
+      try {
+        const gasEstimate = await contract.methods.completeTransfer(
+          transfer.transferId,
+          buyerCiphertext,
+          rValue.toString()
+        ).estimateGas({ from: metamaskAddress });
+        console.log('Gas estimate:', gasEstimate);
+      } catch (gasError) {
+        console.error('Gas estimation failed:', gasError);
+        if (gasError.message) {
+          throw new Error('Transaction would fail: ' + gasError.message);
+        }
+        throw gasError;
+      }
+
+      const tx = await contract.methods.completeTransfer(
+        transfer.transferId,
+        buyerCiphertext,
+        rValue.toString()
+      ).send({
+        from: metamaskAddress
+      });
+
+      console.log('CompleteTransfer transaction:', tx);
+      onToast('Transfer completed successfully!', 'success');
+
+      // Clean up: Remove the sharedR from local storage
+      localStorage.removeItem(`sharedR_${transfer.transferId}`);
+
+      // Reload transfers to update the UI
+      await loadTransfers();
+
+    } catch (err) {
+      console.error('Error completing transfer:', err);
+
+      // Handle user rejection
+      if (err.code === 4001 || err.message?.includes('User denied')) {
+        onToast('Transaction was cancelled', 'info');
+      } else {
+        onToast('Failed to complete transfer: ' + err.message, 'error');
       }
     } finally {
       setProcessingTransfer(null);
@@ -659,6 +764,41 @@ function Transfers({ metamaskAddress, config, onToast }) {
                     textAlign: 'center'
                   }}>
                     Verify the seller's proof cryptographically before approving the transfer
+                  </p>
+                </div>
+              )}
+
+              {/* Complete Transfer button for sellers after buyer has verified */}
+              {transfer.userRole === 'seller' && transfer.status === 'proof verified' && (
+                <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                  <button
+                    onClick={() => handleCompleteTransfer(transfer)}
+                    disabled={processingTransfer === transfer.transferId}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      backgroundColor: processingTransfer === transfer.transferId ? '#adb5bd' : '#51cf66',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: processingTransfer === transfer.transferId ? 'not-allowed' : 'pointer',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    {processingTransfer === transfer.transferId ? 'Completing...' : 'Complete Transfer'}
+                  </button>
+                  <p style={{
+                    fontSize: '12px',
+                    color: '#718096',
+                    marginTop: '8px',
+                    textAlign: 'center'
+                  }}>
+                    Finalize the transfer and receive payment
                   </p>
                 </div>
               )}
