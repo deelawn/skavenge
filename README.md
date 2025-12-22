@@ -7,19 +7,23 @@ Skavenge is an NFT-based scavenger hunt game implemented on Ethereum. Players ca
 ```
 /skavenge
 ├── cmd/
-│   └── test-runner/      # CLI for running the test suite
+│   ├── generate-query-cli/  # CLI generator for contract queries
+│   ├── skavenge-query/      # Generated CLI tool (auto-generated)
+│   └── setup/               # Contract deployment tool
 ├── eth/
-│   ├── bindings/         # Go bindings for Ethereum contracts
-│   ├── build/            # Compiled contract artifacts
-│   └── skavenge.sol      # Solidity smart contract
-├── internal/
-│   └── api/              # API client for ZK proof server
+│   ├── bindings/            # Go bindings for Ethereum contracts
+│   ├── build/               # Compiled contract artifacts
+│   └── skavenge.sol         # Solidity smart contract
+├── linked-accounts-gateway/ # Gateway for linked accounts
+├── skavenger-extension/     # Browser extension
 ├── tests/
-│   ├── util/             # Test utilities
-│   ├── mint_test.go      # Tests for minting clues
-│   ├── solve_test.go     # Tests for solving clues
-│   └── transfer_test.go  # Tests for transferring clues
-└── Makefile              # Build and test automation
+│   ├── util/                # Test utilities
+│   ├── mint_test.go         # Tests for minting clues
+│   ├── solve_test.go        # Tests for solving clues
+│   └── transfer_test.go     # Tests for transferring clues
+├── webapp/                  # Web application
+├── zkproof/                 # Zero-knowledge proof implementation
+└── Makefile                 # Build and test automation
 ```
 
 ## Features
@@ -29,6 +33,7 @@ Skavenge is an NFT-based scavenger hunt game implemented on Ethereum. Players ca
 - **Trading Clues**: Securely transfer clues to other players using ZK proofs
 - **Limited Attempts**: Each clue has a maximum number of solve attempts
 - **Transfer Protection**: Prevents transfer of solved clues
+- **CLI Query Tool**: Auto-generated command-line interface for contract queries (see [CLI_TOOLS.md](CLI_TOOLS.md))
 
 ## Technology Stack
 

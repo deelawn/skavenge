@@ -5,6 +5,7 @@ node_modules
 # Go build artifacts
 *.test
 *.out
+bin
 
 # Chrome extension private keys
 skavenger-extension/private_key.pem
