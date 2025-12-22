@@ -372,6 +372,15 @@ func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
 	})
 }
 
+// HandleHealth processes health check requests
+func HandleHealth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "healthy",
+	})
+}
+
 func main() {
 	// Parse command-line flags
 	port := flag.Int("port", 4591, "Port to listen on")
@@ -400,6 +409,7 @@ func main() {
 	// Register handlers with CORS middleware
 	http.HandleFunc("/link", corsMiddleware(server.HandleLink))
 	http.HandleFunc("/transfers", corsMiddleware(server.HandleTransfers))
+	http.HandleFunc("/health", HandleHealth)
 
 	// Start server
 	addr := fmt.Sprintf(":%d", *port)
