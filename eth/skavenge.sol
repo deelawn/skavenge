@@ -176,7 +176,6 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
      * @param tokenId Token ID of the clue
      */
     function getRValue(uint256 tokenId) external view returns (uint256) {
-        require(ownerOf(tokenId) == msg.sender, "Not token owner");
         return clues[tokenId].rValue;
     }
 
