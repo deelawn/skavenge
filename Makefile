@@ -1,4 +1,4 @@
-.PHONY: all compile compile-js hardhat test
+.PHONY: all compile compile-js hardhat test generate-cli
 
 all: compile
 
@@ -12,6 +12,17 @@ compile-js:
 	@echo "export const SKAVENGE_ABI = " >> webapp/src/contractABI.js
 	@cat eth/build/Skavenge.abi >> webapp/src/contractABI.js
 	@echo ";" >> webapp/src/contractABI.js
+
+generate-cli:
+	@echo "Generating CLI query tool..."
+	@mkdir -p cmd/skavenge-query
+	go run ./cmd/generate-query-cli eth/bindings/bindings.go cmd/skavenge-query/main.go
+	@echo "CLI tool generated at cmd/skavenge-query/main.go"
+
+build-cli: generate-cli
+	@echo "Building CLI query tool..."
+	go build -o bin/skavenge-query ./cmd/skavenge-query
+	@echo "Binary created at bin/skavenge-query"
 
 # Docker targets
 .PHONY: docker-build
