@@ -189,3 +189,70 @@ export async function storeTransferCiphertext(transferId, buyerCiphertext, selle
     };
   }
 }
+
+/**
+ * Get transfer ciphertexts from the gateway
+ * This is used by the buyer to retrieve the seller's ciphertexts for verification
+ * @param {string} transferId - The transfer ID (hex string with 0x prefix)
+ * @param {string} extensionId - The extension ID for signing
+ * @returns {Promise<{success: boolean, buyerCiphertext?: string, sellerCiphertext?: string, error?: string}>}
+ */
+export async function getTransferCiphertext(transferId, extensionId) {
+  try {
+    const config = await loadConfig();
+    const gatewayUrl = getBrowserGatewayUrl(config.gatewayUrl);
+
+    // Create message to sign
+    const message = `Get transfer ciphertext for ${transferId}`;
+
+    // Sign the message with the extension
+    const signResponse = await new Promise((resolve) => {
+      window.chrome.runtime.sendMessage(extensionId, {
+        action: 'signMessage',
+        message: message
+      }, resolve);
+    });
+
+    if (!signResponse || !signResponse.success) {
+      return {
+        success: false,
+        error: signResponse?.error || 'Failed to sign message with extension',
+      };
+    }
+
+    // Build the URL with query parameters
+    const params = new URLSearchParams({
+      transferId: transferId,
+      signature: signResponse.signature,
+      message: message
+    });
+
+    const response = await fetch(`${gatewayUrl}/transfers?${params.toString()}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      return {
+        success: false,
+        error: data.error || 'Failed to get ciphertexts from gateway',
+      };
+    }
+
+    const data = await response.json();
+    return {
+      success: true,
+      buyerCiphertext: data.buyer_ciphertext,
+      sellerCiphertext: data.seller_ciphertext,
+    };
+  } catch (error) {
+    console.error('Error getting ciphertexts from gateway:', error);
+    return {
+      success: false,
+      error: 'Failed to connect to the gateway server',
+    };
+  }
+}
