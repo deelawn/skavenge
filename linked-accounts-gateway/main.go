@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // LinkRequest represents the JSON payload for POST /link
@@ -220,7 +221,9 @@ func (s *Server) handlePostTransfers(w http.ResponseWriter, r *http.Request) {
 	copy(transferID[:], transferIDBytes)
 
 	// Retrieve transfer from blockchain
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
 	transfer, err := s.contractClient.GetTransferInfo(ctx, transferID)
 	if err != nil {
 		log.Printf("Failed to retrieve transfer: %v", err)
@@ -305,7 +308,9 @@ func (s *Server) handleGetTransfers(w http.ResponseWriter, r *http.Request) {
 	copy(transferIDArray[:], transferIDBytes)
 
 	// Retrieve transfer from blockchain
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
 	transfer, err := s.contractClient.GetTransferInfo(ctx, transferIDArray)
 	if err != nil {
 		log.Printf("Failed to retrieve transfer: %v", err)

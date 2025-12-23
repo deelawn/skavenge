@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -902,7 +903,10 @@ func TestCancelTransfer(t *testing.T) {
 	ps := zkproof.NewProofSystem()
 
 	// Get initial buyer balance
-	initialBuyerBalance, err := client.BalanceAt(context.Background(), buyerAddr, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	initialBuyerBalance, err := client.BalanceAt(ctx, buyerAddr, nil)
 	require.NoError(t, err)
 
 	// Mint a clue
@@ -975,7 +979,7 @@ func TestCancelTransfer(t *testing.T) {
 	require.Equal(t, big.NewInt(0).String(), transferData.Value.String(), "Transfer value should be 0 after cancellation")
 
 	// Final buyer balance should be close to initial balance minus gas costs
-	finalBuyerBalance, err := client.BalanceAt(context.Background(), buyerAddr, nil)
+	finalBuyerBalance, err := client.BalanceAt(ctx, buyerAddr, nil)
 	require.NoError(t, err)
 
 	// Calculate difference (should be just gas costs)

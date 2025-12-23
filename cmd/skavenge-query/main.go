@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -66,7 +67,8 @@ func main() {
 	}
 
 	// Execute command
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
 	opts := &bind.CallOpts{Context: ctx}
 
 	switch command {

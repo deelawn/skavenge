@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -168,7 +169,10 @@ func main() {
 	fmt.Printf("Token ownership verified: %s owns token %s\n", owner.Hex(), tokenId.String())
 
 	// Get chain ID
-	chainID, err := client.ChainID(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	chainID, err := client.ChainID(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting chain ID: %v\n", err)
 		os.Exit(1)

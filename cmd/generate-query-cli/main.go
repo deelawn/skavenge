@@ -31,14 +31,14 @@ type Return struct {
 }
 
 type TemplateData struct {
-	Functions       []FunctionInfo
-	SimpleCommands  []FunctionInfo
-	AddressCommands []FunctionInfo
-	TokenCommands   []FunctionInfo
-	IndexCommands   []FunctionInfo
-	TwoArgCommands  []FunctionInfo
+	Functions        []FunctionInfo
+	SimpleCommands   []FunctionInfo
+	AddressCommands  []FunctionInfo
+	TokenCommands    []FunctionInfo
+	IndexCommands    []FunctionInfo
+	TwoArgCommands   []FunctionInfo
 	ThreeArgCommands []FunctionInfo
-	SpecialCommands []FunctionInfo
+	SpecialCommands  []FunctionInfo
 }
 
 func main() {
@@ -244,7 +244,7 @@ func generateCLI(outputPath string, data TemplateData) error {
 }
 
 var cliTemplate = template.Must(template.New("cli").Funcs(template.FuncMap{
-	"lower":       strings.ToLower,
+	"lower": strings.ToLower,
 	"sub": func(a, b int) int {
 		result := a - b
 		if result < 0 {
@@ -280,12 +280,12 @@ var cliTemplate = template.Must(template.New("cli").Funcs(template.FuncMap{
 			return ""
 		}
 		firstReturn := fn.Returns[0]
-		
+
 		// Check if it's a struct return
 		if firstReturn.Type == "struct" {
 			return "struct"
 		}
-		
+
 		// Check common types
 		if strings.Contains(firstReturn.Type, "big.Int") {
 			return "bigint"
@@ -314,6 +314,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -372,7 +373,8 @@ func main() {
 	}
 
 	// Execute command
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
 	opts := &bind.CallOpts{Context: ctx}
 
 	switch command {
@@ -660,4 +662,3 @@ func exec{{ .Name }}(contract *bindings.SkavengeCaller, opts *bind.CallOpts, {{ 
 }
 {{ end }}
 `))
-
