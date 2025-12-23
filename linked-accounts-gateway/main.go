@@ -330,15 +330,43 @@ func (s *Server) handleGetTransfers(w http.ResponseWriter, r *http.Request) {
 
 	// Verify the signature was signed by the buyer's skavenge private key
 	valid, err := VerifySkavengeSignature(message, signature, buyerPublicKey)
-	if err != nil {
-		log.Printf("Signature verification error: %v", err)
-		writeErrorResponse(w, http.StatusBadRequest, "signature verification failed: "+err.Error())
-		return
-	}
+	if !valid || err != nil {
+		// If not valid, try to verify the signature was signed by the seller.
 
-	if !valid {
-		writeErrorResponse(w, http.StatusUnauthorized, "invalid signature")
-		return
+		// Get the seller's skavenge public key and see if this signature is from the seller.
+		owner, err := s.contractClient.GetTokenOwner(ctx, transfer.TokenID)
+		if err != nil {
+			log.Printf("Failed to get token owner: %v", err)
+			writeErrorResponse(w, http.StatusInternalServerError, "failed to get token owner")
+			return
+		}
+
+		// Normalize the seller address
+		normalizedOwner := strings.ToLower(owner.Hex())
+
+		sellerPublicKey, err := s.storage.Get(normalizedOwner)
+		if err != nil {
+			if errors.Is(err, ErrKeyNotFound) {
+				writeErrorResponse(w, http.StatusNotFound, "seller public key not found")
+				return
+			}
+			log.Printf("Storage error: %v", err)
+			writeErrorResponse(w, http.StatusInternalServerError, "failed to retrieve seller public key")
+			return
+		}
+
+		// Verify the signature was signed by the seller's skavenge private key
+		valid, err = VerifySkavengeSignature(message, signature, sellerPublicKey)
+		if err != nil {
+			log.Printf("Signature verification error: %v", err)
+			writeErrorResponse(w, http.StatusBadRequest, "signature verification failed: "+err.Error())
+			return
+		}
+
+		if !valid {
+			writeErrorResponse(w, http.StatusUnauthorized, "invalid signature")
+			return
+		}
 	}
 
 	// Retrieve the ciphertext

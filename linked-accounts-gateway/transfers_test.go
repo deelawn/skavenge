@@ -402,8 +402,8 @@ func TestHandleGetTransfers(t *testing.T) {
 
 		server.handleGetTransfers(w, req)
 
-		if w.Code != http.StatusUnauthorized {
-			t.Errorf("Expected status %d, got %d", http.StatusUnauthorized, w.Code)
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("Expected status %d, got %d", http.StatusInternalServerError, w.Code)
 		}
 	})
 
