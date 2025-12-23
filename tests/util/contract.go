@@ -63,13 +63,16 @@ func NewTransactOpts(client *ethclient.Client, privateKeyHex string) (*bind.Tran
 	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
 
 	// Get the nonce
-	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	nonce, err := client.PendingNonceAt(ctx, fromAddress)
 	if err != nil {
 		return nil, err
 	}
 
 	// Get the chain ID
-	chainID, err := client.ChainID(context.Background())
+	chainID, err := client.ChainID(ctx)
 	if err != nil {
 		return nil, err
 	}
