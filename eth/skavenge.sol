@@ -490,28 +490,45 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         clues[transfer.tokenId].rValue = rValue;
         clues[transfer.tokenId].solveAttempts = 0;
 
-        // Transfer ownership
-        _safeTransfer(msg.sender, transfer.buyer, transfer.tokenId, "");
+        // Store values we'll need after clearing transfer state
+        address buyer = transfer.buyer;
+        uint256 value = transfer.value;
+        uint256 tokenId = transfer.tokenId;
 
-        // Send payment to seller
-        (bool sent, ) = payable(msg.sender).call{value: transfer.value}("");
-        require(sent, "Failed to send Ether");
-
-        // Remove from sale list
-        if (cluesForSale[transfer.tokenId]) {
-            _removeFromForSaleList(transfer.tokenId);
-            clues[transfer.tokenId].salePrice = 0;
-            emit SalePriceRemoved(transfer.tokenId);
+        // Remove from sale list BEFORE transfer (must happen before _safeTransfer)
+        if (cluesForSale[tokenId]) {
+            cluesForSale[tokenId] = false;
+            // Find and remove the token ID from the array
+            for (uint256 i = 0; i < _cluesForSaleList.length; i++) {
+                if (_cluesForSaleList[i] == tokenId) {
+                    // Replace the item with the last item in the array
+                    _cluesForSaleList[i] = _cluesForSaleList[
+                        _cluesForSaleList.length - 1
+                    ];
+                    // Remove the last item
+                    _cluesForSaleList.pop();
+                    break;
+                }
+            }
+            clues[tokenId].salePrice = 0;
+            emit SalePriceRemoved(tokenId);
         }
 
         // Clear the transfer in progress flag
-        transferInProgress[transfer.tokenId] = false;
+        transferInProgress[tokenId] = false;
 
         // Clear the active transfer ID
-        delete activeTransferIds[transfer.tokenId];
+        delete activeTransferIds[tokenId];
 
-        // Clear the transfer
+        // Clear the transfer BEFORE _safeTransfer
         delete transfers[transferId];
+
+        // Transfer ownership
+        _safeTransfer(msg.sender, buyer, tokenId, "");
+
+        // Send payment to seller
+        (bool sent, ) = payable(msg.sender).call{value: value}("");
+        require(sent, "Failed to send Ether");
 
         emit TransferCompleted(transferId, rValue);
     }
@@ -661,9 +678,12 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     ) internal virtual override returns (address) {
         address from = super._update(to, tokenId, auth);
 
-        // If this is a transfer (not a mint or burn), clear the sale price
+        // If this is a transfer (not a mint or burn), remove from sale list
         if (from != address(0) && to != address(0)) {
             if (cluesForSale[tokenId]) {
+                // Remove from sale list and cancel any pending transfer
+                // Note: During completeTransfer, the transfer is already deleted
+                // before _safeTransfer is called, so this won't double-refund
                 _removeFromForSaleList(tokenId);
             }
             clues[tokenId].salePrice = 0;
