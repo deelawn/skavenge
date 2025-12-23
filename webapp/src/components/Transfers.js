@@ -3,31 +3,7 @@ import Web3 from 'web3';
 import { SKAVENGE_ABI } from '../contractABI';
 import { getPublicKeyByEthereumAddress, storeTransferCiphertext, getTransferCiphertext } from '../utils';
 import { verifyElGamalTransfer } from '../elgamalVerify';
-
-// Extension ID - hardcoded to match manifest.json
-const SKAVENGER_EXTENSION_ID = "hnbligdjmpihmhhgajlfjmckcnmnofbn";
-
-/**
- * Send message to Skavenger extension
- */
-async function sendToExtension(message) {
-  return new Promise((resolve, reject) => {
-    if (typeof window.chrome === 'undefined' || !window.chrome.runtime) {
-      reject(new Error('Chrome extension API not available'));
-      return;
-    }
-
-    window.chrome.runtime.sendMessage(SKAVENGER_EXTENSION_ID, message, (response) => {
-      if (window.chrome.runtime.lastError) {
-        reject(new Error(window.chrome.runtime.lastError.message));
-      } else if (response && response.success !== false) {
-        resolve(response);
-      } else {
-        reject(new Error(response?.error || 'Unknown error'));
-      }
-    });
-  });
-}
+import { sendToExtension, SKAVENGER_EXTENSION_ID } from '../extensionUtils';
 
 function Transfers({ metamaskAddress, config, onToast }) {
   const [transfers, setTransfers] = useState([]);
@@ -169,6 +145,8 @@ function Transfers({ metamaskAddress, config, onToast }) {
         action: 'decryptElGamal',
         encryptedHex: encryptedHex,
         rValueHex: rValueHex
+      }, () => {
+        onToast('Please unlock the Skavenger extension to continue', 'info');
       });
 
       if (!decryptResponse.success) {
@@ -182,6 +160,8 @@ function Transfers({ metamaskAddress, config, onToast }) {
         action: 'generateTransferProof',
         plaintext: plaintext,
         buyerPublicKey: buyerPublicKey
+      }, () => {
+        onToast('Please unlock the Skavenger extension to continue', 'info');
       });
 
       if (!proofResponse.success) {
@@ -289,6 +269,8 @@ function Transfers({ metamaskAddress, config, onToast }) {
       onToast('Getting buyer public key from extension...', 'info');
       const buyerPubKeyResponse = await sendToExtension({
         action: 'getPublicKey'
+      }, () => {
+        onToast('Please unlock the Skavenger extension to continue', 'info');
       });
 
       if (!buyerPubKeyResponse.success) {

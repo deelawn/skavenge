@@ -3,6 +3,7 @@
  */
 
 import { loadConfig } from './config.js';
+import { sendToExtension } from './extensionUtils.js';
 
 /**
  * Convert RPC URL for browser access
@@ -142,12 +143,10 @@ export async function storeTransferCiphertext(transferId, buyerCiphertext, selle
     // Create message to sign
     const message = `Store transfer ciphertext for ${transferId}`;
 
-    // Sign the message with the extension
-    const signResponse = await new Promise((resolve) => {
-      window.chrome.runtime.sendMessage(extensionId, {
-        action: 'signMessage',
-        message: message
-      }, resolve);
+    // Sign the message with the extension (with auto-unlock support)
+    const signResponse = await sendToExtension({
+      action: 'signMessage',
+      message: message
     });
 
     if (!signResponse || !signResponse.success) {
@@ -205,12 +204,10 @@ export async function getTransferCiphertext(transferId, extensionId) {
     // Create message to sign
     const message = `Get transfer ciphertext for ${transferId}`;
 
-    // Sign the message with the extension
-    const signResponse = await new Promise((resolve) => {
-      window.chrome.runtime.sendMessage(extensionId, {
-        action: 'signMessage',
-        message: message
-      }, resolve);
+    // Sign the message with the extension (with auto-unlock support)
+    const signResponse = await sendToExtension({
+      action: 'signMessage',
+      message: message
     });
 
     if (!signResponse || !signResponse.success) {

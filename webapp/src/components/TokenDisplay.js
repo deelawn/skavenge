@@ -1,31 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Web3 from 'web3';
 import { SKAVENGE_ABI } from '../contractABI';
-
-// Extension ID - hardcoded to match manifest.json
-const SKAVENGER_EXTENSION_ID = "hnbligdjmpihmhhgajlfjmckcnmnofbn";
-
-/**
- * Send message to Skavenger extension
- */
-async function sendToExtension(message) {
-  return new Promise((resolve, reject) => {
-    if (typeof window.chrome === 'undefined' || !window.chrome.runtime) {
-      reject(new Error('Chrome extension API not available'));
-      return;
-    }
-
-    window.chrome.runtime.sendMessage(SKAVENGER_EXTENSION_ID, message, (response) => {
-      if (window.chrome.runtime.lastError) {
-        reject(new Error(window.chrome.runtime.lastError.message));
-      } else if (response && response.success !== false) {
-        resolve(response);
-      } else {
-        reject(new Error(response?.error || 'Unknown error'));
-      }
-    });
-  });
-}
+import { sendToExtension } from '../extensionUtils';
 
 function TokenDisplay({ metamaskAddress, config, onToast }) {
   const [tokens, setTokens] = useState([]);
@@ -156,11 +132,16 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
       console.log('rValueHex:', rValueHex);
       console.log('encryptedHex length:', cleanEncryptedHex.length);
 
-      // Call the extension to decrypt
+      // Call the extension to decrypt (with auto-unlock support)
       const response = await sendToExtension({
         action: 'decryptElGamal',
         encryptedHex: cleanEncryptedHex,
         rValueHex: rValueHex
+      }, () => {
+        // Callback when unlock is prompted
+        if (onToast) {
+          onToast('Please unlock the Skavenger extension to continue', 'info');
+        }
       });
 
       console.log('Extension response:', response);
