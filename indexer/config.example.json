@@ -1,0 +1,10 @@
+{
+  "rpc_url": "http://localhost:8545",
+  "contract_address": "0x0000000000000000000000000000000000000000",
+  "start_block": 0,
+  "poll_interval_seconds": 12,
+  "confirmation_blocks": 6,
+  "batch_size": 100,
+  "max_retries": 3,
+  "retry_delay_seconds": 2
+}
