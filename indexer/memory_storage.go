@@ -2,7 +2,6 @@ package indexer
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"sort"
 	"sync"
@@ -14,15 +13,15 @@ import (
 // Suitable for testing and small-scale deployments
 type MemoryStorage struct {
 	mu              sync.RWMutex
-	events          map[string]*Event           // eventID -> Event
-	eventsByBlock   map[uint64][]*Event         // blockNumber -> Events
-	eventsByTokenID map[string][]*Event         // tokenID (hex) -> Events
-	eventsByType    map[EventType][]*Event      // eventType -> Events
-	blocks          map[uint64]*Block           // blockNumber -> Block
-	blocksByHash    map[common.Hash]*Block      // blockHash -> Block
-	nftOwners       map[string]common.Address   // tokenID (hex) -> current owner
-	nftForSale      map[string]*big.Int         // tokenID (hex) -> sale price
-	nftSolved       map[string]bool             // tokenID (hex) -> is solved
+	events          map[string]*Event         // eventID -> Event
+	eventsByBlock   map[uint64][]*Event       // blockNumber -> Events
+	eventsByTokenID map[string][]*Event       // tokenID (hex) -> Events
+	eventsByType    map[EventType][]*Event    // eventType -> Events
+	blocks          map[uint64]*Block         // blockNumber -> Block
+	blocksByHash    map[common.Hash]*Block    // blockHash -> Block
+	nftOwners       map[string]common.Address // tokenID (hex) -> current owner
+	nftForSale      map[string]*big.Int       // tokenID (hex) -> sale price
+	nftSolved       map[string]bool           // tokenID (hex) -> is solved
 }
 
 // NewMemoryStorage creates a new in-memory storage instance
