@@ -16,3 +16,4 @@ test-config.json
 test-key.txt
 
 webapp/config.json
+indexer/config.json
