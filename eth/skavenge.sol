@@ -99,7 +99,10 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     );
     event ProofVerified(bytes32 indexed transferId);
     event TransferCompleted(bytes32 indexed transferId, uint256 rValue);
-    event TransferCancelled(bytes32 indexed transferId);
+    event TransferCancelled(
+        bytes32 indexed transferId,
+        address indexed cancelledBy
+    );
 
     // Event emitted when authorized minter is updated
     event AuthorizedMinterUpdated(
@@ -580,7 +583,7 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         // Clear the active transfer ID
         delete activeTransferIds[transfer.tokenId];
 
-        emit TransferCancelled(transferId);
+        emit TransferCancelled(transferId, msg.sender);
 
         // Clear the transfer
         delete transfers[transferId];
@@ -614,7 +617,7 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
                 // Clear the active transfer ID
                 delete activeTransferIds[tokenId];
 
-                emit TransferCancelled(transferId);
+                emit TransferCancelled(transferId, msg.sender);
 
                 // Clear the transfer
                 delete transfers[transferId];
