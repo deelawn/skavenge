@@ -936,3 +936,151 @@ func TestSecurity_ConcurrentPurchasePrevention(t *testing.T) {
 	t.Log("  ✅ Flag is cleared on transfer completion")
 	t.Log("  ✅ New purchases possible after previous transfer ends")
 }
+
+// TestSecurity_NonOwnerCannotRemoveSalePrice verifies that only the owner
+// of a clue NFT can remove the sale price.
+func TestSecurity_NonOwnerCannotRemoveSalePrice(t *testing.T) {
+	// Connect to Hardhat network
+	client, err := ethclient.Dial(util.GetHardhatURL())
+	require.NoError(t, err)
+
+	// Setup deployer account
+	deployerAuth, err := util.NewTransactOpts(client, secDeployer)
+	require.NoError(t, err)
+
+	// Deploy contract
+	contract, _, err := util.DeployContract(client, deployerAuth)
+	require.NoError(t, err)
+
+	// Setup minter account and keys
+	minterPrivKey, err := crypto.HexToECDSA(secMinter)
+	require.NoError(t, err)
+	minterAuth, err := util.NewTransactOpts(client, secMinter)
+	require.NoError(t, err)
+	minterAddr := minterAuth.From
+
+	// Update authorized minter
+	deployerAuth, err = util.NewTransactOpts(client, secDeployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Setup buyer account (who will attempt to remove sale price as non-owner)
+	buyerAuth, err := util.NewTransactOpts(client, secBuyer)
+	require.NoError(t, err)
+
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
+
+	// Mint a clue owned by minter
+	clueContent := []byte("The treasure is hidden beneath the bridge")
+	solution := "Under the bridge"
+	solutionHash := crypto.Keccak256Hash([]byte(solution))
+
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err)
+
+	// Encrypt using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
+	require.NoError(t, err)
+	encryptedClue := encryptedCipher.Marshal()
+
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
+
+	// Verify minter is the owner
+	owner, err := contract.OwnerOf(nil, tokenId)
+	require.NoError(t, err)
+	require.Equal(t, minterAddr, owner, "Minter should be the owner")
+
+	// Set sale price (by owner)
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
+	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Verify the sale price is set
+	clueData, err := contract.Clues(nil, tokenId)
+	require.NoError(t, err)
+	require.Equal(t, salePrice.String(), clueData.SalePrice.String(), "Sale price should be set to 1 ETH")
+
+	// Verify the clue is marked for sale
+	isForSale, err := contract.CluesForSale(nil, tokenId)
+	require.NoError(t, err)
+	require.True(t, isForSale, "Clue should be marked for sale")
+
+	t.Log("\n" + strings.Repeat("=", 70))
+	t.Log("TESTING NON-OWNER CANNOT REMOVE SALE PRICE")
+	t.Log(strings.Repeat("=", 70))
+
+	t.Log("\n[1] Non-owner (buyer) attempts to remove sale price")
+
+	// ATTACK: Non-owner tries to remove the sale price
+	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
+	require.NoError(t, err)
+	buyerAuth.GasLimit = 500000 // Higher gas limit for expected failure
+
+	_, err = contract.RemoveSalePrice(buyerAuth, tokenId)
+
+	// ATTACK PREVENTED: Transaction should revert
+	require.Error(t, err, "✅ ATTACK PREVENTED: Non-owner cannot remove sale price")
+	require.Contains(t, err.Error(), "Not token owner",
+		"Error should indicate caller is not the token owner")
+
+	t.Log("✅ Non-owner's attempt to remove sale price was blocked")
+	t.Log("   Error: Not token owner")
+
+	// Verify the sale price is still set
+	clueData, err = contract.Clues(nil, tokenId)
+	require.NoError(t, err)
+	require.Equal(t, salePrice.String(), clueData.SalePrice.String(), "Sale price should still be set")
+
+	// Verify the clue is still marked for sale
+	isForSale, err = contract.CluesForSale(nil, tokenId)
+	require.NoError(t, err)
+	require.True(t, isForSale, "Clue should still be marked for sale")
+
+	t.Log("\n[2] Verify sale price remains unchanged")
+	t.Log("✓ Sale price still set to 1 ETH")
+	t.Log("✓ Clue still marked for sale")
+
+	// Now verify that the owner CAN remove the sale price
+	t.Log("\n[3] Owner successfully removes sale price")
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
+	require.NoError(t, err)
+
+	removeTx, err := contract.RemoveSalePrice(minterAuth, tokenId)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, removeTx)
+	require.NoError(t, err)
+
+	// Verify the sale price was reset to 0
+	clueData, err = contract.Clues(nil, tokenId)
+	require.NoError(t, err)
+	require.Equal(t, big.NewInt(0).String(), clueData.SalePrice.String(), "Sale price should be reset to 0")
+
+	// Verify the clue is no longer for sale
+	isForSale, err = contract.CluesForSale(nil, tokenId)
+	require.NoError(t, err)
+	require.False(t, isForSale, "Clue should no longer be marked for sale")
+
+	t.Log("✓ Owner successfully removed sale price")
+
+	t.Log("\n" + strings.Repeat("=", 70))
+	t.Log("✅ NON-OWNER SALE PRICE REMOVAL PREVENTION VERIFIED")
+	t.Log(strings.Repeat("=", 70))
+	t.Log("\nSecurity guarantees:")
+	t.Log("  ✅ Only the token owner can remove the sale price")
+	t.Log("  ✅ Non-owner attempts are rejected with 'Not token owner' error")
+	t.Log("  ✅ Sale price remains protected from unauthorized modifications")
+}
