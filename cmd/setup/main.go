@@ -125,7 +125,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	tx, err := contract.MintClue(auth, encryptedClueContent, solutionHash, mintR)
+	tx, err := contract.MintClue(auth, encryptedClueContent, solutionHash, mintR, 1)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error minting token: %v\n", err)
 		os.Exit(1)

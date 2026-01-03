@@ -86,9 +86,10 @@ function Transfers({ metamaskAddress, config, onToast }) {
           return null;
         }
 
-        // Get the clue data to access the timeout value
+        // Get the clue data to access the timeout value and point value
         const clue = await contract.methods.clues(tokenId).call();
         const timeout = Number(clue.timeout);
+        const pointValue = Number(clue.pointValue);
 
         // Determine status based on proof and proofVerified
         let status;
@@ -119,6 +120,7 @@ function Transfers({ metamaskAddress, config, onToast }) {
           verifiedAtTimestamp: Number(transfer.verifiedAt),
           proofVerified: transfer.proofVerified,
           timeout: timeout,
+          pointValue: pointValue,
           userRole: isBuyer ? 'buyer' : 'seller'
         };
       });
@@ -892,6 +894,22 @@ function Transfers({ metamaskAddress, config, onToast }) {
                   <span className="detail-label">Price</span>
                   <span className="detail-value">{formatValue(transfer.value)} ETH</span>
                 </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span className="detail-label">Point Value</span>
+                  <span className="detail-value" style={{ fontWeight: '600', color: '#667eea' }}>
+                    {transfer.pointValue} {transfer.pointValue === 1 ? 'point' : 'points'}
+                  </span>
+                </div>
+
+                {transfer.timeout > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span className="detail-label">Transfer Timeout</span>
+                    <span className="detail-value" style={{ fontSize: '13px' }}>
+                      {formatRemainingTime(transfer.timeout)}
+                    </span>
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <span className="detail-label">Initiated</span>

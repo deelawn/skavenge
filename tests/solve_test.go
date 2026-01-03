@@ -72,7 +72,7 @@ func TestSuccessfulSolve(t *testing.T) {
 	deployerAuth, err = util.NewTransactOpts(client, deployer)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3))
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -206,7 +206,7 @@ func TestFailedSolveAttempt(t *testing.T) {
 	deployerAuth, err = util.NewTransactOpts(client, deployer)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(2))
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -320,7 +320,7 @@ func TestSetSalePriceOnSolvedClue(t *testing.T) {
 	deployerAuth, err = util.NewTransactOpts(client, deployer)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(4))
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -413,7 +413,7 @@ func TestRemoveSalePrice(t *testing.T) {
 	encryptedClueContent := encryptedCipher.Marshal()
 
 	// Mint the clue
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(5))
 	require.NoError(t, err)
 	receipt, err := util.WaitForTransaction(client, tx)
 	require.NoError(t, err)

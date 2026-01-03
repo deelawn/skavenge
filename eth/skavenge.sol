@@ -17,6 +17,7 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         uint256 salePrice; // Price in wei for which the clue is for sale
         uint256 rValue; // ElGamal encryption r value (needed for decryption)
         uint256 timeout; // Transfer timeout in seconds (set by seller)
+        uint8 pointValue; // Point value of the clue (1-5)
     }
 
     // TokenTransfer structure
@@ -83,6 +84,9 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     // Error for attempting to purchase a clue with an active transfer
     error TransferAlreadyInProgress();
 
+    // Error for invalid point value
+    error InvalidPointValue();
+
     // Events
     event ClueMinted(uint256 indexed tokenId, address minter);
     event ClueSolved(uint256 indexed tokenId, string solution);
@@ -135,15 +139,23 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
      * @param encryptedContents ElGamal encrypted content of the clue
      * @param solutionHash Hash of the solution
      * @param rValue ElGamal encryption r value
+     * @param pointValue Point value of the clue (1-5)
      */
     function mintClue(
         bytes calldata encryptedContents,
         bytes32 solutionHash,
-        uint256 rValue
+        uint256 rValue,
+        uint8 pointValue
     ) external returns (uint256 tokenId) {
         if (msg.sender != authorizedMinter) {
             revert UnauthorizedMinter();
         }
+
+        // Validate point value is between 1 and 5 (inclusive)
+        if (pointValue < 1 || pointValue > 5) {
+            revert InvalidPointValue();
+        }
+
         tokenId = _tokenIdCounter++;
 
         clues[tokenId] = Clue({
@@ -152,7 +164,8 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
             isSolved: false,
             salePrice: 0,
             rValue: rValue,
-            timeout: 0
+            timeout: 0,
+            pointValue: pointValue
         });
 
         _mint(msg.sender, tokenId);
@@ -179,6 +192,15 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
      */
     function getRValue(uint256 tokenId) external view returns (uint256) {
         return clues[tokenId].rValue;
+    }
+
+    /**
+     * @dev Get the point value for a clue
+     * @param tokenId Token ID of the clue
+     */
+    function getPointValue(uint256 tokenId) external view returns (uint8) {
+        ownerOf(tokenId); // Will revert if token doesn't exist
+        return clues[tokenId].pointValue;
     }
 
     /**
