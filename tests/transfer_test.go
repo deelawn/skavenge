@@ -218,6 +218,18 @@ func TestAlteredTransfer(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, transferCancelledFound, "TransferCancelled event not found")
 
+	// Verify the TransferCancelled event parameters
+	cancelEvents, err := listener.GetEventsByName(cancelReceipt, "TransferCancelled")
+	require.NoError(t, err)
+	require.Len(t, cancelEvents, 1, "Expected exactly one TransferCancelled event")
+
+	cancelEventData := cancelEvents[0].(map[string]interface{})
+	emittedTransferId := cancelEventData["transferId"].([32]byte)
+	emittedCancelledBy := cancelEventData["cancelledBy"].(common.Address)
+
+	require.Equal(t, transferId, emittedTransferId, "TransferCancelled event should contain correct transferId")
+	require.Equal(t, buyerAddr, emittedCancelledBy, "TransferCancelled event should contain buyer address as cancelledBy")
+
 	t.Log("✅ Buyer successfully cancelled the fraudulent transfer and received refund")
 }
 
@@ -580,6 +592,18 @@ func TestInvalidProofVerification(t *testing.T) {
 	transferCancelledFound, err := listener.CheckEvent(cancelReceipt, "TransferCancelled")
 	require.NoError(t, err)
 	require.True(t, transferCancelledFound, "TransferCancelled event not found")
+
+	// Verify the TransferCancelled event parameters
+	cancelEvents, err := listener.GetEventsByName(cancelReceipt, "TransferCancelled")
+	require.NoError(t, err)
+	require.Len(t, cancelEvents, 1, "Expected exactly one TransferCancelled event")
+
+	cancelEventData := cancelEvents[0].(map[string]interface{})
+	emittedTransferId := cancelEventData["transferId"].([32]byte)
+	emittedCancelledBy := cancelEventData["cancelledBy"].(common.Address)
+
+	require.Equal(t, transferId, emittedTransferId, "TransferCancelled event should contain correct transferId")
+	require.Equal(t, buyerAddr, emittedCancelledBy, "TransferCancelled event should contain buyer address as cancelledBy")
 }
 
 func TestInvalidProofContentAltered(t *testing.T) {
@@ -738,6 +762,18 @@ func TestInvalidProofContentAltered(t *testing.T) {
 	transferCancelledFound, err := listener.CheckEvent(cancelReceipt, "TransferCancelled")
 	require.NoError(t, err)
 	require.True(t, transferCancelledFound, "TransferCancelled event not found")
+
+	// Verify the TransferCancelled event parameters
+	cancelEvents, err := listener.GetEventsByName(cancelReceipt, "TransferCancelled")
+	require.NoError(t, err)
+	require.Len(t, cancelEvents, 1, "Expected exactly one TransferCancelled event")
+
+	cancelEventData := cancelEvents[0].(map[string]interface{})
+	emittedTransferId := cancelEventData["transferId"].([32]byte)
+	emittedCancelledBy := cancelEventData["cancelledBy"].(common.Address)
+
+	require.Equal(t, transferId, emittedTransferId, "TransferCancelled event should contain correct transferId")
+	require.Equal(t, buyerAddr, emittedCancelledBy, "TransferCancelled event should contain buyer address as cancelledBy")
 }
 
 // TestCompletingTransferWithoutVerification tests completing a transfer without verification.
@@ -971,6 +1007,18 @@ func TestCancelTransfer(t *testing.T) {
 	transferCancelledFound, err := listener.CheckEvent(cancelReceipt, "TransferCancelled")
 	require.NoError(t, err)
 	require.True(t, transferCancelledFound, "TransferCancelled event not found")
+
+	// Verify the TransferCancelled event parameters
+	cancelEvents, err := listener.GetEventsByName(cancelReceipt, "TransferCancelled")
+	require.NoError(t, err)
+	require.Len(t, cancelEvents, 1, "Expected exactly one TransferCancelled event")
+
+	cancelEventData := cancelEvents[0].(map[string]interface{})
+	emittedTransferId := cancelEventData["transferId"].([32]byte)
+	emittedCancelledBy := cancelEventData["cancelledBy"].(common.Address)
+
+	require.Equal(t, transferId, emittedTransferId, "TransferCancelled event should contain correct transferId")
+	require.Equal(t, buyerAddr, emittedCancelledBy, "TransferCancelled event should contain buyer address as cancelledBy")
 
 	// Verify buyer received refund
 	transferData, err := contract.Transfers(nil, transferId)
