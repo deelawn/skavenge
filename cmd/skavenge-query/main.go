@@ -78,8 +78,6 @@ func main() {
 		execGetCurrentTokenId(contract, opts)
 	case "get-total-clues-for-sale":
 		execGetTotalCluesForSale(contract, opts)
-	case "m-a-x-s-o-l-v-e-a-t-t-e-m-p-t-s":
-		execMAXSOLVEATTEMPTS(contract, opts)
 	case "name":
 		execName(contract, opts)
 	case "symbol":
@@ -202,7 +200,6 @@ Available Commands:
     authorized-minter                       Get AuthorizedMinter
     get-current-token-id                    Get GetCurrentTokenId
     get-total-clues-for-sale                Get GetTotalCluesForSale
-    m-a-x-s-o-l-v-e-a-t-t-e-m-p-t-s         Get MAXSOLVEATTEMPTS
     name                                    Get Name
     symbol                                  Get Symbol
     t-r-a-n-s-f-e-r-t-i-m-e-o-u-t           Get TRANSFERTIMEOUT
@@ -260,16 +257,6 @@ func execGetCurrentTokenId(contract *bindings.SkavengeCaller, opts *bind.CallOpt
 
 func execGetTotalCluesForSale(contract *bindings.SkavengeCaller, opts *bind.CallOpts) {
 	result, err := contract.GetTotalCluesForSale(opts)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-	
-	fmt.Println(result.String())
-}
-
-func execMAXSOLVEATTEMPTS(contract *bindings.SkavengeCaller, opts *bind.CallOpts) {
-	result, err := contract.MAXSOLVEATTEMPTS(opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
