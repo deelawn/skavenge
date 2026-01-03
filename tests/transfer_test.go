@@ -528,11 +528,11 @@ func TestInvalidProofVerification(t *testing.T) {
 	tokenId, err := getLastMintedTokenID(contract)
 	require.NoError(t, err)
 
-	// Set sale price
+	// Set sale price with short timeout for testing
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	timeout := big.NewInt(180)                   // 3 minutes
+	timeout := big.NewInt(2)                     // 2 seconds for testing
 	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
@@ -579,8 +579,12 @@ func TestInvalidProofVerification(t *testing.T) {
 
 	t.Log("✅ Contract correctly rejected proof with corrupted structure")
 
-	// The transfer should still be in ProofPending state since the invalid proof was rejected
-	// We can verify the buyer can cancel since no valid proof was provided
+	// The transfer should still be in State 1 since the invalid proof was rejected
+	// Buyer must wait for timeout to elapse before cancelling (State 1: waiting for seller)
+
+	// Wait for timeout to elapse
+	t.Log("Waiting for timeout to elapse before buyer can cancel...")
+	time.Sleep(3 * time.Second) // Wait longer than the 2 second timeout
 
 	// Cancel the transfer
 	buyerAuth, err = util.NewTransactOpts(client, buyer)
@@ -977,11 +981,11 @@ func TestCancelTransfer(t *testing.T) {
 	tokenId, err := getLastMintedTokenID(contract)
 	require.NoError(t, err)
 
-	// Set sale price
+	// Set sale price with short timeout for testing
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	timeout := big.NewInt(180)                   // 3 minutes
+	timeout := big.NewInt(2)                     // 2 seconds for testing
 	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
@@ -999,6 +1003,10 @@ func TestCancelTransfer(t *testing.T) {
 	// Generate transfer ID
 	transferId, err := contract.GenerateTransferId(nil, buyerAddr, tokenId)
 	require.NoError(t, err)
+
+	// Wait for timeout to elapse (State 1: waiting for seller to provide proof)
+	t.Log("Waiting for timeout to elapse before buyer can cancel...")
+	time.Sleep(3 * time.Second) // Wait longer than the 2 second timeout
 
 	// Cancel the transfer
 	buyerAuth, err = util.NewTransactOpts(client, buyer)
