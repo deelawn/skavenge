@@ -10,6 +10,10 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
   const [revealedClues, setRevealedClues] = useState({});
   const [listingToken, setListingToken] = useState(null);
   const [listingPrice, setListingPrice] = useState('');
+  const [listingTimeout, setListingTimeout] = useState('');
+  const [timeoutUnit, setTimeoutUnit] = useState('hours'); // 'minutes' or 'hours'
+  const [minTimeout, setMinTimeout] = useState(null);
+  const [maxTimeout, setMaxTimeout] = useState(null);
   const [processingTx, setProcessingTx] = useState(false);
 
   useEffect(() => {
@@ -19,6 +23,7 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
     }
 
     fetchUserTokens();
+    fetchTimeoutBounds();
 
     // Clear revealed clues when tokens are refetched for privacy
     setRevealedClues({});
@@ -102,6 +107,60 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
     }
   };
 
+  const fetchTimeoutBounds = async () => {
+    try {
+      // Create cache key based on contract address
+      const cacheKey = `timeout_bounds_${config.contractAddress}`;
+
+      // Check if we have cached values
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const { minTimeout: cachedMin, maxTimeout: cachedMax, timestamp } = JSON.parse(cached);
+          // Cache is valid for 24 hours (86400000 ms)
+          const cacheAge = Date.now() - timestamp;
+          if (cacheAge < 86400000 && cachedMin && cachedMax) {
+            console.log('Using cached timeout bounds:', { min: cachedMin, max: cachedMax });
+            setMinTimeout(Number(cachedMin));
+            setMaxTimeout(Number(cachedMax));
+            return;
+          }
+        } catch (parseErr) {
+          console.warn('Failed to parse cached timeout bounds:', parseErr);
+          localStorage.removeItem(cacheKey);
+        }
+      }
+
+      // Fetch from contract if no valid cache
+      console.log('Fetching timeout bounds from contract...');
+      const web3 = new Web3(window.ethereum);
+      const contract = new web3.eth.Contract(SKAVENGE_ABI, config.contractAddress);
+
+      // Fetch MIN_TIMEOUT and MAX_TIMEOUT from the contract
+      const minTimeoutValue = await contract.methods.MIN_TIMEOUT().call();
+      const maxTimeoutValue = await contract.methods.MAX_TIMEOUT().call();
+
+      const min = Number(minTimeoutValue);
+      const max = Number(maxTimeoutValue);
+
+      setMinTimeout(min);
+      setMaxTimeout(max);
+
+      // Cache the values
+      localStorage.setItem(cacheKey, JSON.stringify({
+        minTimeout: min,
+        maxTimeout: max,
+        timestamp: Date.now()
+      }));
+      console.log('Cached timeout bounds:', { min, max });
+    } catch (err) {
+      console.error('Error fetching timeout bounds:', err);
+      // Set default values if fetch fails (1 hour and 24 hours)
+      setMinTimeout(3600);
+      setMaxTimeout(86400);
+    }
+  };
+
   const formatPrice = (priceWei) => {
     if (!priceWei || priceWei === '0') return '0';
     const web3 = new Web3();
@@ -166,7 +225,7 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
     }
   };
 
-  const handleSetSalePrice = async (tokenId, priceInEth) => {
+  const handleSetSalePrice = async (tokenId, priceInEth, timeoutInSeconds) => {
     try {
       setProcessingTx(true);
       const web3 = new Web3(window.ethereum);
@@ -175,19 +234,22 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
       // Convert ETH to Wei
       const priceInWei = web3.utils.toWei(priceInEth, 'ether');
 
-      // Call setSalePrice function
-      await contract.methods.setSalePrice(tokenId, priceInWei).send({
+      // Call setSalePrice function with timeout
+      await contract.methods.setSalePrice(tokenId, priceInWei, timeoutInSeconds).send({
         from: metamaskAddress
       });
 
       if (onToast) {
-        onToast(`Token #${tokenId} listed for ${priceInEth} ETH`, 'success');
+        const timeoutDisplay = formatTimeout(timeoutInSeconds);
+        onToast(`Token #${tokenId} listed for ${priceInEth} ETH with ${timeoutDisplay} timeout`, 'success');
       }
 
       // Refresh tokens to show updated sale status
       await fetchUserTokens();
       setListingToken(null);
       setListingPrice('');
+      setListingTimeout('');
+      setTimeoutUnit('hours');
     } catch (error) {
       console.error('Error setting sale price:', error);
       if (onToast) {
@@ -195,6 +257,18 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
       }
     } finally {
       setProcessingTx(false);
+    }
+  };
+
+  const formatTimeout = (seconds) => {
+    if (seconds < 3600) {
+      return `${Math.round(seconds / 60)} minutes`;
+    } else if (seconds % 3600 === 0) {
+      return `${seconds / 3600} hours`;
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.round((seconds % 3600) / 60);
+      return `${hours}h ${minutes}m`;
     }
   };
 
@@ -228,11 +302,15 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
   const startListing = (tokenId) => {
     setListingToken(tokenId);
     setListingPrice('');
+    setListingTimeout('');
+    setTimeoutUnit('hours');
   };
 
   const cancelListing = () => {
     setListingToken(null);
     setListingPrice('');
+    setListingTimeout('');
+    setTimeoutUnit('hours');
   };
 
   const confirmListing = (tokenId) => {
@@ -242,7 +320,38 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
       }
       return;
     }
-    handleSetSalePrice(tokenId, listingPrice);
+
+    if (!listingTimeout || parseFloat(listingTimeout) <= 0) {
+      if (onToast) {
+        onToast('Please enter a valid timeout', 'error');
+      }
+      return;
+    }
+
+    // Convert timeout to seconds based on unit
+    const timeoutValue = parseFloat(listingTimeout);
+    const timeoutInSeconds = timeoutUnit === 'hours'
+      ? Math.floor(timeoutValue * 3600)
+      : Math.floor(timeoutValue * 60);
+
+    // Validate timeout bounds
+    if (minTimeout !== null && timeoutInSeconds < minTimeout) {
+      if (onToast) {
+        const minDisplay = formatTimeout(minTimeout);
+        onToast(`Timeout must be at least ${minDisplay}`, 'error');
+      }
+      return;
+    }
+
+    if (maxTimeout !== null && timeoutInSeconds > maxTimeout) {
+      if (onToast) {
+        const maxDisplay = formatTimeout(maxTimeout);
+        onToast(`Timeout cannot exceed ${maxDisplay}`, 'error');
+      }
+      return;
+    }
+
+    handleSetSalePrice(tokenId, listingPrice, timeoutInSeconds);
   };
 
   if (!metamaskAddress) {
@@ -409,6 +518,54 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
                               outline: 'none'
                             }}
                           />
+
+                          {/* Timeout Input Section */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '12px', color: '#718096', fontWeight: '500' }}>
+                              Transfer Timeout
+                            </label>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                placeholder="Timeout"
+                                value={listingTimeout}
+                                onChange={(e) => setListingTimeout(e.target.value)}
+                                className="timeout-input"
+                                style={{
+                                  flex: 1,
+                                  padding: '8px 12px',
+                                  fontSize: '14px',
+                                  border: '1px solid #cbd5e0',
+                                  borderRadius: '6px',
+                                  outline: 'none'
+                                }}
+                              />
+                              <select
+                                value={timeoutUnit}
+                                onChange={(e) => setTimeoutUnit(e.target.value)}
+                                style={{
+                                  padding: '8px 12px',
+                                  fontSize: '14px',
+                                  border: '1px solid #cbd5e0',
+                                  borderRadius: '6px',
+                                  backgroundColor: 'white',
+                                  cursor: 'pointer',
+                                  outline: 'none'
+                                }}
+                              >
+                                <option value="minutes">Minutes</option>
+                                <option value="hours">Hours</option>
+                              </select>
+                            </div>
+                            {minTimeout !== null && maxTimeout !== null && (
+                              <span style={{ fontSize: '11px', color: '#718096' }}>
+                                Range: {formatTimeout(minTimeout)} - {formatTimeout(maxTimeout)}
+                              </span>
+                            )}
+                          </div>
+
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <button
                               onClick={() => confirmListing(token.tokenId)}

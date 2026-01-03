@@ -92,8 +92,9 @@ func TestSuccessfulSolve(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	timeout := big.NewInt(180)                    // 3 minutes
 
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
@@ -216,8 +217,9 @@ func TestFailedSolveAttempt(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	timeout := big.NewInt(180)                    // 3 minutes
 
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
@@ -341,9 +343,10 @@ func TestSetSalePriceOnSolvedClue(t *testing.T) {
 	minterAuth.GasLimit = 300000 // Set higher gas limit for failing transaction
 
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	timeout := big.NewInt(180)                    // 3 minutes
 
 	// This should fail because the clue is solved
-	_, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	_, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.Error(t, err, "Setting sale price on solved clue should fail")
 }
 
@@ -414,8 +417,9 @@ func TestRemoveSalePrice(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	timeout := big.NewInt(180)                    // 3 minutes
 
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
