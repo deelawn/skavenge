@@ -159,11 +159,7 @@ func TestFailedSolveAttempt(t *testing.T) {
 	require.NoError(t, err)
 
 	// Deploy contract
-	contract, address, err := util.DeployContract(client, deployerAuth)
-	require.NoError(t, err)
-
-	// Create event listener
-	listener, err := util.NewEventListener(client, contract, address)
+	contract, _, err := util.DeployContract(client, deployerAuth)
 	require.NoError(t, err)
 
 	// Setup minter account
