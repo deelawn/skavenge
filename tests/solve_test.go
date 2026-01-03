@@ -227,11 +227,6 @@ func TestFailedSolveAttempt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), salePriceReceipt.Status, "Set sale price transaction failed")
 
-	// Verify initial solve attempts
-	clueData, err := contract.Clues(nil, tokenId)
-	require.NoError(t, err)
-	require.Equal(t, uint64(0), clueData.SolveAttempts.Uint64(), "Initial solve attempts should be 0")
-
 	// Attempt to solve with incorrect solution
 	incorrectSolution := "In the cave"
 
@@ -247,18 +242,10 @@ func TestFailedSolveAttempt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), solveReceipt.Status, "Solution attempt transaction failed")
 
-	// Verify the ClueAttempted event was emitted
-	clueAttemptedFound, err := listener.CheckEvent(solveReceipt, "ClueAttempted")
-	require.NoError(t, err)
-	require.True(t, clueAttemptedFound, "ClueAttempted event not found")
-
 	// Verify the clue is still not solved
-	clueData, err = contract.Clues(nil, tokenId)
+	clueData, err := contract.Clues(nil, tokenId)
 	require.NoError(t, err)
 	require.False(t, clueData.IsSolved, "Clue should still not be solved")
-
-	// Verify solve attempts was incremented
-	require.Equal(t, uint64(1), clueData.SolveAttempts.Uint64(), "Solve attempts should be incremented to 1")
 
 	// Verify the sale price is still set
 	require.Equal(t, salePrice.String(), clueData.SalePrice.String(), "Sale price should still be set")

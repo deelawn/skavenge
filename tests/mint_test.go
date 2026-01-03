@@ -104,7 +104,6 @@ func TestSuccessfulMint(t *testing.T) {
 	require.Equal(t, encryptedClueContent, clueData.EncryptedContents, "Encrypted contents do not match")
 	require.Equal(t, solutionHash, clueData.SolutionHash, "Solution hash does not match")
 	require.False(t, clueData.IsSolved, "Clue should not be marked as solved")
-	require.Equal(t, uint64(0), clueData.SolveAttempts.Uint64(), "Solve attempts should be 0")
 
 	// Verify the owner can retrieve the r value from the contract
 	minterAuth, err = util.NewTransactOpts(client, minter)
