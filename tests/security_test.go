@@ -138,7 +138,7 @@ func TestSecurity_AttackPrevented_WrongRValue(t *testing.T) {
 	encryptedClue := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
-	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2))
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -460,7 +460,7 @@ func TestSecurity_BuyerCancellationStates(t *testing.T) {
 	encryptedClue := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
-	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2))
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -649,7 +649,7 @@ func TestSecurity_FrontrunningAttackPrevented(t *testing.T) {
 	encryptedClue := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
-	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2))
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -838,7 +838,7 @@ func TestSecurity_ConcurrentPurchasePrevention(t *testing.T) {
 	encryptedClue := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, testMinter)
-	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2))
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -1040,7 +1040,7 @@ func TestSecurity_NonOwnerCannotRemoveSalePrice(t *testing.T) {
 	encryptedClue := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
-	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2))
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)

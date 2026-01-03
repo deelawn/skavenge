@@ -68,7 +68,7 @@ func TestTokenByIndex(t *testing.T) {
 		require.NoError(t, err)
 		encryptedClueContent := encryptedCipher.Marshal()
 
-		tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+		tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(1))
 		require.NoError(t, err)
 		_, err = util.WaitForTransaction(client, tx)
 		require.NoError(t, err)
@@ -165,7 +165,7 @@ func TestTokenOfOwnerByIndex(t *testing.T) {
 		require.NoError(t, err)
 		encryptedClueContent := encryptedCipher.Marshal()
 
-		tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+		tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(1))
 		require.NoError(t, err)
 		_, err = util.WaitForTransaction(client, tx)
 		require.NoError(t, err)
@@ -191,7 +191,7 @@ func TestTokenOfOwnerByIndex(t *testing.T) {
 		require.NoError(t, err)
 		encryptedClueContent := encryptedCipher.Marshal()
 
-		tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+		tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(1))
 		require.NoError(t, err)
 		_, err = util.WaitForTransaction(client, tx)
 		require.NoError(t, err)
@@ -300,7 +300,7 @@ func TestEnumerableAfterTransfer(t *testing.T) {
 		require.NoError(t, err)
 		encryptedClueContent := encryptedCipher.Marshal()
 
-		tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+		tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(1))
 		require.NoError(t, err)
 		_, err = util.WaitForTransaction(client, tx)
 		require.NoError(t, err)
@@ -430,7 +430,7 @@ func TestTotalSupply(t *testing.T) {
 		require.NoError(t, err)
 		encryptedClueContent := encryptedCipher.Marshal()
 
-		tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+		tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(1))
 		require.NoError(t, err)
 		_, err = util.WaitForTransaction(client, tx)
 		require.NoError(t, err)

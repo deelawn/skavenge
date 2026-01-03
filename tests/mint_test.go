@@ -73,7 +73,8 @@ func TestSuccessfulMint(t *testing.T) {
 	require.NoError(t, err)
 
 	// Mint a new clue with the encrypted content, but to the minter address
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	pointValue := uint8(3) // Test with point value 3
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, pointValue)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -104,6 +105,7 @@ func TestSuccessfulMint(t *testing.T) {
 	require.Equal(t, encryptedClueContent, clueData.EncryptedContents, "Encrypted contents do not match")
 	require.Equal(t, solutionHash, clueData.SolutionHash, "Solution hash does not match")
 	require.False(t, clueData.IsSolved, "Clue should not be marked as solved")
+	require.Equal(t, pointValue, clueData.PointValue, "Point value does not match")
 
 	// Verify the owner can retrieve the r value from the contract
 	minterAuth, err = util.NewTransactOpts(client, minter)
@@ -178,7 +180,8 @@ func TestMintWithEmptySolutionHash(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to mint with empty solution hash
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, emptySolutionHash, mintR)
+	pointValue := uint8(1) // Test with point value 1
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, emptySolutionHash, mintR, pointValue)
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -256,7 +259,8 @@ func TestMintMultipleClues(t *testing.T) {
 	// Marshal to bytes for on-chain storage
 	firstEncryptedClueContent := firstEncryptedCipher.Marshal()
 
-	tx1, err := contract.MintClue(minterAuth, firstEncryptedClueContent, firstSolutionHash, firstMintR)
+	firstPointValue := uint8(2) // Test with point value 2
+	tx1, err := contract.MintClue(minterAuth, firstEncryptedClueContent, firstSolutionHash, firstMintR, firstPointValue)
 	require.NoError(t, err)
 	receipt1, err := util.WaitForTransaction(client, tx1)
 	require.NoError(t, err)
@@ -282,7 +286,8 @@ func TestMintMultipleClues(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx2, err := contract.MintClue(minterAuth, secondEncryptedClueContent, secondSolutionHash, secondMintR)
+	secondPointValue := uint8(5) // Test with point value 5
+	tx2, err := contract.MintClue(minterAuth, secondEncryptedClueContent, secondSolutionHash, secondMintR, secondPointValue)
 	require.NoError(t, err)
 	receipt2, err := util.WaitForTransaction(client, tx2)
 	require.NoError(t, err)
@@ -298,12 +303,14 @@ func TestMintMultipleClues(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, firstEncryptedClueContent, firstClueData.EncryptedContents, "First clue encrypted content does not match")
 	require.Equal(t, firstSolutionHash, firstClueData.SolutionHash, "First solution hash does not match")
+	require.Equal(t, firstPointValue, firstClueData.PointValue, "First point value does not match")
 
 	// Verify contents of second clue (encrypted)
 	secondClueData, err := contract.Clues(nil, big.NewInt(2))
 	require.NoError(t, err)
 	require.Equal(t, secondEncryptedClueContent, secondClueData.EncryptedContents, "Second clue encrypted content does not match")
 	require.Equal(t, secondSolutionHash, secondClueData.SolutionHash, "Second solution hash does not match")
+	require.Equal(t, secondPointValue, secondClueData.PointValue, "Second point value does not match")
 
 	// Verify we can decrypt both clues
 	decryptedFirstClueBytes, err := ps.DecryptElGamal(firstEncryptedCipher, firstMintR, minterPrivKey)
@@ -376,14 +383,14 @@ func TestUpdateAuthorizedMinter(t *testing.T) {
 	require.NoError(t, err)
 	deployerAuth.GasLimit = 300000 // Higher gas limit for failing transaction
 
-	_, err = contract.MintClue(deployerAuth, []byte{1, 2, 3}, [32]byte{}, big.NewInt(1))
+	_, err = contract.MintClue(deployerAuth, []byte{1, 2, 3}, [32]byte{}, big.NewInt(1), uint8(1))
 	require.Error(t, err, "Non-authorized account should not be able to mint")
 
 	// Mint a clue with the new authorized minter
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	mintTx, err := contract.MintClue(minterAuth, []byte{1, 2, 3}, [32]byte{}, big.NewInt(1))
+	mintTx, err := contract.MintClue(minterAuth, []byte{1, 2, 3}, [32]byte{}, big.NewInt(1), uint8(4))
 	require.NoError(t, err)
 
 	_, err = util.WaitForTransaction(client, mintTx)
