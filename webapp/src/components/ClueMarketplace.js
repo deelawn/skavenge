@@ -44,12 +44,16 @@ function ClueMarketplace({ metamaskAddress, config, onToast }) {
       // Parse the result and check transfer status for each token
       const cluesPromises = result.tokenIds.map(async (tokenId, index) => {
         const transferInProgress = await contract.methods.transferInProgress(tokenId).call();
+        // Fetch clue data to get point value and timeout
+        const clueData = await contract.methods.clues(tokenId).call();
         return {
           tokenId: tokenId.toString(),
           owner: result.owners[index],
           price: result.prices[index].toString(),
           isSolved: result.solvedStatus[index],
-          transferInProgress
+          transferInProgress,
+          pointValue: Number(clueData.pointValue),
+          timeout: Number(clueData.timeout)
         };
       });
 
@@ -77,6 +81,18 @@ function ClueMarketplace({ metamaskAddress, config, onToast }) {
   const truncateAddress = (address) => {
     if (!address) return '';
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+  };
+
+  const formatTimeout = (seconds) => {
+    if (seconds < 3600) {
+      return `${Math.round(seconds / 60)} minutes`;
+    } else if (seconds % 3600 === 0) {
+      return `${seconds / 3600} hours`;
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.round((seconds % 3600) / 60);
+      return `${hours}h ${minutes}m`;
+    }
   };
 
   const handlePurchase = async (tokenId, price) => {
@@ -294,6 +310,20 @@ function ClueMarketplace({ metamaskAddress, config, onToast }) {
                   {clue.isSolved ? 'Solved' : 'Unsolved'}
                 </span>
               </div>
+
+              <div className="token-detail-row">
+                <span className="detail-label">Point Value:</span>
+                <span className="detail-value" style={{ fontWeight: '600', color: '#667eea' }}>
+                  {clue.pointValue} {clue.pointValue === 1 ? 'point' : 'points'}
+                </span>
+              </div>
+
+              {clue.timeout > 0 && (
+                <div className="token-detail-row">
+                  <span className="detail-label">Transfer Timeout:</span>
+                  <span className="detail-value">{formatTimeout(clue.timeout)}</span>
+                </div>
+              )}
 
               {/* Purchase Button */}
               {metamaskAddress && metamaskAddress.toLowerCase() !== clue.owner.toLowerCase() && (

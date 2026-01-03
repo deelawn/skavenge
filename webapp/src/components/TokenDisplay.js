@@ -82,7 +82,9 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
             isForSale: isForSale,
             encryptedContents: clueData.encryptedContents,
             // Convert rValue to hex for display (only owner can see this)
-            rValue: clueData.rValue.toString()
+            rValue: clueData.rValue.toString(),
+            pointValue: Number(clueData.pointValue),
+            timeout: Number(clueData.timeout)
           };
         } catch (err) {
           console.error(`Error fetching data for token ${tokenId}:`, err);
@@ -433,11 +435,26 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
                   </span>
                 </div>
 
+                <div className="token-detail-row">
+                  <span className="detail-label">Point Value:</span>
+                  <span className="detail-value" style={{ fontWeight: '600', color: '#667eea' }}>
+                    {token.pointValue} {token.pointValue === 1 ? 'point' : 'points'}
+                  </span>
+                </div>
+
                 {token.isForSale && (
-                  <div className="token-detail-row">
-                    <span className="detail-label">Sale Price:</span>
-                    <span className="detail-value">{formatPrice(token.salePrice)} ETH</span>
-                  </div>
+                  <>
+                    <div className="token-detail-row">
+                      <span className="detail-label">Sale Price:</span>
+                      <span className="detail-value">{formatPrice(token.salePrice)} ETH</span>
+                    </div>
+                    {token.timeout > 0 && (
+                      <div className="token-detail-row">
+                        <span className="detail-label">Transfer Timeout:</span>
+                        <span className="detail-value">{formatTimeout(token.timeout)}</span>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {token.encryptedContents && token.rValue && token.rValue !== '0' && (
