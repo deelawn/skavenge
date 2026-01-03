@@ -73,7 +73,6 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
           return {
             tokenId: tokenId.toString(),
             isSolved: clueData.isSolved,
-            solveAttempts: clueData.solveAttempts.toString(),
             salePrice: clueData.salePrice.toString(),
             isForSale: isForSale,
             encryptedContents: clueData.encryptedContents,
@@ -323,11 +322,6 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
                   <span className={`detail-value ${token.isSolved ? 'text-success' : 'text-warning'}`}>
                     {token.isSolved ? 'Solved' : 'Unsolved'}
                   </span>
-                </div>
-
-                <div className="token-detail-row">
-                  <span className="detail-label">Solve Attempts:</span>
-                  <span className="detail-value">{token.solveAttempts} / 3</span>
                 </div>
 
                 {token.isForSale && (

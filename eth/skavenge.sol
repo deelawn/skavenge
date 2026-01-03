@@ -14,7 +14,6 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         bytes encryptedContents; // ElGamal encrypted content of the clue
         bytes32 solutionHash; // Hash of the solution
         bool isSolved; // Whether the clue has been solved
-        uint256 solveAttempts; // Number of attempts made to solve the clue
         uint256 salePrice; // Price in wei for which the clue is for sale
         uint256 rValue; // ElGamal encryption r value (needed for decryption)
     }
@@ -32,9 +31,6 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         uint256 proofProvidedAt; // Timestamp when proof was provided
         uint256 verifiedAt; // Timestamp when proof was verified
     }
-
-    // Maximum number of attempts to solve a clue
-    uint256 public constant MAX_SOLVE_ATTEMPTS = 3;
 
     // Transfer timeout in seconds
     uint256 public constant TRANSFER_TIMEOUT = 180; // 3 minutes
@@ -86,7 +82,6 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
 
     // Events
     event ClueMinted(uint256 indexed tokenId, address minter);
-    event ClueAttempted(uint256 indexed tokenId, uint256 remainingAttempts);
     event ClueSolved(uint256 indexed tokenId, string solution);
     event SalePriceSet(uint256 indexed tokenId, uint256 price);
     event SalePriceRemoved(uint256 indexed tokenId);
@@ -148,7 +143,6 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
             encryptedContents: encryptedContents,
             solutionHash: solutionHash,
             isSolved: false,
-            solveAttempts: 0,
             salePrice: 0,
             rValue: rValue
         });
@@ -277,17 +271,6 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     ) external {
         require(ownerOf(tokenId) == msg.sender, "Not token owner");
         require(!clues[tokenId].isSolved, "Clue already solved");
-        require(
-            clues[tokenId].solveAttempts < MAX_SOLVE_ATTEMPTS,
-            "No attempts remaining"
-        );
-
-        clues[tokenId].solveAttempts++;
-
-        emit ClueAttempted(
-            tokenId,
-            MAX_SOLVE_ATTEMPTS - clues[tokenId].solveAttempts
-        );
 
         if (keccak256(bytes(solution)) == clues[tokenId].solutionHash) {
             clues[tokenId].isSolved = true;
@@ -488,7 +471,6 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         // Update the clue contents and r value
         clues[transfer.tokenId].encryptedContents = newEncryptedContents;
         clues[transfer.tokenId].rValue = rValue;
-        clues[transfer.tokenId].solveAttempts = 0;
 
         // Store values we'll need after clearing transfer state
         address buyer = transfer.buyer;
