@@ -102,6 +102,60 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
     }
   };
 
+  const fetchTimeoutBounds = async () => {
+    try {
+      // Create cache key based on contract address
+      const cacheKey = `timeout_bounds_${config.contractAddress}`;
+
+      // Check if we have cached values
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const { minTimeout: cachedMin, maxTimeout: cachedMax, timestamp } = JSON.parse(cached);
+          // Cache is valid for 24 hours (86400000 ms)
+          const cacheAge = Date.now() - timestamp;
+          if (cacheAge < 86400000 && cachedMin && cachedMax) {
+            console.log('Using cached timeout bounds:', { min: cachedMin, max: cachedMax });
+            setMinTimeout(Number(cachedMin));
+            setMaxTimeout(Number(cachedMax));
+            return;
+          }
+        } catch (parseErr) {
+          console.warn('Failed to parse cached timeout bounds:', parseErr);
+          localStorage.removeItem(cacheKey);
+        }
+      }
+
+      // Fetch from contract if no valid cache
+      console.log('Fetching timeout bounds from contract...');
+      const web3 = new Web3(window.ethereum);
+      const contract = new web3.eth.Contract(SKAVENGE_ABI, config.contractAddress);
+
+      // Fetch MIN_TIMEOUT and MAX_TIMEOUT from the contract
+      const minTimeoutValue = await contract.methods.MIN_TIMEOUT().call();
+      const maxTimeoutValue = await contract.methods.MAX_TIMEOUT().call();
+
+      const min = Number(minTimeoutValue);
+      const max = Number(maxTimeoutValue);
+
+      setMinTimeout(min);
+      setMaxTimeout(max);
+
+      // Cache the values
+      localStorage.setItem(cacheKey, JSON.stringify({
+        minTimeout: min,
+        maxTimeout: max,
+        timestamp: Date.now()
+      }));
+      console.log('Cached timeout bounds:', { min, max });
+    } catch (err) {
+      console.error('Error fetching timeout bounds:', err);
+      // Set default values if fetch fails (1 hour and 24 hours)
+      setMinTimeout(3600);
+      setMaxTimeout(86400);
+    }
+  };
+
   const formatPrice = (priceWei) => {
     if (!priceWei || priceWei === '0') return '0';
     const web3 = new Web3();
@@ -409,6 +463,54 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
                               outline: 'none'
                             }}
                           />
+
+                          {/* Timeout Input Section */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '12px', color: '#718096', fontWeight: '500' }}>
+                              Transfer Timeout
+                            </label>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                placeholder="Timeout"
+                                value={listingTimeout}
+                                onChange={(e) => setListingTimeout(e.target.value)}
+                                className="timeout-input"
+                                style={{
+                                  flex: 1,
+                                  padding: '8px 12px',
+                                  fontSize: '14px',
+                                  border: '1px solid #cbd5e0',
+                                  borderRadius: '6px',
+                                  outline: 'none'
+                                }}
+                              />
+                              <select
+                                value={timeoutUnit}
+                                onChange={(e) => setTimeoutUnit(e.target.value)}
+                                style={{
+                                  padding: '8px 12px',
+                                  fontSize: '14px',
+                                  border: '1px solid #cbd5e0',
+                                  borderRadius: '6px',
+                                  backgroundColor: 'white',
+                                  cursor: 'pointer',
+                                  outline: 'none'
+                                }}
+                              >
+                                <option value="minutes">Minutes</option>
+                                <option value="hours">Hours</option>
+                              </select>
+                            </div>
+                            {minTimeout !== null && maxTimeout !== null && (
+                              <span style={{ fontSize: '11px', color: '#718096' }}>
+                                Range: {formatTimeout(minTimeout)} - {formatTimeout(maxTimeout)}
+                              </span>
+                            )}
+                          </div>
+
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <button
                               onClick={() => confirmListing(token.tokenId)}
