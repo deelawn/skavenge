@@ -102,7 +102,10 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     );
     event ProofVerified(bytes32 indexed transferId);
     event TransferCompleted(bytes32 indexed transferId, uint256 rValue);
-    event TransferCancelled(bytes32 indexed transferId);
+    event TransferCancelled(
+        bytes32 indexed transferId,
+        address indexed cancelledBy
+    );
 
     // Event emitted when authorized minter is updated
     event AuthorizedMinterUpdated(
@@ -550,37 +553,41 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         // Check cancellation conditions
         bool canCancel = false;
 
-        // Buyer can cancel ONLY if proof has not been verified yet
-        // This prevents mempool frontrunning attack where buyer extracts r value
-        // from seller's completeTransfer() transaction and cancels before it mines
+        // Buyer can cancel if:
+        // 1. Timeout elapsed since initiation and waiting for seller to provide proof
+        // 2. Seller has provided proof (can cancel anytime, regardless of timeout)
+        // 3. Timeout elapsed since verification and waiting for seller to complete
         if (isBuyer) {
-            require(
-                transfer.verifiedAt == 0,
-                "Cannot cancel after proof verification"
-            );
-            canCancel = true;
+            // State 1: Waiting for seller to provide proof
+            if (
+                transfer.proofProvidedAt == 0 &&
+                block.timestamp - transfer.initiatedAt >
+                clues[transfer.tokenId].timeout
+            ) {
+                canCancel = true;
+            }
+            // State 2: Seller has provided proof (buyer can cancel anytime)
+            else if (transfer.proofProvidedAt > 0 && !transfer.proofVerified) {
+                canCancel = true;
+            }
+            // State 3: Proof verified, waiting for seller to complete
+            else if (
+                transfer.verifiedAt > 0 &&
+                block.timestamp - transfer.verifiedAt >
+                clues[transfer.tokenId].timeout
+            ) {
+                canCancel = true;
+            }
         }
 
         // Seller can cancel if:
-        // 1. No proof provided and timeout elapsed, or
-        // 2. Proof provided but not verified and timeout elapsed, or
-        // 3. Proof verified but not completed and timeout elapsed
+        // Proof provided but not verified and timeout elapsed (waiting for buyer)
         if (isSeller) {
-            uint256 timeout = clues[transfer.tokenId].timeout;
             if (
-                transfer.proofProvidedAt == 0 &&
-                block.timestamp - transfer.initiatedAt > timeout
-            ) {
-                canCancel = true;
-            } else if (
                 transfer.proofProvidedAt > 0 &&
                 !transfer.proofVerified &&
-                block.timestamp - transfer.proofProvidedAt > timeout
-            ) {
-                canCancel = true;
-            } else if (
-                transfer.verifiedAt > 0 &&
-                block.timestamp - transfer.verifiedAt > timeout
+                block.timestamp - transfer.proofProvidedAt >
+                clues[transfer.tokenId].timeout
             ) {
                 canCancel = true;
             }
@@ -602,7 +609,7 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         // Clear the active transfer ID
         delete activeTransferIds[transfer.tokenId];
 
-        emit TransferCancelled(transferId);
+        emit TransferCancelled(transferId, msg.sender);
 
         // Clear the transfer
         delete transfers[transferId];
@@ -636,7 +643,7 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
                 // Clear the active transfer ID
                 delete activeTransferIds[tokenId];
 
-                emit TransferCancelled(transferId);
+                emit TransferCancelled(transferId, msg.sender);
 
                 // Clear the transfer
                 delete transfers[transferId];
