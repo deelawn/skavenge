@@ -10,6 +10,10 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
   const [revealedClues, setRevealedClues] = useState({});
   const [listingToken, setListingToken] = useState(null);
   const [listingPrice, setListingPrice] = useState('');
+  const [listingTimeout, setListingTimeout] = useState('');
+  const [timeoutUnit, setTimeoutUnit] = useState('hours'); // 'minutes' or 'hours'
+  const [minTimeout, setMinTimeout] = useState(null);
+  const [maxTimeout, setMaxTimeout] = useState(null);
   const [processingTx, setProcessingTx] = useState(false);
 
   useEffect(() => {
@@ -19,6 +23,7 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
     }
 
     fetchUserTokens();
+    fetchTimeoutBounds();
 
     // Clear revealed clues when tokens are refetched for privacy
     setRevealedClues({});
@@ -220,7 +225,7 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
     }
   };
 
-  const handleSetSalePrice = async (tokenId, priceInEth) => {
+  const handleSetSalePrice = async (tokenId, priceInEth, timeoutInSeconds) => {
     try {
       setProcessingTx(true);
       const web3 = new Web3(window.ethereum);
@@ -229,19 +234,22 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
       // Convert ETH to Wei
       const priceInWei = web3.utils.toWei(priceInEth, 'ether');
 
-      // Call setSalePrice function
-      await contract.methods.setSalePrice(tokenId, priceInWei).send({
+      // Call setSalePrice function with timeout
+      await contract.methods.setSalePrice(tokenId, priceInWei, timeoutInSeconds).send({
         from: metamaskAddress
       });
 
       if (onToast) {
-        onToast(`Token #${tokenId} listed for ${priceInEth} ETH`, 'success');
+        const timeoutDisplay = formatTimeout(timeoutInSeconds);
+        onToast(`Token #${tokenId} listed for ${priceInEth} ETH with ${timeoutDisplay} timeout`, 'success');
       }
 
       // Refresh tokens to show updated sale status
       await fetchUserTokens();
       setListingToken(null);
       setListingPrice('');
+      setListingTimeout('');
+      setTimeoutUnit('hours');
     } catch (error) {
       console.error('Error setting sale price:', error);
       if (onToast) {
@@ -249,6 +257,18 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
       }
     } finally {
       setProcessingTx(false);
+    }
+  };
+
+  const formatTimeout = (seconds) => {
+    if (seconds < 3600) {
+      return `${Math.round(seconds / 60)} minutes`;
+    } else if (seconds % 3600 === 0) {
+      return `${seconds / 3600} hours`;
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.round((seconds % 3600) / 60);
+      return `${hours}h ${minutes}m`;
     }
   };
 
@@ -282,11 +302,15 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
   const startListing = (tokenId) => {
     setListingToken(tokenId);
     setListingPrice('');
+    setListingTimeout('');
+    setTimeoutUnit('hours');
   };
 
   const cancelListing = () => {
     setListingToken(null);
     setListingPrice('');
+    setListingTimeout('');
+    setTimeoutUnit('hours');
   };
 
   const confirmListing = (tokenId) => {
@@ -296,7 +320,38 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
       }
       return;
     }
-    handleSetSalePrice(tokenId, listingPrice);
+
+    if (!listingTimeout || parseFloat(listingTimeout) <= 0) {
+      if (onToast) {
+        onToast('Please enter a valid timeout', 'error');
+      }
+      return;
+    }
+
+    // Convert timeout to seconds based on unit
+    const timeoutValue = parseFloat(listingTimeout);
+    const timeoutInSeconds = timeoutUnit === 'hours'
+      ? Math.floor(timeoutValue * 3600)
+      : Math.floor(timeoutValue * 60);
+
+    // Validate timeout bounds
+    if (minTimeout !== null && timeoutInSeconds < minTimeout) {
+      if (onToast) {
+        const minDisplay = formatTimeout(minTimeout);
+        onToast(`Timeout must be at least ${minDisplay}`, 'error');
+      }
+      return;
+    }
+
+    if (maxTimeout !== null && timeoutInSeconds > maxTimeout) {
+      if (onToast) {
+        const maxDisplay = formatTimeout(maxTimeout);
+        onToast(`Timeout cannot exceed ${maxDisplay}`, 'error');
+      }
+      return;
+    }
+
+    handleSetSalePrice(tokenId, listingPrice, timeoutInSeconds);
   };
 
   if (!metamaskAddress) {

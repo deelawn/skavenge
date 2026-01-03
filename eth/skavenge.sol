@@ -16,6 +16,7 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         bool isSolved; // Whether the clue has been solved
         uint256 salePrice; // Price in wei for which the clue is for sale
         uint256 rValue; // ElGamal encryption r value (needed for decryption)
+        uint256 timeout; // Transfer timeout in seconds (set by seller)
     }
 
     // TokenTransfer structure
@@ -32,8 +33,10 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         uint256 verifiedAt; // Timestamp when proof was verified
     }
 
-    // Transfer timeout in seconds
-    uint256 public constant TRANSFER_TIMEOUT = 180; // 3 minutes
+    // Transfer timeout bounds in seconds
+    // uint256 public constant MIN_TIMEOUT = 3600; // 1 hour
+    uint256 public constant MIN_TIMEOUT = 0; // no minimum for testing
+    uint256 public constant MAX_TIMEOUT = 86400; // 24 hours
 
     // Current token ID counter
     uint256 private _tokenIdCounter;
@@ -144,7 +147,8 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
             solutionHash: solutionHash,
             isSolved: false,
             salePrice: 0,
-            rValue: rValue
+            rValue: rValue,
+            timeout: 0
         });
 
         _mint(msg.sender, tokenId);
@@ -177,12 +181,26 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
      * @dev Set a sale price for a clue
      * @param tokenId Token ID of the clue
      * @param price Price in wei
+     * @param timeout Transfer timeout in seconds (must be between MIN_TIMEOUT and MAX_TIMEOUT)
      */
-    function setSalePrice(uint256 tokenId, uint256 price) external {
+    function setSalePrice(
+        uint256 tokenId,
+        uint256 price,
+        uint256 timeout
+    ) external {
         require(ownerOf(tokenId) == msg.sender, "Not token owner");
 
         if (clues[tokenId].isSolved) {
             revert SolvedClueCannotBeSold();
+        }
+
+        // Validate timeout only if listing for sale (price > 0)
+        if (price > 0) {
+            require(
+                timeout >= MIN_TIMEOUT && timeout <= MAX_TIMEOUT,
+                "Invalid timeout"
+            );
+            clues[tokenId].timeout = timeout;
         }
 
         clues[tokenId].salePrice = price;
@@ -373,7 +391,8 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
 
         // Check if transfer has timed out
         require(
-            block.timestamp - transfer.initiatedAt <= TRANSFER_TIMEOUT,
+            block.timestamp - transfer.initiatedAt <=
+                clues[transfer.tokenId].timeout,
             "Transfer expired"
         );
 
@@ -413,7 +432,8 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
 
         // Check if proof provision has timed out
         require(
-            block.timestamp - transfer.proofProvidedAt <= TRANSFER_TIMEOUT,
+            block.timestamp - transfer.proofProvidedAt <=
+                clues[transfer.tokenId].timeout,
             "Proof verification expired"
         );
 
@@ -441,7 +461,8 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         // Check if verification has timed out
         require(transfer.verifiedAt > 0, "Proof not verified");
         require(
-            block.timestamp - transfer.verifiedAt <= TRANSFER_TIMEOUT,
+            block.timestamp - transfer.verifiedAt <=
+                clues[transfer.tokenId].timeout,
             "Transfer completion expired"
         );
 
@@ -545,20 +566,21 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         // 2. Proof provided but not verified and timeout elapsed, or
         // 3. Proof verified but not completed and timeout elapsed
         if (isSeller) {
+            uint256 timeout = clues[transfer.tokenId].timeout;
             if (
                 transfer.proofProvidedAt == 0 &&
-                block.timestamp - transfer.initiatedAt > TRANSFER_TIMEOUT
+                block.timestamp - transfer.initiatedAt > timeout
             ) {
                 canCancel = true;
             } else if (
                 transfer.proofProvidedAt > 0 &&
                 !transfer.proofVerified &&
-                block.timestamp - transfer.proofProvidedAt > TRANSFER_TIMEOUT
+                block.timestamp - transfer.proofProvidedAt > timeout
             ) {
                 canCancel = true;
             } else if (
                 transfer.verifiedAt > 0 &&
-                block.timestamp - transfer.verifiedAt > TRANSFER_TIMEOUT
+                block.timestamp - transfer.verifiedAt > timeout
             ) {
                 canCancel = true;
             }

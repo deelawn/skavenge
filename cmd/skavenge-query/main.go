@@ -78,12 +78,14 @@ func main() {
 		execGetCurrentTokenId(contract, opts)
 	case "get-total-clues-for-sale":
 		execGetTotalCluesForSale(contract, opts)
+	case "m-a-x-t-i-m-e-o-u-t":
+		execMAXTIMEOUT(contract, opts)
+	case "m-i-n-t-i-m-e-o-u-t":
+		execMINTIMEOUT(contract, opts)
 	case "name":
 		execName(contract, opts)
 	case "symbol":
 		execSymbol(contract, opts)
-	case "t-r-a-n-s-f-e-r-t-i-m-e-o-u-t":
-		execTRANSFERTIMEOUT(contract, opts)
 	case "total-supply":
 		execTotalSupply(contract, opts)
 	case "balance-of":
@@ -200,9 +202,10 @@ Available Commands:
     authorized-minter                       Get AuthorizedMinter
     get-current-token-id                    Get GetCurrentTokenId
     get-total-clues-for-sale                Get GetTotalCluesForSale
+    m-a-x-t-i-m-e-o-u-t                     Get MAXTIMEOUT
+    m-i-n-t-i-m-e-o-u-t                     Get MINTIMEOUT
     name                                    Get Name
     symbol                                  Get Symbol
-    t-r-a-n-s-f-e-r-t-i-m-e-o-u-t           Get TRANSFERTIMEOUT
     total-supply                            Get TotalSupply
 
   Single Argument Commands:
@@ -265,6 +268,26 @@ func execGetTotalCluesForSale(contract *bindings.SkavengeCaller, opts *bind.Call
 	fmt.Println(result.String())
 }
 
+func execMAXTIMEOUT(contract *bindings.SkavengeCaller, opts *bind.CallOpts) {
+	result, err := contract.MAXTIMEOUT(opts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	
+	fmt.Println(result.String())
+}
+
+func execMINTIMEOUT(contract *bindings.SkavengeCaller, opts *bind.CallOpts) {
+	result, err := contract.MINTIMEOUT(opts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	
+	fmt.Println(result.String())
+}
+
 func execName(contract *bindings.SkavengeCaller, opts *bind.CallOpts) {
 	result, err := contract.Name(opts)
 	if err != nil {
@@ -283,16 +306,6 @@ func execSymbol(contract *bindings.SkavengeCaller, opts *bind.CallOpts) {
 	}
 	
 	fmt.Println(result)
-}
-
-func execTRANSFERTIMEOUT(contract *bindings.SkavengeCaller, opts *bind.CallOpts) {
-	result, err := contract.TRANSFERTIMEOUT(opts)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-	
-	fmt.Println(result.String())
 }
 
 func execTotalSupply(contract *bindings.SkavengeCaller, opts *bind.CallOpts) {

@@ -108,7 +108,8 @@ func TestAlteredTransfer(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                   // 3 minutes
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
@@ -302,7 +303,8 @@ func TestSuccessfulTransferWithCorrectContent(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                   // 3 minutes
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
@@ -518,7 +520,8 @@ func TestInvalidProofVerification(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                   // 3 minutes
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
@@ -656,7 +659,8 @@ func TestInvalidProofContentAltered(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                   // 3 minutes
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
@@ -808,7 +812,8 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                   // 3 minutes
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
@@ -940,7 +945,8 @@ func TestCancelTransfer(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                   // 3 minutes
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
@@ -1056,7 +1062,8 @@ func TestCorruptedRValueRejected(t *testing.T) {
 	// Set sale price
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                   // 3 minutes
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)

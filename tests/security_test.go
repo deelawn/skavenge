@@ -148,7 +148,8 @@ func TestSecurity_AttackPrevented_WrongRValue(t *testing.T) {
 	// Set sale price
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                    // 3 minutes
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -469,7 +470,8 @@ func TestSecurity_BuyerCannotCancelAfterVerification(t *testing.T) {
 	// Set sale price
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                    // 3 minutes
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -614,7 +616,8 @@ func TestSecurity_FrontrunningAttackPrevented(t *testing.T) {
 	// Set sale price
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                    // 3 minutes
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -802,7 +805,8 @@ func TestSecurity_ConcurrentPurchasePrevention(t *testing.T) {
 	// Set sale price
 	minterAuth, err = util.NewTransactOpts(client, testMinter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                    // 3 minutes
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -1004,7 +1008,8 @@ func TestSecurity_NonOwnerCannotRemoveSalePrice(t *testing.T) {
 	// Set sale price (by owner)
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                    // 3 minutes
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
