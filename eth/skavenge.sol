@@ -86,6 +86,7 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     // Events
     event ClueMinted(uint256 indexed tokenId, address minter);
     event ClueSolved(uint256 indexed tokenId, string solution);
+    event ClueAttemptFailed(uint256 indexed tokenId, string attemptedSolution);
     event SalePriceSet(uint256 indexed tokenId, uint256 price);
     event SalePriceRemoved(uint256 indexed tokenId);
 
@@ -304,6 +305,8 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
             }
 
             emit ClueSolved(tokenId, solution);
+        } else {
+            emit ClueAttemptFailed(tokenId, solution);
         }
     }
 
