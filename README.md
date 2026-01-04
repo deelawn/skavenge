@@ -121,7 +121,7 @@ The easiest way to run Skavenge locally is using Docker Compose, which sets up a
 
 5. **Start all services**:
    ```bash
-   make start
+   make start-with-setup
    ```
 
    This command will:
@@ -135,19 +135,7 @@ The easiest way to run Skavenge locally is using Docker Compose, which sets up a
    - **Web Application**: http://localhost:8080
    - **Gateway API**: http://localhost:4591
 
-6. **Configure MetaMask for local network**:
-   - Open MetaMask
-   - Click the network dropdown
-   - Select "Add network" → "Add a network manually"
-   - Enter the following details:
-     - Network name: `Hardhat Local`
-     - RPC URL: `http://localhost:8545`
-     - Chain ID: `1337`
-     - Currency symbol: `ETH`
-   - Click "Save"
-   - Switch to the newly added network
-
-7. **Access the web app**:
+6. **Access the web app**:
    - Open http://localhost:8080 in your browser
    - Connect your Skavenger extension
    - Connect MetaMask
@@ -168,7 +156,7 @@ If you make changes to the code:
 make docker-build
 
 # Restart with new images
-make start
+make start-with-setup
 ```
 
 ## Testing
