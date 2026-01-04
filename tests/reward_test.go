@@ -2,9 +2,11 @@
 package tests
 
 import (
+	"context"
 	"crypto/rand"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -76,7 +78,7 @@ func TestMintClueWithReward(t *testing.T) {
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
-	receipt, err := util.WaitForTransaction(client, tx)
+	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
 	tokenId, err := getLastMintedTokenID(contract)
@@ -151,7 +153,7 @@ func TestMintClueWithoutReward(t *testing.T) {
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
-	receipt, err := util.WaitForTransaction(client, tx)
+	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
 	tokenId, err := getLastMintedTokenID(contract)
@@ -241,7 +243,9 @@ func TestSolveClueWithReward(t *testing.T) {
 	require.Equal(t, rewardValue.String(), storedReward.String(), "Solve reward should match the sent value")
 
 	// Get the minter's balance before solving
-	balanceBefore, err := client.BalanceAt(nil, minterAddr, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	balanceBefore, err := client.BalanceAt(ctx, minterAddr, nil)
 	require.NoError(t, err)
 
 	// Solve the clue
@@ -260,7 +264,7 @@ func TestSolveClueWithReward(t *testing.T) {
 	gasCost := new(big.Int).Mul(big.NewInt(int64(solveReceipt.GasUsed)), solveReceipt.EffectiveGasPrice)
 
 	// Get the minter's balance after solving
-	balanceAfter, err := client.BalanceAt(nil, minterAddr, nil)
+	balanceAfter, err := client.BalanceAt(ctx, minterAddr, nil)
 	require.NoError(t, err)
 
 	// Calculate expected balance: balanceBefore + rewardValue - gasCost
@@ -349,7 +353,9 @@ func TestSolveClueWithoutReward(t *testing.T) {
 	require.Equal(t, big.NewInt(0).String(), storedReward.String(), "Solve reward should be zero")
 
 	// Get the minter's balance before solving
-	balanceBefore, err := client.BalanceAt(nil, minterAddr, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	balanceBefore, err := client.BalanceAt(ctx, minterAddr, nil)
 	require.NoError(t, err)
 
 	// Solve the clue
@@ -368,7 +374,7 @@ func TestSolveClueWithoutReward(t *testing.T) {
 	gasCost := new(big.Int).Mul(big.NewInt(int64(solveReceipt.GasUsed)), solveReceipt.EffectiveGasPrice)
 
 	// Get the minter's balance after solving
-	balanceAfter, err := client.BalanceAt(nil, minterAddr, nil)
+	balanceAfter, err := client.BalanceAt(ctx, minterAddr, nil)
 	require.NoError(t, err)
 
 	// Calculate expected balance: balanceBefore - gasCost (no reward)
@@ -500,7 +506,9 @@ func TestMultipleCluesWithDifferentRewards(t *testing.T) {
 			tokenId := tokenIds[i]
 
 			// Get the minter's balance before solving
-			balanceBefore, err := client.BalanceAt(nil, minterAddr, nil)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			balanceBefore, err := client.BalanceAt(ctx, minterAddr, nil)
 			require.NoError(t, err)
 
 			// Solve the clue
@@ -519,7 +527,7 @@ func TestMultipleCluesWithDifferentRewards(t *testing.T) {
 			gasCost := new(big.Int).Mul(big.NewInt(int64(solveReceipt.GasUsed)), solveReceipt.EffectiveGasPrice)
 
 			// Get the minter's balance after solving
-			balanceAfter, err := client.BalanceAt(nil, minterAddr, nil)
+			balanceAfter, err := client.BalanceAt(ctx, minterAddr, nil)
 			require.NoError(t, err)
 
 			// Calculate expected balance: balanceBefore + rewardValue - gasCost
