@@ -68,6 +68,8 @@ The easiest way to run Skavenge locally is using Docker Compose, which sets up a
 
 - Docker and Docker Compose
 - Git
+- Chrome browser
+- MetaMask browser extension
 
 ### Running Locally
 
@@ -77,14 +79,47 @@ The easiest way to run Skavenge locally is using Docker Compose, which sets up a
    cd skavenge
    ```
 
-2. **Create test configuration**:
+2. **Install and configure MetaMask**:
+   - Install the [MetaMask browser extension](https://metamask.io/)
+   - Create a new Ethereum account specifically for Skavenge (recommended for security)
+   - Export the private key from MetaMask:
+     - Click the account menu (three dots)
+     - Select "Account details"
+     - Click "Show private key"
+     - Enter your MetaMask password
+     - Copy the private key
+
+3. **Install and configure the Skavenger extension**:
+   - Open Chrome and navigate to `chrome://extensions/`
+   - Enable "Developer mode" (toggle in top right)
+   - Click "Load unpacked"
+   - Select the `skavenger-extension` directory from this repository
+   - Note the extension ID (should be `hnbligdjmpihmhhgajlfjmckcnmnofbn`)
+   - Click on the Skavenger extension icon in your browser
+   - Generate a new key pair by clicking "Generate New Keys"
+   - Set a password to encrypt your keys
+   - Export the private key:
+     - Click "Export Keys"
+     - Enter your password
+     - Copy the private key (the hex string without "0x" prefix)
+
+4. **Create and configure test-config.json**:
    ```bash
    cp test-config.json.example test-config.json
    ```
 
-   The example config contains a Hardhat test account private key and is suitable for local development.
+   Edit `test-config.json` and add your private keys:
+   ```json
+   {
+     "privateKey": "YOUR_METAMASK_PRIVATE_KEY_HERE",
+     "skavengePrivateKey": "YOUR_SKAVENGER_PRIVATE_KEY_HERE",
+     "hardhatUrl": "http://hardhat:8545"
+   }
+   ```
 
-3. **Start all services**:
+   **Important**: Both private keys should be hex strings without the "0x" prefix.
+
+5. **Start all services**:
    ```bash
    make start
    ```
@@ -100,17 +135,22 @@ The easiest way to run Skavenge locally is using Docker Compose, which sets up a
    - **Web Application**: http://localhost:8080
    - **Gateway API**: http://localhost:4591
 
-4. **Install the browser extension**:
-   - Open Chrome and navigate to `chrome://extensions/`
-   - Enable "Developer mode"
-   - Click "Load unpacked"
-   - Select the `skavenger-extension` directory
-   - Note the extension ID (should be `hnbligdjmpihmhhgajlfjmckcnmnofbn`)
+6. **Configure MetaMask for local network**:
+   - Open MetaMask
+   - Click the network dropdown
+   - Select "Add network" → "Add a network manually"
+   - Enter the following details:
+     - Network name: `Hardhat Local`
+     - RPC URL: `http://localhost:8545`
+     - Chain ID: `1337`
+     - Currency symbol: `ETH`
+   - Click "Save"
+   - Switch to the newly added network
 
-5. **Access the web app**:
+7. **Access the web app**:
    - Open http://localhost:8080 in your browser
    - Connect your Skavenger extension
-   - Connect MetaMask (configure to use http://localhost:8545)
+   - Connect MetaMask
    - Start playing!
 
 ### Stopping Services
@@ -130,53 +170,6 @@ make docker-build
 # Restart with new images
 make start
 ```
-
-## Development Setup
-
-### Manual Setup (Without Docker)
-
-If you prefer to run services individually:
-
-1. **Install dependencies**:
-   ```bash
-   # Install Node.js dependencies
-   npm install
-   cd eth && npm install && cd ..
-   cd webapp && npm install && cd ..
-
-   # Install Go dependencies
-   go mod download
-   ```
-
-2. **Compile the smart contract**:
-   ```bash
-   # Compile for Go bindings
-   make compile
-
-   # Compile for JavaScript (webapp)
-   make compile-js
-   ```
-
-3. **Start Hardhat node**:
-   ```bash
-   npx hardhat node
-   ```
-
-4. **Deploy the contract** (in a new terminal):
-   ```bash
-   make setup-local
-   ```
-
-5. **Start the gateway** (in a new terminal):
-   ```bash
-   go run ./linked-accounts-gateway -contract <CONTRACT_ADDRESS>
-   ```
-
-6. **Start the webapp** (in a new terminal):
-   ```bash
-   cd webapp
-   npm start
-   ```
 
 ## Testing
 
@@ -283,23 +276,34 @@ A React SPA that:
 
 ### test-config.json
 
-Used by the setup tool to deploy contracts:
+Used by the setup tool to deploy contracts and initialize the system. You must create this file with your private keys before running `make start`:
+
 ```json
 {
-  "privateKey": "0x...",
-  "hardhatUrl": "http://localhost:8545"
+  "privateKey": "YOUR_METAMASK_PRIVATE_KEY_HERE",
+  "skavengePrivateKey": "YOUR_SKAVENGER_PRIVATE_KEY_HERE",
+  "hardhatUrl": "http://hardhat:8545"
 }
 ```
+
+**Fields:**
+- `privateKey`: Private key from your MetaMask account (without "0x" prefix)
+- `skavengePrivateKey`: Private key from your Skavenger extension (without "0x" prefix)
+- `hardhatUrl`: URL of the Hardhat node (use `http://hardhat:8545` for Docker, `http://localhost:8545` for local)
 
 ### webapp/config.json
 
-Used by the web application (auto-generated by setup):
+Auto-generated by the setup tool. Contains:
 ```json
 {
   "contractAddress": "0x...",
-  "networkRpcUrl": "http://localhost:8545"
+  "networkRpcUrl": "http://localhost:8545",
+  "chainId": 1337,
+  "gatewayUrl": "http://localhost:4591"
 }
 ```
+
+This file is automatically created when you run `make start`.
 
 ## Makefile Targets
 
