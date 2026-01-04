@@ -26,10 +26,8 @@
 
   <!-- Solving Attempts State -->
   <rect x="900" y="450" width="250" height="80" fill="#6495ED" rx="15" ry="15" />
-  <text x="1025" y="480" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
+  <text x="1025" y="495" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
     fill="white">Solve Attempts</text>
-  <text x="1025" y="510" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="white">(Max 3
-    Attempts)</text>
 
   <!-- Solved State -->
   <rect x="900" y="700" width="250" height="80" fill="#6495ED" rx="15" ry="15" />
@@ -38,22 +36,16 @@
 
   <!-- Transfer States -->
   <rect x="300" y="700" width="250" height="80" fill="#6495ED" rx="15" ry="15" />
-  <text x="425" y="730" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
+  <text x="425" y="745" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
     fill="white">Transfer Initiated</text>
-  <text x="425" y="760" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="white">(3 min
-    timeout)</text>
 
   <rect x="300" y="900" width="250" height="80" fill="#6495ED" rx="15" ry="15" />
-  <text x="425" y="930" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
+  <text x="425" y="945" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
     fill="white">Proof Provided</text>
-  <text x="425" y="960" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="white">(3 min
-    timeout)</text>
 
   <rect x="900" y="900" width="250" height="80" fill="#6495ED" rx="15" ry="15" />
-  <text x="1025" y="930" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
+  <text x="1025" y="945" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
     fill="white">Proof Verified</text>
-  <text x="1025" y="960" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="white">(3 min
-    timeout)</text>
 
   <rect x="600" y="700" width="250" height="80" fill="#6495ED" rx="15" ry="15" />
   <text x="725" y="750" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle"
