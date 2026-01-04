@@ -915,13 +915,54 @@ function Transfers({ metamaskAddress, config, onToast }) {
                           display: 'inline-block',
                           marginLeft: '6px',
                           cursor: 'help',
-                          fontSize: '12px',
+                          fontSize: '14px',
                           color: '#667eea',
-                          fontWeight: '600'
+                          fontWeight: '700',
+                          position: 'relative'
                         }}
-                        title="This ETH reward is awarded to the owner immediately when the correct solution is provided"
+                        onMouseEnter={(e) => {
+                          const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                          if (tooltip) tooltip.style.visibility = 'visible';
+                        }}
+                        onMouseLeave={(e) => {
+                          const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                          if (tooltip) tooltip.style.visibility = 'hidden';
+                        }}
                       >
                         ⓘ
+                        <span
+                          className="tooltip-text"
+                          style={{
+                            visibility: 'hidden',
+                            position: 'absolute',
+                            backgroundColor: '#2d3748',
+                            color: 'white',
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            width: '220px',
+                            bottom: '125%',
+                            left: '50%',
+                            marginLeft: '-110px',
+                            zIndex: 1000,
+                            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                            lineHeight: '1.4'
+                          }}
+                        >
+                          This ETH reward is awarded to the owner immediately when the correct solution is provided
+                          <span
+                            style={{
+                              position: 'absolute',
+                              top: '100%',
+                              left: '50%',
+                              marginLeft: '-5px',
+                              borderWidth: '5px',
+                              borderStyle: 'solid',
+                              borderColor: '#2d3748 transparent transparent transparent'
+                            }}
+                          />
+                        </span>
                       </span>
                     </span>
                     <span className="detail-value" style={{ fontWeight: '600', color: '#48bb78' }}>
