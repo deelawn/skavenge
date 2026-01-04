@@ -53,7 +53,8 @@ function ClueMarketplace({ metamaskAddress, config, onToast }) {
           isSolved: result.solvedStatus[index],
           transferInProgress,
           pointValue: Number(clueData.pointValue),
-          timeout: Number(clueData.timeout)
+          timeout: Number(clueData.timeout),
+          solveReward: clueData.solveReward.toString()
         };
       });
 
@@ -317,6 +318,30 @@ function ClueMarketplace({ metamaskAddress, config, onToast }) {
                   {clue.pointValue} {clue.pointValue === 1 ? 'point' : 'points'}
                 </span>
               </div>
+
+              {!clue.isSolved && clue.solveReward && clue.solveReward !== '0' && (
+                <div className="token-detail-row">
+                  <span className="detail-label">
+                    Bonus Reward:
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        marginLeft: '6px',
+                        cursor: 'help',
+                        fontSize: '12px',
+                        color: '#667eea',
+                        fontWeight: '600'
+                      }}
+                      title="This ETH reward is awarded to you immediately when you provide the correct solution"
+                    >
+                      ⓘ
+                    </span>
+                  </span>
+                  <span className="detail-value" style={{ fontWeight: '600', color: '#48bb78' }}>
+                    {formatPrice(clue.solveReward)} ETH
+                  </span>
+                </div>
+              )}
 
               {clue.timeout > 0 && (
                 <div className="token-detail-row">

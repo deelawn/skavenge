@@ -84,7 +84,8 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
             // Convert rValue to hex for display (only owner can see this)
             rValue: clueData.rValue.toString(),
             pointValue: Number(clueData.pointValue),
-            timeout: Number(clueData.timeout)
+            timeout: Number(clueData.timeout),
+            solveReward: clueData.solveReward.toString()
           };
         } catch (err) {
           console.error(`Error fetching data for token ${tokenId}:`, err);
@@ -441,6 +442,30 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
                     {token.pointValue} {token.pointValue === 1 ? 'point' : 'points'}
                   </span>
                 </div>
+
+                {!token.isSolved && token.solveReward && token.solveReward !== '0' && (
+                  <div className="token-detail-row">
+                    <span className="detail-label">
+                      Bonus Reward:
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          marginLeft: '6px',
+                          cursor: 'help',
+                          fontSize: '12px',
+                          color: '#667eea',
+                          fontWeight: '600'
+                        }}
+                        title="This ETH reward is awarded to you immediately when you provide the correct solution"
+                      >
+                        ⓘ
+                      </span>
+                    </span>
+                    <span className="detail-value" style={{ fontWeight: '600', color: '#48bb78' }}>
+                      {formatPrice(token.solveReward)} ETH
+                    </span>
+                  </div>
+                )}
 
                 {token.isForSale && (
                   <>
