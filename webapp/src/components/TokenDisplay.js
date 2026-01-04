@@ -319,20 +319,70 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
       const web3 = new Web3(window.ethereum);
       const contract = new web3.eth.Contract(SKAVENGE_ABI, config.contractAddress);
 
-      // Call attemptSolution function
-      await contract.methods.attemptSolution(tokenId, solution.trim()).send({
+      if (onToast) {
+        onToast('Submitting solution...', 'info');
+      }
+
+      // Call attemptSolution function and get the transaction
+      const tx = await contract.methods.attemptSolution(tokenId, solution.trim()).send({
         from: metamaskAddress
       });
 
-      if (onToast) {
-        onToast(`Solution submitted for Token #${tokenId}! Check transaction for result.`, 'success');
+      // Wait for transaction receipt to get the events
+      const receipt = tx;
+
+      // Parse events from the receipt
+      let solutionCorrect = false;
+      let eventFound = false;
+
+      if (receipt.events) {
+        // Check for ClueSolved event
+        if (receipt.events.ClueSolved) {
+          const event = receipt.events.ClueSolved;
+          const eventTokenId = event.returnValues.tokenId;
+          if (eventTokenId.toString() === tokenId.toString()) {
+            solutionCorrect = true;
+            eventFound = true;
+          }
+        }
+        // Check for ClueAttemptFailed event
+        else if (receipt.events.ClueAttemptFailed) {
+          const event = receipt.events.ClueAttemptFailed;
+          const eventTokenId = event.returnValues.tokenId;
+          if (eventTokenId.toString() === tokenId.toString()) {
+            solutionCorrect = false;
+            eventFound = true;
+          }
+        }
       }
 
-      // Clear the solution input
-      setSolutionInputs(prev => ({
-        ...prev,
-        [tokenId]: ''
-      }));
+      // Provide feedback based on the event
+      if (eventFound) {
+        if (solutionCorrect) {
+          if (onToast) {
+            onToast(`🎉 Correct! Token #${tokenId} has been solved!`, 'success');
+          }
+          // Clear the solution input
+          setSolutionInputs(prev => ({
+            ...prev,
+            [tokenId]: ''
+          }));
+        } else {
+          if (onToast) {
+            onToast(`❌ Incorrect solution for Token #${tokenId}. Try again!`, 'error');
+          }
+          // Keep the input so user can try again
+        }
+      } else {
+        // Fallback if event not found (shouldn't happen)
+        if (onToast) {
+          onToast(`Solution submitted for Token #${tokenId}`, 'success');
+        }
+        setSolutionInputs(prev => ({
+          ...prev,
+          [tokenId]: ''
+        }));
+      }
 
       // Refresh tokens to show updated solved status
       await fetchUserTokens();
@@ -690,9 +740,10 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
                   </div>
                 )}
 
-                {/* Listing Controls */}
-                <div className="token-actions" style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {token.isForSale ? (
+                {/* Listing Controls - only show for unsolved clues */}
+                {!token.isSolved && (
+                  <div className="token-actions" style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {token.isForSale ? (
                     <button
                       onClick={() => handleRemoveSalePrice(token.tokenId)}
                       disabled={processingTx}
@@ -841,8 +892,9 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
                         </button>
                       )}
                     </>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
