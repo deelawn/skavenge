@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -98,7 +97,7 @@ func main() {
 	// Sample data for the clue
 	clueContent := []byte("Welcome to Skavenge! This is your first clue.")
 	solution := "test-solution"
-	solutionHash := sha256.Sum256([]byte(solution))
+	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
 	// Generate random r value for ElGamal encryption
 	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
