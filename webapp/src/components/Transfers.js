@@ -86,10 +86,12 @@ function Transfers({ metamaskAddress, config, onToast }) {
           return null;
         }
 
-        // Get the clue data to access the timeout value and point value
+        // Get the clue data to access the timeout value, point value, and solve reward
         const clue = await contract.methods.clues(tokenId).call();
         const timeout = Number(clue.timeout);
         const pointValue = Number(clue.pointValue);
+        const solveReward = clue.solveReward.toString();
+        const isSolved = clue.isSolved;
 
         // Determine status based on proof and proofVerified
         let status;
@@ -121,6 +123,8 @@ function Transfers({ metamaskAddress, config, onToast }) {
           proofVerified: transfer.proofVerified,
           timeout: timeout,
           pointValue: pointValue,
+          solveReward: solveReward,
+          isSolved: isSolved,
           userRole: isBuyer ? 'buyer' : 'seller'
         };
       });
@@ -901,6 +905,71 @@ function Transfers({ metamaskAddress, config, onToast }) {
                     {transfer.pointValue} {transfer.pointValue === 1 ? 'point' : 'points'}
                   </span>
                 </div>
+
+                {!transfer.isSolved && transfer.solveReward && transfer.solveReward !== '0' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span className="detail-label">
+                      Bonus Reward
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          marginLeft: '6px',
+                          cursor: 'help',
+                          fontSize: '14px',
+                          color: '#667eea',
+                          fontWeight: '700',
+                          position: 'relative'
+                        }}
+                        onMouseEnter={(e) => {
+                          const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                          if (tooltip) tooltip.style.visibility = 'visible';
+                        }}
+                        onMouseLeave={(e) => {
+                          const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                          if (tooltip) tooltip.style.visibility = 'hidden';
+                        }}
+                      >
+                        ⓘ
+                        <span
+                          className="tooltip-text"
+                          style={{
+                            visibility: 'hidden',
+                            position: 'absolute',
+                            backgroundColor: '#2d3748',
+                            color: 'white',
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            width: '220px',
+                            bottom: '125%',
+                            left: '50%',
+                            marginLeft: '-110px',
+                            zIndex: 1000,
+                            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                            lineHeight: '1.4'
+                          }}
+                        >
+                          This ETH reward is awarded to the owner immediately when the correct solution is provided
+                          <span
+                            style={{
+                              position: 'absolute',
+                              top: '100%',
+                              left: '50%',
+                              marginLeft: '-5px',
+                              borderWidth: '5px',
+                              borderStyle: 'solid',
+                              borderColor: '#2d3748 transparent transparent transparent'
+                            }}
+                          />
+                        </span>
+                      </span>
+                    </span>
+                    <span className="detail-value" style={{ fontWeight: '600', color: '#48bb78' }}>
+                      {formatValue(transfer.solveReward)} ETH
+                    </span>
+                  </div>
+                )}
 
                 {transfer.timeout > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

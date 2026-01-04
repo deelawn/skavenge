@@ -18,6 +18,7 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         uint256 rValue; // ElGamal encryption r value (needed for decryption)
         uint256 timeout; // Transfer timeout in seconds (set by seller)
         uint8 pointValue; // Point value of the clue (1-5)
+        uint256 solveReward; // ETH reward for solving the clue
     }
 
     // TokenTransfer structure
@@ -140,13 +141,14 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
      * @param solutionHash Hash of the solution
      * @param rValue ElGamal encryption r value
      * @param pointValue Point value of the clue (1-5)
+     * @notice Can optionally send ETH to set a solve reward for the clue
      */
     function mintClue(
         bytes calldata encryptedContents,
         bytes32 solutionHash,
         uint256 rValue,
         uint8 pointValue
-    ) external returns (uint256 tokenId) {
+    ) external payable returns (uint256 tokenId) {
         if (msg.sender != authorizedMinter) {
             revert UnauthorizedMinter();
         }
@@ -165,7 +167,8 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
             salePrice: 0,
             rValue: rValue,
             timeout: 0,
-            pointValue: pointValue
+            pointValue: pointValue,
+            solveReward: msg.value
         });
 
         _mint(msg.sender, tokenId);
@@ -201,6 +204,15 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     function getPointValue(uint256 tokenId) external view returns (uint8) {
         ownerOf(tokenId); // Will revert if token doesn't exist
         return clues[tokenId].pointValue;
+    }
+
+    /**
+     * @dev Get the solve reward for a clue
+     * @param tokenId Token ID of the clue
+     */
+    function getSolveReward(uint256 tokenId) external view returns (uint256) {
+        ownerOf(tokenId); // Will revert if token doesn't exist
+        return clues[tokenId].solveReward;
     }
 
     /**
@@ -312,7 +324,7 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     function attemptSolution(
         uint256 tokenId,
         string calldata solution
-    ) external {
+    ) external nonReentrant {
         require(ownerOf(tokenId) == msg.sender, "Not token owner");
         require(!clues[tokenId].isSolved, "Clue already solved");
 
@@ -324,6 +336,14 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
                 _removeFromForSaleList(tokenId);
                 clues[tokenId].salePrice = 0;
                 emit SalePriceRemoved(tokenId);
+            }
+
+            // Transfer solve reward if one exists
+            uint256 reward = clues[tokenId].solveReward;
+            if (reward > 0) {
+                clues[tokenId].solveReward = 0; // Clear reward before transfer
+                (bool sent, ) = payable(msg.sender).call{value: reward}("");
+                require(sent, "Failed to send solve reward");
             }
 
             emit ClueSolved(tokenId, solution);

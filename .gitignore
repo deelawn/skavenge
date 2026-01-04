@@ -1,6 +1,8 @@
 eth/node_modules
 eth/build
 node_modules
+cache
+artifacts
 
 # Go build artifacts
 *.test

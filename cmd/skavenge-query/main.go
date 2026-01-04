@@ -124,12 +124,24 @@ func main() {
 			os.Exit(1)
 		}
 		execGetClueContents(contract, opts, args[1])
+	case "get-point-value":
+		if len(args) < 2 {
+			fmt.Fprintf(os.Stderr, "Error: get-point-value requires tokenId argument(s)\n")
+			os.Exit(1)
+		}
+		execGetPointValue(contract, opts, args[1])
 	case "get-r-value":
 		if len(args) < 2 {
 			fmt.Fprintf(os.Stderr, "Error: get-r-value requires tokenId argument(s)\n")
 			os.Exit(1)
 		}
 		execGetRValue(contract, opts, args[1])
+	case "get-solve-reward":
+		if len(args) < 2 {
+			fmt.Fprintf(os.Stderr, "Error: get-solve-reward requires tokenId argument(s)\n")
+			os.Exit(1)
+		}
+		execGetSolveReward(contract, opts, args[1])
 	case "owner-of":
 		if len(args) < 2 {
 			fmt.Fprintf(os.Stderr, "Error: owner-of requires tokenId argument(s)\n")
@@ -215,7 +227,9 @@ Available Commands:
     clues-for-sale <arg0>                Get CluesForSale
     get-approved <tokenId>                  Get GetApproved
     get-clue-contents <tokenId>             Get GetClueContents
+    get-point-value <tokenId>               Get GetPointValue
     get-r-value <tokenId>                   Get GetRValue
+    get-solve-reward <tokenId>              Get GetSolveReward
     owner-of <tokenId>                      Get OwnerOf
     token-by-index <index>                Get TokenByIndex
     token-u-r-i <tokenId>                   Get TokenURI
@@ -418,6 +432,22 @@ func execGetClueContents(contract *bindings.SkavengeCaller, opts *bind.CallOpts,
 	fmt.Printf("0x%x\n", result)
 }
 
+func execGetPointValue(contract *bindings.SkavengeCaller, opts *bind.CallOpts, tokenIdStr string) {
+	tokenId := new(big.Int)
+	tokenId, ok := tokenId.SetString(tokenIdStr, 10)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "Error: Invalid tokenId: %s\n", tokenIdStr)
+		os.Exit(1)
+	}
+	result, err := contract.GetPointValue(opts, tokenId)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	
+	fmt.Printf("%+v\n", result)
+}
+
 func execGetRValue(contract *bindings.SkavengeCaller, opts *bind.CallOpts, tokenIdStr string) {
 	tokenId := new(big.Int)
 	tokenId, ok := tokenId.SetString(tokenIdStr, 10)
@@ -426,6 +456,22 @@ func execGetRValue(contract *bindings.SkavengeCaller, opts *bind.CallOpts, token
 		os.Exit(1)
 	}
 	result, err := contract.GetRValue(opts, tokenId)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	
+	fmt.Println(result.String())
+}
+
+func execGetSolveReward(contract *bindings.SkavengeCaller, opts *bind.CallOpts, tokenIdStr string) {
+	tokenId := new(big.Int)
+	tokenId, ok := tokenId.SetString(tokenIdStr, 10)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "Error: Invalid tokenId: %s\n", tokenIdStr)
+		os.Exit(1)
+	}
+	result, err := contract.GetSolveReward(opts, tokenId)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
