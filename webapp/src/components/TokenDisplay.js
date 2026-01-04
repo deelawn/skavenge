@@ -15,6 +15,8 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
   const [minTimeout, setMinTimeout] = useState(null);
   const [maxTimeout, setMaxTimeout] = useState(null);
   const [processingTx, setProcessingTx] = useState(false);
+  const [showSolvedClues, setShowSolvedClues] = useState(false);
+  const [solutionInputs, setSolutionInputs] = useState({});
 
   useEffect(() => {
     if (!metamaskAddress || !config || !config.contractAddress) {
@@ -302,6 +304,98 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
     }
   };
 
+  const handleSubmitSolution = async (tokenId) => {
+    const solution = solutionInputs[tokenId];
+
+    if (!solution || solution.trim() === '') {
+      if (onToast) {
+        onToast('Please enter a solution', 'error');
+      }
+      return;
+    }
+
+    try {
+      setProcessingTx(true);
+      const web3 = new Web3(window.ethereum);
+      const contract = new web3.eth.Contract(SKAVENGE_ABI, config.contractAddress);
+
+      if (onToast) {
+        onToast('Submitting solution...', 'info');
+      }
+
+      // Call attemptSolution function and get the transaction
+      const tx = await contract.methods.attemptSolution(tokenId, solution.trim()).send({
+        from: metamaskAddress
+      });
+
+      // Wait for transaction receipt to get the events
+      const receipt = tx;
+
+      // Parse events from the receipt
+      let solutionCorrect = false;
+      let eventFound = false;
+
+      if (receipt.events) {
+        // Check for ClueSolved event
+        if (receipt.events.ClueSolved) {
+          const event = receipt.events.ClueSolved;
+          const eventTokenId = event.returnValues.tokenId;
+          if (eventTokenId.toString() === tokenId.toString()) {
+            solutionCorrect = true;
+            eventFound = true;
+          }
+        }
+        // Check for ClueAttemptFailed event
+        else if (receipt.events.ClueAttemptFailed) {
+          const event = receipt.events.ClueAttemptFailed;
+          const eventTokenId = event.returnValues.tokenId;
+          if (eventTokenId.toString() === tokenId.toString()) {
+            solutionCorrect = false;
+            eventFound = true;
+          }
+        }
+      }
+
+      // Provide feedback based on the event
+      if (eventFound) {
+        if (solutionCorrect) {
+          if (onToast) {
+            onToast(`🎉 Correct! Token #${tokenId} has been solved!`, 'success');
+          }
+          // Clear the solution input
+          setSolutionInputs(prev => ({
+            ...prev,
+            [tokenId]: ''
+          }));
+        } else {
+          if (onToast) {
+            onToast(`❌ Incorrect solution for Token #${tokenId}. Try again!`, 'error');
+          }
+          // Keep the input so user can try again
+        }
+      } else {
+        // Fallback if event not found (shouldn't happen)
+        if (onToast) {
+          onToast(`Solution submitted for Token #${tokenId}`, 'success');
+        }
+        setSolutionInputs(prev => ({
+          ...prev,
+          [tokenId]: ''
+        }));
+      }
+
+      // Refresh tokens to show updated solved status
+      await fetchUserTokens();
+    } catch (error) {
+      console.error('Error submitting solution:', error);
+      if (onToast) {
+        onToast('Failed to submit solution: ' + (error.message || 'Unknown error'), 'error');
+      }
+    } finally {
+      setProcessingTx(false);
+    }
+  };
+
   const startListing = (tokenId) => {
     setListingToken(tokenId);
     setListingPrice('');
@@ -408,16 +502,39 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
     );
   }
 
+  // Filter tokens based on showSolvedClues
+  const filteredTokens = showSolvedClues
+    ? tokens
+    : tokens.filter(token => !token.isSolved);
+
   return (
     <div className="token-display-container">
       <div className="token-display-header">
         <h2>Your Skavenge NFTs</h2>
-        <p className="token-count">{tokens.length} {tokens.length === 1 ? 'token' : 'tokens'}</p>
-        <button onClick={fetchUserTokens} className="btn-refresh">Refresh</button>
+        <p className="token-count">{filteredTokens.length} {filteredTokens.length === 1 ? 'token' : 'tokens'}</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginTop: '12px' }}>
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '14px',
+            cursor: 'pointer',
+            userSelect: 'none'
+          }}>
+            <input
+              type="checkbox"
+              checked={showSolvedClues}
+              onChange={(e) => setShowSolvedClues(e.target.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+            Show solved clues
+          </label>
+          <button onClick={fetchUserTokens} className="btn-refresh">Refresh</button>
+        </div>
       </div>
 
       <div className="token-grid">
-        {tokens.map((token) => (
+        {filteredTokens.map((token) => (
           <div key={token.tokenId} className="token-card">
             <div className="token-card-header">
               <h3>Token #{token.tokenId}</h3>
@@ -560,9 +677,73 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
                   </div>
                 )}
 
-                {/* Listing Controls */}
-                <div className="token-actions" style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {token.isForSale ? (
+                {/* Solution Submission for Unsolved Clues */}
+                {!token.isSolved && (
+                  <div style={{
+                    marginTop: '16px',
+                    padding: '16px',
+                    backgroundColor: '#f7fafc',
+                    borderRadius: '8px',
+                    border: '2px dashed #cbd5e0'
+                  }}>
+                    <div style={{ marginBottom: '8px' }}>
+                      <span style={{
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: '#2d3748'
+                      }}>
+                        Submit Solution
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <input
+                        type="text"
+                        placeholder="Enter your solution..."
+                        value={solutionInputs[token.tokenId] || ''}
+                        onChange={(e) => setSolutionInputs(prev => ({
+                          ...prev,
+                          [token.tokenId]: e.target.value
+                        }))}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && !processingTx) {
+                            handleSubmitSolution(token.tokenId);
+                          }
+                        }}
+                        disabled={processingTx}
+                        style={{
+                          padding: '10px 12px',
+                          fontSize: '14px',
+                          border: '1px solid #cbd5e0',
+                          borderRadius: '6px',
+                          outline: 'none',
+                          backgroundColor: processingTx ? '#e2e8f0' : 'white'
+                        }}
+                      />
+                      <button
+                        onClick={() => handleSubmitSolution(token.tokenId)}
+                        disabled={processingTx || !solutionInputs[token.tokenId]?.trim()}
+                        style={{
+                          padding: '10px',
+                          fontSize: '14px',
+                          backgroundColor: '#48bb78',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: (processingTx || !solutionInputs[token.tokenId]?.trim()) ? 'not-allowed' : 'pointer',
+                          fontWeight: '500',
+                          opacity: (processingTx || !solutionInputs[token.tokenId]?.trim()) ? 0.6 : 1
+                        }}
+                      >
+                        {processingTx ? 'Processing...' : 'Submit Solution'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Listing Controls - only show for unsolved clues */}
+                {!token.isSolved && (
+                  <div className="token-actions" style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {token.isForSale ? (
                     <button
                       onClick={() => handleRemoveSalePrice(token.tokenId)}
                       disabled={processingTx}
@@ -711,8 +892,9 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
                         </button>
                       )}
                     </>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
