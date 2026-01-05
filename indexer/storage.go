@@ -3,9 +3,6 @@ package indexer
 import (
 	"context"
 	"errors"
-	"math/big"
-
-	"github.com/ethereum/go-ethereum/common"
 )
 
 var (
@@ -59,7 +56,7 @@ type Storage interface {
 	// Block operations
 	SaveBlock(ctx context.Context, block *Block) error
 	GetBlock(ctx context.Context, blockNumber uint64) (*Block, error)
-	GetBlockByHash(ctx context.Context, hash common.Hash) (*Block, error)
+	GetBlockByHash(ctx context.Context, hash [32]byte) (*Block, error)
 	GetLatestBlock(ctx context.Context) (*Block, error)
 	DeleteBlocksFrom(ctx context.Context, blockNumber uint64) error
 
