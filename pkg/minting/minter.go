@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -105,7 +104,6 @@ func (m *Minter) MintClue(ctx context.Context, clueData *ClueData, options *Mint
 		recipientPubKey = recipientInfo.SkavengePublicKey
 
 		// Generate new r value for the recipient
-		var err error
 		encryptionR, err = rand.Int(rand.Reader, m.proofSystem.Curve.Params().N)
 		if err != nil {
 			result.Error = fmt.Errorf("failed to generate r value: %w", err)

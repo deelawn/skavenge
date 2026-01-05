@@ -2,7 +2,6 @@ package minting
 
 import (
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"encoding/json"
 	"fmt"
 	"io"
