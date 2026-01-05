@@ -43,7 +43,7 @@ func main() {
         RPCURL:             "http://localhost:8545",
         ContractAddress:    "0x5FbDB2315678afecb367f032d93F642f64180aa3",
         MinterPrivateKey:   "your-ethereum-private-key",
-        SkavengePrivateKey: "your-skavenge-private-key",
+        SkavengePublicKey: "0x04...",  // Your 65-byte Skavenge public key
         GatewayURL:         "http://localhost:4591",
     }
 
@@ -80,11 +80,11 @@ Configuration for the minter:
 
 ```go
 type Config struct {
-    RPCURL             string // Blockchain RPC URL
-    ContractAddress    string // Skavenge contract address
-    MinterPrivateKey   string // Ethereum private key (authorized minter)
-    SkavengePrivateKey string // Skavenge private key for encryption (optional - only needed when minting to self)
-    GatewayURL         string // URL of the linked accounts gateway
+    RPCURL            string // Blockchain RPC URL
+    ContractAddress   string // Skavenge contract address
+    MinterPrivateKey  string // Ethereum private key (authorized minter)
+    SkavengePublicKey string // Skavenge public key for encryption (optional - only needed when minting to self)
+    GatewayURL        string // URL of the linked accounts gateway
 }
 ```
 
@@ -366,7 +366,7 @@ func TestMinting(t *testing.T) {
         RPCURL:             "http://localhost:8545",
         ContractAddress:    "0x5FbDB2315678afecb367f032d93F642f64180aa3",
         MinterPrivateKey:   "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-        SkavengePrivateKey: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        SkavengePublicKey: "0x04...",  // Your 65-byte Skavenge public key
         GatewayURL:         "http://localhost:4591",
     }
 

@@ -3,6 +3,7 @@ package minting
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"fmt"
 	"math/big"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 
@@ -23,7 +25,7 @@ type Minter struct {
 	client           *ethclient.Client
 	contract         *bindings.Skavenge
 	minterPrivateKey *ecdsa.PrivateKey
-	skavengePrivKey  *ecdsa.PrivateKey
+	skavengePubKey   *ecdsa.PublicKey
 	proofSystem      *zkproof.ProofSystem
 	gatewayClient    *GatewayClient
 }
@@ -51,13 +53,13 @@ func NewMinter(config *Config) (*Minter, error) {
 		return nil, fmt.Errorf("failed to load minter private key: %w", err)
 	}
 
-	// Load Skavenge private key for encryption (optional - only needed when minting to self)
-	var skavengePrivKey *ecdsa.PrivateKey
-	if config.SkavengePrivateKey != "" {
-		skavengePrivKey, err = crypto.HexToECDSA(strings.TrimPrefix(config.SkavengePrivateKey, "0x"))
+	// Load Skavenge public key for encryption (optional - only needed when minting to self)
+	var skavengePubKey *ecdsa.PublicKey
+	if config.SkavengePublicKey != "" {
+		skavengePubKey, err = parsePublicKeyFromHex(config.SkavengePublicKey)
 		if err != nil {
 			client.Close()
-			return nil, fmt.Errorf("failed to load skavenge private key: %w", err)
+			return nil, fmt.Errorf("failed to load skavenge public key: %w", err)
 		}
 	}
 
@@ -72,7 +74,7 @@ func NewMinter(config *Config) (*Minter, error) {
 		client:           client,
 		contract:         contract,
 		minterPrivateKey: minterPrivKey,
-		skavengePrivKey:  skavengePrivKey,
+		skavengePubKey:   skavengePubKey,
 		proofSystem:      ps,
 		gatewayClient:    gatewayClient,
 	}, nil
@@ -114,11 +116,11 @@ func (m *Minter) MintClue(ctx context.Context, clueData *ClueData, options *Mint
 		}
 	} else {
 		// Minting to self - use our own public key
-		if m.skavengePrivKey == nil {
-			result.Error = fmt.Errorf("skavenge private key is required when minting to self")
+		if m.skavengePubKey == nil {
+			result.Error = fmt.Errorf("skavenge public key is required when minting to self")
 			return result, result.Error
 		}
-		recipientPubKey = &m.skavengePrivKey.PublicKey
+		recipientPubKey = m.skavengePubKey
 
 		// Generate r value
 		var err error
@@ -298,4 +300,37 @@ func (m *Minter) createTransactOpts(ctx context.Context) (*bind.TransactOpts, er
 // GetMinterAddress returns the minter's Ethereum address
 func (m *Minter) GetMinterAddress() common.Address {
 	return crypto.PubkeyToAddress(m.minterPrivateKey.PublicKey)
+}
+
+// parsePublicKeyFromHex parses a hex-encoded public key
+// Expected format: 0x04 + X (32 bytes) + Y (32 bytes) = 65 bytes total
+func parsePublicKeyFromHex(hexKey string) (*ecdsa.PublicKey, error) {
+	// Decode hex string
+	pubKeyBytes, err := hexutil.Decode(hexKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode public key hex: %w", err)
+	}
+
+	// Verify format (should be 65 bytes: 0x04 + 32 bytes X + 32 bytes Y)
+	if len(pubKeyBytes) != 65 || pubKeyBytes[0] != 0x04 {
+		return nil, fmt.Errorf("invalid public key format: expected 65 bytes starting with 0x04, got %d bytes", len(pubKeyBytes))
+	}
+
+	// Extract X and Y coordinates
+	x := new(big.Int).SetBytes(pubKeyBytes[1:33])
+	y := new(big.Int).SetBytes(pubKeyBytes[33:65])
+
+	// Create the public key (using secp256k1 curve)
+	pubKey := &ecdsa.PublicKey{
+		Curve: crypto.S256(),
+		X:     x,
+		Y:     y,
+	}
+
+	// Verify the point is on the curve
+	if !pubKey.Curve.IsOnCurve(x, y) {
+		return nil, fmt.Errorf("public key point is not on the curve")
+	}
+
+	return pubKey, nil
 }

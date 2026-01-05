@@ -49,9 +49,9 @@ func main() {
 
 	flag.Parse()
 
-	// Read private keys from environment variables
+	// Read keys from environment variables
 	minterKey := os.Getenv("MINTER_PRIVATE_KEY")
-	skavengeKey := os.Getenv("SKAVENGE_PRIVATE_KEY")
+	skavengePubKey := os.Getenv("SKAVENGE_PUBLIC_KEY")
 
 	// Validate required flags and environment variables
 	if *contractAddr == "" {
@@ -68,19 +68,19 @@ func main() {
 	// Determine mode: single clue vs batch
 	if *inputFile != "" {
 		// Batch mode
-		if err := mintFromFile(*inputFile, *rpcURL, *contractAddr, minterKey, skavengeKey, *gatewayURL); err != nil {
+		if err := mintFromFile(*inputFile, *rpcURL, *contractAddr, minterKey, skavengePubKey, *gatewayURL); err != nil {
 			fmt.Fprintf(os.Stderr, "Error minting from file: %v\n", err)
 			os.Exit(1)
 		}
 	} else if *content != "" && *solution != "" {
 		// Single clue mode
-		if err := mintSingleClue(*content, *solution, uint8(*pointValue), *solveReward, *salePrice, *timeout, *recipientAddr, *rpcURL, *contractAddr, minterKey, skavengeKey, *gatewayURL); err != nil {
+		if err := mintSingleClue(*content, *solution, uint8(*pointValue), *solveReward, *salePrice, *timeout, *recipientAddr, *rpcURL, *contractAddr, minterKey, skavengePubKey, *gatewayURL); err != nil {
 			fmt.Fprintf(os.Stderr, "Error minting clue: %v\n", err)
 			os.Exit(1)
 		}
 	} else if *configFile != "" {
 		// Config file mode (legacy support)
-		if err := mintFromConfigFile(*configFile, *rpcURL, *contractAddr, minterKey, skavengeKey, *gatewayURL); err != nil {
+		if err := mintFromConfigFile(*configFile, *rpcURL, *contractAddr, minterKey, skavengePubKey, *gatewayURL); err != nil {
 			fmt.Fprintf(os.Stderr, "Error minting from config file: %v\n", err)
 			os.Exit(1)
 		}
@@ -91,16 +91,16 @@ func main() {
 	}
 }
 
-func mintSingleClue(content, solution string, pointValue uint8, solveRewardStr, salePriceStr string, timeout uint64, recipientAddr, rpcURL, contractAddr, minterKey, skavengeKey, gatewayURL string) error {
+func mintSingleClue(content, solution string, pointValue uint8, solveRewardStr, salePriceStr string, timeout uint64, recipientAddr, rpcURL, contractAddr, minterKey, skavengePubKey, gatewayURL string) error {
 	// Validate point value
 	if pointValue < 1 || pointValue > 5 {
 		return fmt.Errorf("point value must be between 1 and 5")
 	}
 
-	// Validate skavenge key requirement
+	// Validate skavenge public key requirement
 	// Only required when minting to self (no recipient specified)
-	if recipientAddr == "" && skavengeKey == "" {
-		return fmt.Errorf("SKAVENGE_PRIVATE_KEY environment variable is required when minting to self")
+	if recipientAddr == "" && skavengePubKey == "" {
+		return fmt.Errorf("SKAVENGE_PUBLIC_KEY environment variable is required when minting to self")
 	}
 
 	// Parse solve reward
@@ -125,11 +125,11 @@ func mintSingleClue(content, solution string, pointValue uint8, solveRewardStr, 
 
 	// Create minter config
 	config := &minting.Config{
-		RPCURL:             rpcURL,
-		ContractAddress:    contractAddr,
-		MinterPrivateKey:   minterKey,
-		SkavengePrivateKey: skavengeKey,
-		GatewayURL:         gatewayURL,
+		RPCURL:            rpcURL,
+		ContractAddress:   contractAddr,
+		MinterPrivateKey:  minterKey,
+		SkavengePublicKey: skavengePubKey,
+		GatewayURL:        gatewayURL,
 	}
 
 	// Create minter
@@ -194,7 +194,7 @@ func mintSingleClue(content, solution string, pointValue uint8, solveRewardStr, 
 	return nil
 }
 
-func mintFromFile(inputFile, rpcURL, contractAddr, minterKey, skavengeKey, gatewayURL string) error {
+func mintFromFile(inputFile, rpcURL, contractAddr, minterKey, skavengePubKey, gatewayURL string) error {
 	// Read the input file
 	data, err := os.ReadFile(inputFile)
 	if err != nil {
@@ -211,7 +211,7 @@ func mintFromFile(inputFile, rpcURL, contractAddr, minterKey, skavengeKey, gatew
 		return fmt.Errorf("no clues found in input file")
 	}
 
-	// Check if any clue is being minted to self (requires skavenge key)
+	// Check if any clue is being minted to self (requires skavenge public key)
 	needsSkavengeKey := false
 	for _, clue := range jsonConfig.Clues {
 		if clue.RecipientAddress == nil || *clue.RecipientAddress == "" {
@@ -220,17 +220,17 @@ func mintFromFile(inputFile, rpcURL, contractAddr, minterKey, skavengeKey, gatew
 		}
 	}
 
-	if needsSkavengeKey && skavengeKey == "" {
-		return fmt.Errorf("SKAVENGE_PRIVATE_KEY environment variable is required when minting clues to self")
+	if needsSkavengeKey && skavengePubKey == "" {
+		return fmt.Errorf("SKAVENGE_PUBLIC_KEY environment variable is required when minting clues to self")
 	}
 
 	// Create minter config
 	config := &minting.Config{
-		RPCURL:             rpcURL,
-		ContractAddress:    contractAddr,
-		MinterPrivateKey:   minterKey,
-		SkavengePrivateKey: skavengeKey,
-		GatewayURL:         gatewayURL,
+		RPCURL:            rpcURL,
+		ContractAddress:   contractAddr,
+		MinterPrivateKey:  minterKey,
+		SkavengePublicKey: skavengePubKey,
+		GatewayURL:        gatewayURL,
 	}
 
 	// Create minter
@@ -344,7 +344,7 @@ func mintFromFile(inputFile, rpcURL, contractAddr, minterKey, skavengeKey, gatew
 	return nil
 }
 
-func mintFromConfigFile(configFile, rpcURL, contractAddr, minterKey, skavengeKey, gatewayURL string) error {
+func mintFromConfigFile(configFile, rpcURL, contractAddr, minterKey, skavengePubKey, gatewayURL string) error {
 	// This is similar to mintFromFile but kept separate for backward compatibility
-	return mintFromFile(configFile, rpcURL, contractAddr, minterKey, skavengeKey, gatewayURL)
+	return mintFromFile(configFile, rpcURL, contractAddr, minterKey, skavengePubKey, gatewayURL)
 }

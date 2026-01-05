@@ -21,13 +21,13 @@ go build -o mint-clue
 The CLI tool requires the following environment variables for security:
 
 - `MINTER_PRIVATE_KEY`: Your Ethereum private key (must be the authorized minter)
-- `SKAVENGE_PRIVATE_KEY`: Your Skavenge private key for encryption (only required when minting to yourself)
+- `SKAVENGE_PUBLIC_KEY`: Your Skavenge public key for encryption (only required when minting to yourself)
 
-**Note:** The Skavenge private key is NOT required when minting directly to another recipient, as the clue will be encrypted with the recipient's public key retrieved from the gateway.
+**Note:** Only your Skavenge **public** key is needed for minting, never the private key! The public key is used to encrypt clues for yourself. When minting to another recipient, their public key is retrieved from the gateway.
 
 ```bash
 export MINTER_PRIVATE_KEY="your-ethereum-private-key"
-export SKAVENGE_PRIVATE_KEY="your-skavenge-private-key"  # Only needed for self-minting
+export SKAVENGE_PUBLIC_KEY="0x04..."  # 65-byte hex public key, only needed for self-minting
 ```
 
 ## Usage
@@ -38,7 +38,7 @@ Mint a single clue to yourself:
 
 ```bash
 export MINTER_PRIVATE_KEY="your-ethereum-private-key"
-export SKAVENGE_PRIVATE_KEY="your-skavenge-private-key"
+export SKAVENGE_PUBLIC_KEY="0x04..."  # Your 65-byte Skavenge public key
 
 ./mint-clue \
   --contract "0x..." \
@@ -63,11 +63,11 @@ Mint a clue and list it for sale immediately (default timeout is 4 hours):
 
 ### Mint to Another User
 
-Mint a clue directly to another user's Ethereum address. Note: Skavenge private key is NOT required for this operation:
+Mint a clue directly to another user's Ethereum address. Note: Your Skavenge public key is NOT required for this operation:
 
 ```bash
 export MINTER_PRIVATE_KEY="your-ethereum-private-key"
-# SKAVENGE_PRIVATE_KEY not needed for recipient minting
+# SKAVENGE_PUBLIC_KEY not needed for recipient minting
 
 ./mint-clue \
   --contract "0x..." \
@@ -106,7 +106,7 @@ Then mint all clues:
 
 ```bash
 export MINTER_PRIVATE_KEY="your-ethereum-private-key"
-export SKAVENGE_PRIVATE_KEY="your-skavenge-private-key"
+export SKAVENGE_PUBLIC_KEY="0x04..."  # Your 65-byte Skavenge public key
 
 ./mint-clue \
   --contract "0x..." \
@@ -122,7 +122,7 @@ export SKAVENGE_PRIVATE_KEY="your-skavenge-private-key"
 ### Required Environment Variables
 
 - `MINTER_PRIVATE_KEY`: Ethereum private key of authorized minter
-- `SKAVENGE_PRIVATE_KEY`: Skavenge private key for encryption (only required when minting to self)
+- `SKAVENGE_PUBLIC_KEY`: Skavenge public key for encryption (only required when minting to self)
 
 ### Single Clue Options
 
@@ -165,7 +165,7 @@ Each clue in the JSON file can have the following fields:
 
 ```bash
 export MINTER_PRIVATE_KEY="ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-export SKAVENGE_PRIVATE_KEY="1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+export SKAVENGE_PUBLIC_KEY="0x04..."  # Your 65-byte Skavenge public key
 
 ./mint-clue \
   --contract "0x5FbDB2315678afecb367f032d93F642f64180aa3" \
@@ -178,7 +178,7 @@ export SKAVENGE_PRIVATE_KEY="1234567890abcdef1234567890abcdef1234567890abcdef123
 
 ```bash
 export MINTER_PRIVATE_KEY="ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-export SKAVENGE_PRIVATE_KEY="1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+export SKAVENGE_PUBLIC_KEY="0x04..."  # Your 65-byte Skavenge public key
 
 ./mint-clue \
   --contract "0x5FbDB2315678afecb367f032d93F642f64180aa3" \
@@ -194,7 +194,7 @@ export SKAVENGE_PRIVATE_KEY="1234567890abcdef1234567890abcdef1234567890abcdef123
 
 ```bash
 export MINTER_PRIVATE_KEY="ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-export SKAVENGE_PRIVATE_KEY="1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+export SKAVENGE_PUBLIC_KEY="0x04..."  # Your 65-byte Skavenge public key
 
 ./mint-clue \
   --contract "0x5FbDB2315678afecb367f032d93F642f64180aa3" \

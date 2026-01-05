@@ -43,7 +43,7 @@ type Config struct {
 	MinterPrivateKey string // Ethereum private key (authorized minter)
 
 	// Skavenge encryption key
-	SkavengePrivateKey string // Skavenge private key for encryption
+	SkavengePublicKey string // Skavenge public key for encryption (hex format, optional - only needed when minting to self)
 
 	// Gateway service
 	GatewayURL string // URL of the linked accounts gateway
