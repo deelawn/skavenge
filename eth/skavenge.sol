@@ -155,6 +155,11 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
             revert UnauthorizedMinter();
         }
 
+        // If no recipient specified, mint to caller
+        if (recipient == address(0)) {
+            recipient = msg.sender;
+        }
+
         // Validate point value is between 1 and 5 (inclusive)
         if (pointValue < 1 || pointValue > 5) {
             revert InvalidPointValue();
