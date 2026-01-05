@@ -221,6 +221,20 @@ func (idx *Indexer) indexBlock(ctx context.Context, blockNumber uint64) error {
 		return err
 	}
 
+	// Build transaction index map
+	txIndexMap := make(map[common.Hash]uint)
+	txSenderMap := make(map[common.Hash]common.Address)
+	for i, tx := range block.Transactions() {
+		txIndexMap[tx.Hash()] = uint(i)
+		// Get transaction sender
+		sender, err := idx.client.TransactionSender(ctx, tx, block.Hash(), uint(i))
+		if err != nil {
+			idx.logger.Printf("Warning: failed to get sender for tx %s: %v", tx.Hash().Hex(), err)
+			continue
+		}
+		txSenderMap[tx.Hash()] = sender
+	}
+
 	// Query logs for this block
 	query := ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(blockNumber),
@@ -239,7 +253,20 @@ func (idx *Indexer) indexBlock(ctx context.Context, blockNumber uint64) error {
 	// Parse and save events
 	var events []*Event
 	for _, vLog := range logs {
-		event, err := idx.parser.ParseLog(vLog, timestamp)
+		// Get transaction info
+		txIndex, ok := txIndexMap[vLog.TxHash]
+		if !ok {
+			idx.logger.Printf("Warning: transaction index not found for log %s-%d", vLog.TxHash.Hex(), vLog.Index)
+			continue
+		}
+
+		txSender, ok := txSenderMap[vLog.TxHash]
+		if !ok {
+			idx.logger.Printf("Warning: transaction sender not found for log %s-%d", vLog.TxHash.Hex(), vLog.Index)
+			continue
+		}
+
+		event, err := idx.parser.ParseLog(vLog, txSender, txIndex, timestamp)
 		if err != nil {
 			idx.logger.Printf("Warning: failed to parse log %s-%d: %v", vLog.TxHash.Hex(), vLog.Index, err)
 			continue

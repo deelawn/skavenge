@@ -29,16 +29,20 @@ const (
 
 // Event represents a generic blockchain event
 type Event struct {
-	ID              string    `json:"id"`              // Unique identifier (txHash + logIndex)
-	Type            EventType `json:"type"`            // Event type
-	BlockNumber     uint64    `json:"blockNumber"`     // Block number
-	BlockHash       common.Hash `json:"blockHash"`     // Block hash
-	TransactionHash common.Hash `json:"transactionHash"` // Transaction hash
-	LogIndex        uint       `json:"logIndex"`       // Log index in transaction
-	Timestamp       time.Time `json:"timestamp"`      // Block timestamp
-	TokenID         *big.Int  `json:"tokenId,omitempty"` // Associated NFT token ID (if applicable)
-	Data            EventData `json:"data"`           // Event-specific data
-	Removed         bool      `json:"removed"`        // True if log was removed due to reorg
+	// Primary fields matching schema requirements
+	ClueID           uint64 `json:"clueId"`           // NFT Token ID (0 if not applicable)
+	BlockNumber      uint64 `json:"blockNumber"`      // Block number
+	TransactionIndex uint   `json:"transactionIndex"` // Transaction index within block
+	EventIndex       uint   `json:"eventIndex"`       // Event/Log index within transaction
+	TransactionHash  string `json:"transactionHash"`  // Transaction hash
+	InitiatedBy      string `json:"initiatedBy"`      // Transaction sender address
+	EventType        string `json:"eventType"`        // Event type
+	Metadata         []byte `json:"metadata"`         // Event-specific data as JSON
+	Timestamp        int64  `json:"timestamp"`        // Unix timestamp
+
+	// Additional fields for internal use
+	BlockHash common.Hash `json:"blockHash"` // Block hash
+	Removed   bool        `json:"removed"`   // True if log was removed due to reorg
 }
 
 // EventData contains event-specific data

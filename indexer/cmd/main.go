@@ -14,6 +14,7 @@ import (
 func main() {
 	// Parse command line flags
 	configPath := flag.String("config", "config.json", "Path to configuration file")
+	dbPath := flag.String("db", "indexer.db", "Path to SQLite database file")
 	flag.Parse()
 
 	// Load configuration
@@ -22,11 +23,15 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Create storage (using in-memory storage for now)
-	storage := indexer.NewMemoryStorage()
-
 	// Create logger
 	logger := log.New(os.Stdout, "[INDEXER] ", log.LstdFlags)
+
+	// Create storage (using SQLite)
+	storage, err := indexer.NewSQLiteStorage(*dbPath)
+	if err != nil {
+		log.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
 
 	// Create indexer
 	idx, err := indexer.NewIndexer(config, storage, logger)
