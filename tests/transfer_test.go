@@ -91,7 +91,7 @@ func TestAlteredTransfer(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3))
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -298,7 +298,7 @@ func TestSuccessfulTransferWithCorrectContent(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3))
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -520,7 +520,7 @@ func TestInvalidProofVerification(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3))
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -675,7 +675,7 @@ func TestInvalidProofContentAltered(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3))
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -840,7 +840,7 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	// Marshal to bytes for on-chain storage
 	encryptedClueContent := encryptedCipher.Marshal()
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3))
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -973,7 +973,7 @@ func TestCancelTransfer(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3))
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -1107,7 +1107,7 @@ func TestCorruptedRValueRejected(t *testing.T) {
 
 	// Mint clue
 	minterAuth, err = util.NewTransactOpts(client, minter)
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3))
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)

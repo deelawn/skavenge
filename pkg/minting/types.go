@@ -3,14 +3,16 @@ package minting
 import (
 	"crypto/ecdsa"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // ClueData represents the data needed to mint a clue
 type ClueData struct {
-	Content      string  // The clue content (plaintext)
-	Solution     string  // The solution to the clue
-	PointValue   uint8   // Point value (1-5)
-	SolveReward  *big.Int // ETH reward for solving (in wei), optional
+	Content     string   // The clue content (plaintext)
+	Solution    string   // The solution to the clue
+	PointValue  uint8    // Point value (1-5)
+	SolveReward *big.Int // ETH reward for solving (in wei), optional
 }
 
 // MintOptions contains optional parameters for minting
@@ -51,6 +53,6 @@ type Config struct {
 
 // RecipientInfo contains the recipient's information for encrypted minting
 type RecipientInfo struct {
-	EthereumAddress   string
+	EthereumAddress   common.Address
 	SkavengePublicKey *ecdsa.PublicKey
 }

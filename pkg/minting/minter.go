@@ -97,10 +97,13 @@ func (m *Minter) MintClue(ctx context.Context, clueData *ClueData, options *Mint
 	// Determine the recipient (self or another address)
 	var recipientPubKey *ecdsa.PublicKey
 	var encryptionR *big.Int
+	var recipientInfo *RecipientInfo
 
 	if options != nil && options.RecipientAddress != "" {
+		var err error
+
 		// Minting to another address - retrieve their public key
-		recipientInfo, err := m.getRecipientInfo(options.RecipientAddress)
+		recipientInfo, err = m.getRecipientInfo(options.RecipientAddress)
 		if err != nil {
 			result.Error = fmt.Errorf("failed to get recipient info: %w", err)
 			return result, result.Error
@@ -156,7 +159,12 @@ func (m *Minter) MintClue(ctx context.Context, clueData *ClueData, options *Mint
 	}
 
 	// Mint the clue
-	tx, err := m.contract.MintClue(auth, encryptedClueContent, solutionHash, encryptionR, clueData.PointValue)
+	var recipient common.Address
+	if recipientInfo != nil {
+		recipient = recipientInfo.EthereumAddress
+	}
+
+	tx, err := m.contract.MintClue(auth, encryptedClueContent, solutionHash, encryptionR, clueData.PointValue, recipient)
 	if err != nil {
 		result.Error = fmt.Errorf("failed to mint clue: %w", err)
 		return result, result.Error
@@ -186,8 +194,8 @@ func (m *Minter) MintClue(ctx context.Context, clueData *ClueData, options *Mint
 	// CurrentTokenId is the next token ID to be minted, so subtract 1
 	result.TokenID = new(big.Int).Sub(tokenID, big.NewInt(1))
 
-	// If sale price is set, list the clue for sale
-	if options != nil && options.SalePrice != nil && options.SalePrice.Cmp(big.NewInt(0)) > 0 {
+	// If sale price is set and this is a self-mint, list the clue for sale
+	if recipientInfo == nil && options != nil && options.SalePrice != nil && options.SalePrice.Cmp(big.NewInt(0)) > 0 {
 		if err := m.setSalePrice(ctx, result.TokenID, options.SalePrice, options.Timeout); err != nil {
 			result.Error = fmt.Errorf("minted successfully but failed to list for sale: %w", err)
 			return result, result.Error
@@ -229,7 +237,7 @@ func (m *Minter) getRecipientInfo(ethereumAddress string) (*RecipientInfo, error
 	}
 
 	return &RecipientInfo{
-		EthereumAddress:   ethereumAddress,
+		EthereumAddress:   common.HexToAddress(ethereumAddress),
 		SkavengePublicKey: pubKey,
 	}, nil
 }

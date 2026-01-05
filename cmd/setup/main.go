@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 
@@ -125,7 +126,7 @@ func main() {
 	}
 
 	auth.Value = big.NewInt(1000000000000000000)
-	tx, err := contract.MintClue(auth, encryptedClueContent, solutionHash, mintR, 1)
+	tx, err := contract.MintClue(auth, encryptedClueContent, solutionHash, mintR, 1, common.Address{})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error minting token: %v\n", err)
 		os.Exit(1)

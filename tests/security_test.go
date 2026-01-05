@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
@@ -138,7 +139,7 @@ func TestSecurity_AttackPrevented_WrongRValue(t *testing.T) {
 	encryptedClue := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
-	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2))
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -149,7 +150,7 @@ func TestSecurity_AttackPrevented_WrongRValue(t *testing.T) {
 	// Set sale price
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	timeout := big.NewInt(180)                    // 3 minutes
+	timeout := big.NewInt(180)                   // 3 minutes
 	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
@@ -460,7 +461,7 @@ func TestSecurity_BuyerCancellationStates(t *testing.T) {
 	encryptedClue := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
-	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2))
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -471,7 +472,7 @@ func TestSecurity_BuyerCancellationStates(t *testing.T) {
 	// Set sale price with short timeout for testing
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	timeout := big.NewInt(2)                      // 2 seconds for testing
+	timeout := big.NewInt(2)                     // 2 seconds for testing
 	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
@@ -649,7 +650,7 @@ func TestSecurity_FrontrunningAttackPrevented(t *testing.T) {
 	encryptedClue := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
-	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2))
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -660,7 +661,7 @@ func TestSecurity_FrontrunningAttackPrevented(t *testing.T) {
 	// Set sale price
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	timeout := big.NewInt(180)                    // 3 minutes
+	timeout := big.NewInt(180)                   // 3 minutes
 	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
@@ -838,7 +839,7 @@ func TestSecurity_ConcurrentPurchasePrevention(t *testing.T) {
 	encryptedClue := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, testMinter)
-	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2))
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -849,7 +850,7 @@ func TestSecurity_ConcurrentPurchasePrevention(t *testing.T) {
 	// Set sale price with short timeout for testing
 	minterAuth, err = util.NewTransactOpts(client, testMinter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	timeout := big.NewInt(2)                      // 2 seconds for testing
+	timeout := big.NewInt(2)                     // 2 seconds for testing
 	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
@@ -1040,7 +1041,7 @@ func TestSecurity_NonOwnerCannotRemoveSalePrice(t *testing.T) {
 	encryptedClue := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
-	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2))
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -1056,7 +1057,7 @@ func TestSecurity_NonOwnerCannotRemoveSalePrice(t *testing.T) {
 	// Set sale price (by owner)
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	timeout := big.NewInt(180)                    // 3 minutes
+	timeout := big.NewInt(180)                   // 3 minutes
 	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
