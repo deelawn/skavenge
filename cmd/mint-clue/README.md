@@ -16,6 +16,20 @@ A command-line tool for minting Skavenge clues. Supports single clue minting, ba
 go build -o mint-clue
 ```
 
+## Environment Variables
+
+The CLI tool requires the following environment variables for security:
+
+- `MINTER_PRIVATE_KEY`: Your Ethereum private key (must be the authorized minter)
+- `SKAVENGE_PRIVATE_KEY`: Your Skavenge private key for encryption (only required when minting to yourself)
+
+**Note:** The Skavenge private key is NOT required when minting directly to another recipient, as the clue will be encrypted with the recipient's public key retrieved from the gateway.
+
+```bash
+export MINTER_PRIVATE_KEY="your-ethereum-private-key"
+export SKAVENGE_PRIVATE_KEY="your-skavenge-private-key"  # Only needed for self-minting
+```
+
 ## Usage
 
 ### Single Clue Minting
@@ -23,10 +37,11 @@ go build -o mint-clue
 Mint a single clue to yourself:
 
 ```bash
+export MINTER_PRIVATE_KEY="your-ethereum-private-key"
+export SKAVENGE_PRIVATE_KEY="your-skavenge-private-key"
+
 ./mint-clue \
   --contract "0x..." \
-  --minter-key "your-private-key" \
-  --skavenge-key "your-skavenge-private-key" \
   --content "Find the hidden treasure in the old oak tree" \
   --solution "Oak tree" \
   --point-value 3
@@ -34,29 +49,28 @@ Mint a single clue to yourself:
 
 ### Mint with Sale Listing
 
-Mint a clue and list it for sale immediately:
+Mint a clue and list it for sale immediately (default timeout is 4 hours):
 
 ```bash
 ./mint-clue \
   --contract "0x..." \
-  --minter-key "your-private-key" \
-  --skavenge-key "your-skavenge-private-key" \
   --content "The answer lies in the stars" \
   --solution "Constellation" \
   --point-value 4 \
   --sale-price "1000000000000000000" \
-  --timeout 3600
+  --timeout 14400
 ```
 
 ### Mint to Another User
 
-Mint a clue directly to another user's Ethereum address (requires their Skavenge public key to be registered in the gateway):
+Mint a clue directly to another user's Ethereum address. Note: Skavenge private key is NOT required for this operation:
 
 ```bash
+export MINTER_PRIVATE_KEY="your-ethereum-private-key"
+# SKAVENGE_PRIVATE_KEY not needed for recipient minting
+
 ./mint-clue \
   --contract "0x..." \
-  --minter-key "your-private-key" \
-  --skavenge-key "your-skavenge-private-key" \
   --content "Where the river meets the sea" \
   --solution "Delta" \
   --point-value 2 \
@@ -91,10 +105,11 @@ Create a JSON file with multiple clues (see `example-clues.json`):
 Then mint all clues:
 
 ```bash
+export MINTER_PRIVATE_KEY="your-ethereum-private-key"
+export SKAVENGE_PRIVATE_KEY="your-skavenge-private-key"
+
 ./mint-clue \
   --contract "0x..." \
-  --minter-key "your-private-key" \
-  --skavenge-key "your-skavenge-private-key" \
   --input clues.json
 ```
 
@@ -103,8 +118,11 @@ Then mint all clues:
 ### Required Options
 
 - `--contract`: Skavenge contract address
-- `--minter-key`: Ethereum private key of authorized minter
-- `--skavenge-key`: Skavenge private key for encrypting clue content
+
+### Required Environment Variables
+
+- `MINTER_PRIVATE_KEY`: Ethereum private key of authorized minter
+- `SKAVENGE_PRIVATE_KEY`: Skavenge private key for encryption (only required when minting to self)
 
 ### Single Clue Options
 
@@ -113,7 +131,7 @@ Then mint all clues:
 - `--point-value`: Point value (1-5, default: 1)
 - `--solve-reward`: ETH reward for solving in wei (default: 0)
 - `--sale-price`: Sale price in wei, 0 means not for sale (default: 0)
-- `--timeout`: Transfer timeout in seconds (default: 3600)
+- `--timeout`: Transfer timeout in seconds (default: 14400 = 4 hours)
 - `--recipient`: Recipient Ethereum address (for direct minting to another user)
 
 ### Batch Options
@@ -136,7 +154,7 @@ Each clue in the JSON file can have the following fields:
   "pointValue": 3,                  // Required (1-5)
   "solveReward": "1000000000",      // Optional: Wei amount
   "salePrice": "500000000",         // Optional: Wei amount (lists for sale)
-  "timeout": 3600,                  // Optional: Seconds (required if salePrice > 0)
+  "timeout": 14400,                 // Optional: Seconds (default: 14400 = 4 hours if salePrice > 0)
   "recipientAddress": "0x..."       // Optional: Send to this address
 }
 ```
@@ -146,10 +164,11 @@ Each clue in the JSON file can have the following fields:
 ### Example 1: Mint a Simple Clue
 
 ```bash
+export MINTER_PRIVATE_KEY="ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+export SKAVENGE_PRIVATE_KEY="1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+
 ./mint-clue \
   --contract "0x5FbDB2315678afecb367f032d93F642f64180aa3" \
-  --minter-key "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" \
-  --skavenge-key "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" \
   --content "What has keys but no locks?" \
   --solution "Piano" \
   --point-value 2
@@ -158,10 +177,11 @@ Each clue in the JSON file can have the following fields:
 ### Example 2: Mint with Reward and Sale
 
 ```bash
+export MINTER_PRIVATE_KEY="ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+export SKAVENGE_PRIVATE_KEY="1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+
 ./mint-clue \
   --contract "0x5FbDB2315678afecb367f032d93F642f64180aa3" \
-  --minter-key "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" \
-  --skavenge-key "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" \
   --content "I speak without a mouth and hear without ears" \
   --solution "Echo" \
   --point-value 4 \
@@ -173,10 +193,11 @@ Each clue in the JSON file can have the following fields:
 ### Example 3: Batch Mint
 
 ```bash
+export MINTER_PRIVATE_KEY="ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+export SKAVENGE_PRIVATE_KEY="1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+
 ./mint-clue \
   --contract "0x5FbDB2315678afecb367f032d93F642f64180aa3" \
-  --minter-key "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" \
-  --skavenge-key "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" \
   --input example-clues.json
 ```
 
@@ -223,7 +244,7 @@ func main() {
     // Prepare options (optional)
     options := &minting.MintOptions{
         SalePrice: big.NewInt(500000000000000000), // 0.5 ETH
-        Timeout:   3600,                            // 1 hour
+        Timeout:   14400,                           // 4 hours
     }
 
     // Mint the clue
