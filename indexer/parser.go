@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
@@ -173,7 +174,7 @@ func NewEventParser() (*EventParser, error) {
 }
 
 // ParseLog parses a contract log into an Event
-func (p *EventParser) ParseLog(log types.Log, timestamp time.Time) (*Event, error) {
+func (p *EventParser) ParseLog(log types.Log, txSender common.Address, txIndex uint, timestamp time.Time) (*Event, error) {
 	if len(log.Topics) == 0 {
 		return nil, fmt.Errorf("log has no topics")
 	}
@@ -184,139 +185,159 @@ func (p *EventParser) ParseLog(log types.Log, timestamp time.Time) (*Event, erro
 	}
 
 	event := &Event{
-		ID:              fmt.Sprintf("%s-%d", log.TxHash.Hex(), log.Index),
-		BlockNumber:     log.BlockNumber,
-		BlockHash:       log.BlockHash,
-		TransactionHash: log.TxHash,
-		LogIndex:        log.Index,
-		Timestamp:       timestamp,
-		Removed:         log.Removed,
+		BlockNumber:      log.BlockNumber,
+		TransactionIndex: txIndex,
+		EventIndex:       log.Index,
+		TransactionHash:  log.TxHash.Hex(),
+		InitiatedBy:      strings.ToLower(txSender.Hex()),
+		Timestamp:        timestamp.Unix(),
+		BlockHash:        log.BlockHash,
+		Removed:          log.Removed,
 	}
 
 	// Parse event-specific data
+	var eventData EventData
+	var clueID uint64
+	var err error
+
 	switch eventName {
 	case "ClueMinted":
-		data, err := p.parseClueMinted(log)
-		if err != nil {
-			return nil, err
+		data, parseErr := p.parseClueMinted(log)
+		if parseErr != nil {
+			return nil, parseErr
 		}
-		event.Type = EventTypeClueMinted
-		event.TokenID = data.TokenID
-		event.Data = data
+		eventData = data
+		clueID = data.TokenID.Uint64()
+		event.EventType = string(EventTypeClueMinted)
 
 	case "ClueAttempted":
-		data, err := p.parseClueAttempted(log)
-		if err != nil {
-			return nil, err
+		data, parseErr := p.parseClueAttempted(log)
+		if parseErr != nil {
+			return nil, parseErr
 		}
-		event.Type = EventTypeClueAttempted
-		event.TokenID = data.TokenID
-		event.Data = data
+		eventData = data
+		clueID = data.TokenID.Uint64()
+		event.EventType = string(EventTypeClueAttempted)
 
 	case "ClueSolved":
-		data, err := p.parseClueSolved(log)
-		if err != nil {
-			return nil, err
+		data, parseErr := p.parseClueSolved(log)
+		if parseErr != nil {
+			return nil, parseErr
 		}
-		event.Type = EventTypeClueSolved
-		event.TokenID = data.TokenID
-		event.Data = data
+		eventData = data
+		clueID = data.TokenID.Uint64()
+		event.EventType = string(EventTypeClueSolved)
 
 	case "SalePriceSet":
-		data, err := p.parseSalePriceSet(log)
-		if err != nil {
-			return nil, err
+		data, parseErr := p.parseSalePriceSet(log)
+		if parseErr != nil {
+			return nil, parseErr
 		}
-		event.Type = EventTypeSalePriceSet
-		event.TokenID = data.TokenID
-		event.Data = data
+		eventData = data
+		clueID = data.TokenID.Uint64()
+		event.EventType = string(EventTypeSalePriceSet)
 
 	case "SalePriceRemoved":
-		data, err := p.parseSalePriceRemoved(log)
-		if err != nil {
-			return nil, err
+		data, parseErr := p.parseSalePriceRemoved(log)
+		if parseErr != nil {
+			return nil, parseErr
 		}
-		event.Type = EventTypeSalePriceRemoved
-		event.TokenID = data.TokenID
-		event.Data = data
+		eventData = data
+		clueID = data.TokenID.Uint64()
+		event.EventType = string(EventTypeSalePriceRemoved)
 
 	case "TransferInitiated":
-		data, err := p.parseTransferInitiated(log)
-		if err != nil {
-			return nil, err
+		data, parseErr := p.parseTransferInitiated(log)
+		if parseErr != nil {
+			return nil, parseErr
 		}
-		event.Type = EventTypeTransferInitiated
-		event.TokenID = data.TokenID
-		event.Data = data
+		eventData = data
+		clueID = data.TokenID.Uint64()
+		event.EventType = string(EventTypeTransferInitiated)
 
 	case "ProofProvided":
-		data, err := p.parseProofProvided(log)
-		if err != nil {
-			return nil, err
+		data, parseErr := p.parseProofProvided(log)
+		if parseErr != nil {
+			return nil, parseErr
 		}
-		event.Type = EventTypeProofProvided
-		event.Data = data
+		eventData = data
+		clueID = 0 // No token ID for this event
+		event.EventType = string(EventTypeProofProvided)
 
 	case "ProofVerified":
-		data, err := p.parseProofVerified(log)
-		if err != nil {
-			return nil, err
+		data, parseErr := p.parseProofVerified(log)
+		if parseErr != nil {
+			return nil, parseErr
 		}
-		event.Type = EventTypeProofVerified
-		event.Data = data
+		eventData = data
+		clueID = 0 // No token ID for this event
+		event.EventType = string(EventTypeProofVerified)
 
 	case "TransferCompleted":
-		data, err := p.parseTransferCompleted(log)
-		if err != nil {
-			return nil, err
+		data, parseErr := p.parseTransferCompleted(log)
+		if parseErr != nil {
+			return nil, parseErr
 		}
-		event.Type = EventTypeTransferCompleted
-		event.Data = data
+		eventData = data
+		clueID = 0 // No token ID for this event
+		event.EventType = string(EventTypeTransferCompleted)
 
 	case "TransferCancelled":
-		data, err := p.parseTransferCancelled(log)
-		if err != nil {
-			return nil, err
+		data, parseErr := p.parseTransferCancelled(log)
+		if parseErr != nil {
+			return nil, parseErr
 		}
-		event.Type = EventTypeTransferCancelled
-		event.Data = data
+		eventData = data
+		clueID = 0 // No token ID for this event
+		event.EventType = string(EventTypeTransferCancelled)
 
 	case "AuthorizedMinterUpdated":
-		data, err := p.parseAuthorizedMinterUpdated(log)
-		if err != nil {
-			return nil, err
+		data, parseErr := p.parseAuthorizedMinterUpdated(log)
+		if parseErr != nil {
+			return nil, parseErr
 		}
-		event.Type = EventTypeAuthorizedMinterUpdated
-		event.Data = data
+		eventData = data
+		clueID = 0 // No token ID for this event
+		event.EventType = string(EventTypeAuthorizedMinterUpdated)
 
 	case "Transfer":
-		data, err := p.parseTransfer(log)
-		if err != nil {
-			return nil, err
+		data, parseErr := p.parseTransfer(log)
+		if parseErr != nil {
+			return nil, parseErr
 		}
-		event.Type = EventTypeTransfer
-		event.TokenID = data.TokenID
-		event.Data = data
+		eventData = data
+		clueID = data.TokenID.Uint64()
+		event.EventType = string(EventTypeTransfer)
 
 	case "Approval":
-		data, err := p.parseApproval(log)
-		if err != nil {
-			return nil, err
+		data, parseErr := p.parseApproval(log)
+		if parseErr != nil {
+			return nil, parseErr
 		}
-		event.Type = EventTypeApproval
-		event.TokenID = data.TokenID
-		event.Data = data
+		eventData = data
+		clueID = data.TokenID.Uint64()
+		event.EventType = string(EventTypeApproval)
 
 	case "ApprovalForAll":
-		data, err := p.parseApprovalForAll(log)
-		if err != nil {
-			return nil, err
+		data, parseErr := p.parseApprovalForAll(log)
+		if parseErr != nil {
+			return nil, parseErr
 		}
-		event.Type = EventTypeApprovalForAll
-		event.Data = data
+		eventData = data
+		clueID = 0 // No token ID for this event
+		event.EventType = string(EventTypeApprovalForAll)
 
 	default:
 		return nil, fmt.Errorf("unhandled event: %s", eventName)
+	}
+
+	// Set ClueID
+	event.ClueID = clueID
+
+	// Serialize event data to JSON for metadata
+	event.Metadata, err = json.Marshal(eventData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize event data: %w", err)
 	}
 
 	return event, nil
