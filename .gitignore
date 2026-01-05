@@ -1,6 +1,8 @@
 eth/node_modules
 eth/build
 node_modules
+cache
+artifacts
 
 # Go build artifacts
 *.test
@@ -16,3 +18,5 @@ test-config.json
 test-key.txt
 
 webapp/config.json
+indexer/config.json
+mint

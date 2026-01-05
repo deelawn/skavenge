@@ -6,7 +6,9 @@ import (
 	"math/big"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
@@ -137,7 +139,7 @@ func TestSecurity_AttackPrevented_WrongRValue(t *testing.T) {
 	encryptedClue := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
-	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -148,7 +150,8 @@ func TestSecurity_AttackPrevented_WrongRValue(t *testing.T) {
 	// Set sale price
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                   // 3 minutes
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -404,9 +407,9 @@ func TestSecurity_AttackPrevented_FakeRHashInProof(t *testing.T) {
 	t.Log("   Challenge binding ensures rHash matches the r used in proof generation")
 }
 
-// TestSecurity_BuyerCannotCancelAfterVerification verifies that buyers cannot cancel
-// transfers after they have called verifyProof(), preventing frontrunning attacks.
-func TestSecurity_BuyerCannotCancelAfterVerification(t *testing.T) {
+// TestSecurity_BuyerCancellationStates verifies the buyer cancellation rules across
+// different transfer states to ensure proper timeout enforcement and prevent abuse.
+func TestSecurity_BuyerCancellationStates(t *testing.T) {
 	// Connect to Hardhat network
 	client, err := ethclient.Dial(util.GetHardhatURL())
 	require.NoError(t, err)
@@ -458,7 +461,7 @@ func TestSecurity_BuyerCannotCancelAfterVerification(t *testing.T) {
 	encryptedClue := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
-	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -466,10 +469,11 @@ func TestSecurity_BuyerCannotCancelAfterVerification(t *testing.T) {
 	tokenId, err := getLastMintedTokenID(contract)
 	require.NoError(t, err)
 
-	// Set sale price
+	// Set sale price with short timeout for testing
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(2)                     // 2 seconds for testing
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -484,21 +488,33 @@ func TestSecurity_BuyerCannotCancelAfterVerification(t *testing.T) {
 	transferId, err := contract.GenerateTransferId(nil, buyerAddr, tokenId)
 	require.NoError(t, err)
 
-	// TEST PHASE 1: Buyer CAN cancel before verification
-	t.Log("\n[Phase 1] Buyer can cancel BEFORE verification")
+	// TEST PHASE 1: State 1 - Buyer CANNOT cancel before timeout (waiting for seller)
+	t.Log("\n[Phase 1] State 1: Buyer attempts to cancel immediately (should fail)")
+	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
+	buyerAuth.GasLimit = 500000
+	_, err = contract.CancelTransfer(buyerAuth, transferId)
+	require.Error(t, err, "Buyer should NOT be able to cancel before timeout in State 1")
+	t.Log("✓ Buyer cannot cancel immediately in State 1")
+
+	// Wait for timeout, then buyer can cancel
+	t.Log("\n[Phase 2] State 1: After timeout, buyer CAN cancel")
+	time.Sleep(3 * time.Second) // Wait for timeout
 	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
 	tx, err = contract.CancelTransfer(buyerAuth, transferId)
-	require.NoError(t, err, "Buyer should be able to cancel before verification")
+	require.NoError(t, err, "Buyer should be able to cancel after timeout")
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
-	t.Log("✓ Buyer successfully canceled before verification")
+	t.Log("✓ Buyer successfully canceled after timeout in State 1")
 
-	// Re-initiate purchase for phase 2
+	// Re-initiate purchase for State 2 testing
 	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
 	buyerAuth.Value = salePrice
 	tx, err = contract.InitiatePurchase(buyerAuth, tokenId)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	transferId, err = contract.GenerateTransferId(nil, buyerAddr, tokenId)
 	require.NoError(t, err)
 
 	// Generate verifiable transfer
@@ -523,30 +539,61 @@ func TestSecurity_BuyerCannotCancelAfterVerification(t *testing.T) {
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
 
-	// Buyer verifies proof (COMMITMENT POINT)
-	t.Log("\n[Phase 2] Buyer verifies proof (commitment)")
+	// TEST PHASE 3: State 2 - Buyer CAN cancel immediately (special rule!)
+	t.Log("\n[Phase 3] State 2: Buyer CAN cancel immediately after seller provides proof")
+	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
+	tx, err = contract.CancelTransfer(buyerAuth, transferId)
+	require.NoError(t, err, "Buyer should be able to cancel immediately in State 2")
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+	t.Log("✓ Buyer successfully canceled immediately in State 2")
+
+	// Re-initiate for State 3 testing
+	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
+	buyerAuth.Value = salePrice
+	tx, err = contract.InitiatePurchase(buyerAuth, tokenId)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	transferId, err = contract.GenerateTransferId(nil, buyerAddr, tokenId)
+	require.NoError(t, err)
+
+	// Seller provides proof again
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
+	tx, err = contract.ProvideProof(minterAuth, transferId, proofBytes, buyerCiphertextHash)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Buyer verifies proof
+	t.Log("\n[Phase 4] State 3: Buyer verifies proof")
 	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
 	tx, err = contract.VerifyProof(buyerAuth, transferId)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
-	t.Log("✓ Buyer committed by calling verifyProof()")
+	t.Log("✓ Buyer verified proof (entered State 3)")
 
-	// TEST PHASE 2: Buyer CANNOT cancel after verification
-	t.Log("\n[Phase 3] Buyer attempts to cancel AFTER verification")
+	// TEST PHASE 4: State 3 - Buyer CANNOT cancel immediately
+	t.Log("\n[Phase 5] State 3: Buyer attempts to cancel immediately (should fail)")
 	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
-	buyerAuth.GasLimit = 500000 // Higher gas limit for expected failure
-
+	buyerAuth.GasLimit = 500000
 	_, err = contract.CancelTransfer(buyerAuth, transferId)
+	require.Error(t, err, "Buyer should NOT be able to cancel immediately in State 3")
+	t.Log("✓ Buyer cannot cancel immediately in State 3")
 
-	// ATTACK PREVENTED: Transaction should revert
-	require.Error(t, err, "✅ ATTACK PREVENTED: Buyer cannot cancel after verification")
-	require.Contains(t, err.Error(), "Cannot cancel after proof verification",
-		"Error should indicate cancellation blocked after verification")
+	// Wait for timeout, then buyer can cancel
+	t.Log("\n[Phase 6] State 3: After timeout, buyer CAN cancel")
+	time.Sleep(3 * time.Second) // Wait for timeout
+	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
+	tx, err = contract.CancelTransfer(buyerAuth, transferId)
+	require.NoError(t, err, "Buyer should be able to cancel after timeout in State 3")
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+	t.Log("✓ Buyer successfully canceled after timeout in State 3")
 
-	t.Log("✅ Buyer CANNOT cancel after calling verifyProof()")
-	t.Log("   This prevents mempool frontrunning attack")
-	t.Log("   Buyer is committed once they verify the proof")
+	t.Log("\n✅ All cancellation states verified correctly")
 }
 
 // TestSecurity_FrontrunningAttackPrevented demonstrates that the complete
@@ -603,7 +650,7 @@ func TestSecurity_FrontrunningAttackPrevented(t *testing.T) {
 	encryptedClue := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
-	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -614,7 +661,8 @@ func TestSecurity_FrontrunningAttackPrevented(t *testing.T) {
 	// Set sale price
 	minterAuth, err = util.NewTransactOpts(client, secMinter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                   // 3 minutes
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -683,18 +731,18 @@ func TestSecurity_FrontrunningAttackPrevented(t *testing.T) {
 	require.Equal(t, clueContent, decrypted)
 	t.Log("    ⚠️  Buyer successfully decrypted clue with extracted r!")
 
-	// Step 5: ATTACK ATTEMPT - Buyer tries to cancel and get refund
-	t.Log("\n[5] ATTACK ATTEMPT: Buyer tries to cancel with higher gas")
+	// Step 5: ATTACK ATTEMPT - Buyer tries to cancel immediately and get refund
+	t.Log("\n[5] ATTACK ATTEMPT: Buyer tries to cancel immediately with higher gas")
 	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
 	buyerAuth.GasLimit = 500000
 
 	_, err = contract.CancelTransfer(buyerAuth, transferId)
 
-	// ATTACK PREVENTED!
+	// ATTACK PREVENTED! Buyer cannot cancel immediately in State 3 (must wait for timeout)
 	require.Error(t, err, "✅ ATTACK PREVENTED: Cancel transaction reverted")
-	require.Contains(t, err.Error(), "Cannot cancel after proof verification")
+	require.Contains(t, err.Error(), "Not authorized to cancel")
 	t.Log("    ✅ ATTACK PREVENTED: cancelTransfer() reverted")
-	t.Log("    ✅ Buyer cannot cancel after verifyProof() commitment")
+	t.Log("    ✅ Buyer cannot cancel immediately after verifyProof() (State 3)")
 
 	// Step 6: Seller's completeTransfer succeeds
 	t.Log("\n[6] Seller completes transfer successfully")
@@ -791,7 +839,7 @@ func TestSecurity_ConcurrentPurchasePrevention(t *testing.T) {
 	encryptedClue := encryptedCipher.Marshal()
 
 	minterAuth, err = util.NewTransactOpts(client, testMinter)
-	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -799,10 +847,11 @@ func TestSecurity_ConcurrentPurchasePrevention(t *testing.T) {
 	tokenId, err := getLastMintedTokenID(contract)
 	require.NoError(t, err)
 
-	// Set sale price
+	// Set sale price with short timeout for testing
 	minterAuth, err = util.NewTransactOpts(client, testMinter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(2)                     // 2 seconds for testing
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -844,10 +893,14 @@ func TestSecurity_ConcurrentPurchasePrevention(t *testing.T) {
 	require.True(t, transferInProgress, "transferInProgress should still be true")
 	t.Log("✓ transferInProgress flag still set (buyer 1's transfer active)")
 
-	// TEST PHASE 4: Buyer 1 cancels, then buyer 2 can purchase
-	t.Log("\n[3] Buyer 1 cancels their purchase")
+	// TEST PHASE 4: Buyer 1 cancels after timeout, then buyer 2 can purchase
+	t.Log("\n[3] Buyer 1 waits for timeout then cancels their purchase")
 	transferId1, err := contract.GenerateTransferId(nil, crypto.PubkeyToAddress(buyer1PrivKey.PublicKey), tokenId)
 	require.NoError(t, err)
+
+	// Wait for timeout to elapse (State 1: waiting for seller to provide proof)
+	t.Log("Waiting for timeout to elapse...")
+	time.Sleep(3 * time.Second) // Wait longer than the 2 second timeout
 
 	buyer1Auth, err = util.NewTransactOpts(client, testBuyer1)
 	tx, err = contract.CancelTransfer(buyer1Auth, transferId1)
@@ -935,4 +988,153 @@ func TestSecurity_ConcurrentPurchasePrevention(t *testing.T) {
 	t.Log("  ✅ Flag is cleared on cancellation")
 	t.Log("  ✅ Flag is cleared on transfer completion")
 	t.Log("  ✅ New purchases possible after previous transfer ends")
+}
+
+// TestSecurity_NonOwnerCannotRemoveSalePrice verifies that only the owner
+// of a clue NFT can remove the sale price.
+func TestSecurity_NonOwnerCannotRemoveSalePrice(t *testing.T) {
+	// Connect to Hardhat network
+	client, err := ethclient.Dial(util.GetHardhatURL())
+	require.NoError(t, err)
+
+	// Setup deployer account
+	deployerAuth, err := util.NewTransactOpts(client, secDeployer)
+	require.NoError(t, err)
+
+	// Deploy contract
+	contract, _, err := util.DeployContract(client, deployerAuth)
+	require.NoError(t, err)
+
+	// Setup minter account and keys
+	minterPrivKey, err := crypto.HexToECDSA(secMinter)
+	require.NoError(t, err)
+	minterAuth, err := util.NewTransactOpts(client, secMinter)
+	require.NoError(t, err)
+	minterAddr := minterAuth.From
+
+	// Update authorized minter
+	deployerAuth, err = util.NewTransactOpts(client, secDeployer)
+	tx, err := contract.UpdateAuthorizedMinter(deployerAuth, minterAddr)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Setup buyer account (who will attempt to remove sale price as non-owner)
+	buyerAuth, err := util.NewTransactOpts(client, secBuyer)
+	require.NoError(t, err)
+
+	// Create ZK proof system
+	ps := zkproof.NewProofSystem()
+
+	// Mint a clue owned by minter
+	clueContent := []byte("The treasure is hidden beneath the bridge")
+	solution := "Under the bridge"
+	solutionHash := crypto.Keccak256Hash([]byte(solution))
+
+	// Generate random r value for ElGamal encryption
+	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
+	require.NoError(t, err)
+
+	// Encrypt using ElGamal
+	encryptedCipher, err := ps.EncryptElGamal(clueContent, &minterPrivKey.PublicKey, mintR)
+	require.NoError(t, err)
+	encryptedClue := encryptedCipher.Marshal()
+
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
+	tx, err = contract.MintClue(minterAuth, encryptedClue, solutionHash, mintR, uint8(2), common.Address{})
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	tokenId, err := getLastMintedTokenID(contract)
+	require.NoError(t, err)
+
+	// Verify minter is the owner
+	owner, err := contract.OwnerOf(nil, tokenId)
+	require.NoError(t, err)
+	require.Equal(t, minterAddr, owner, "Minter should be the owner")
+
+	// Set sale price (by owner)
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
+	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	timeout := big.NewInt(180)                   // 3 minutes
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, tx)
+	require.NoError(t, err)
+
+	// Verify the sale price is set
+	clueData, err := contract.Clues(nil, tokenId)
+	require.NoError(t, err)
+	require.Equal(t, salePrice.String(), clueData.SalePrice.String(), "Sale price should be set to 1 ETH")
+
+	// Verify the clue is marked for sale
+	isForSale, err := contract.CluesForSale(nil, tokenId)
+	require.NoError(t, err)
+	require.True(t, isForSale, "Clue should be marked for sale")
+
+	t.Log("\n" + strings.Repeat("=", 70))
+	t.Log("TESTING NON-OWNER CANNOT REMOVE SALE PRICE")
+	t.Log(strings.Repeat("=", 70))
+
+	t.Log("\n[1] Non-owner (buyer) attempts to remove sale price")
+
+	// ATTACK: Non-owner tries to remove the sale price
+	buyerAuth, err = util.NewTransactOpts(client, secBuyer)
+	require.NoError(t, err)
+	buyerAuth.GasLimit = 500000 // Higher gas limit for expected failure
+
+	_, err = contract.RemoveSalePrice(buyerAuth, tokenId)
+
+	// ATTACK PREVENTED: Transaction should revert
+	require.Error(t, err, "✅ ATTACK PREVENTED: Non-owner cannot remove sale price")
+	require.Contains(t, err.Error(), "Not token owner",
+		"Error should indicate caller is not the token owner")
+
+	t.Log("✅ Non-owner's attempt to remove sale price was blocked")
+	t.Log("   Error: Not token owner")
+
+	// Verify the sale price is still set
+	clueData, err = contract.Clues(nil, tokenId)
+	require.NoError(t, err)
+	require.Equal(t, salePrice.String(), clueData.SalePrice.String(), "Sale price should still be set")
+
+	// Verify the clue is still marked for sale
+	isForSale, err = contract.CluesForSale(nil, tokenId)
+	require.NoError(t, err)
+	require.True(t, isForSale, "Clue should still be marked for sale")
+
+	t.Log("\n[2] Verify sale price remains unchanged")
+	t.Log("✓ Sale price still set to 1 ETH")
+	t.Log("✓ Clue still marked for sale")
+
+	// Now verify that the owner CAN remove the sale price
+	t.Log("\n[3] Owner successfully removes sale price")
+	minterAuth, err = util.NewTransactOpts(client, secMinter)
+	require.NoError(t, err)
+
+	removeTx, err := contract.RemoveSalePrice(minterAuth, tokenId)
+	require.NoError(t, err)
+	_, err = util.WaitForTransaction(client, removeTx)
+	require.NoError(t, err)
+
+	// Verify the sale price was reset to 0
+	clueData, err = contract.Clues(nil, tokenId)
+	require.NoError(t, err)
+	require.Equal(t, big.NewInt(0).String(), clueData.SalePrice.String(), "Sale price should be reset to 0")
+
+	// Verify the clue is no longer for sale
+	isForSale, err = contract.CluesForSale(nil, tokenId)
+	require.NoError(t, err)
+	require.False(t, isForSale, "Clue should no longer be marked for sale")
+
+	t.Log("✓ Owner successfully removed sale price")
+
+	t.Log("\n" + strings.Repeat("=", 70))
+	t.Log("✅ NON-OWNER SALE PRICE REMOVAL PREVENTION VERIFIED")
+	t.Log(strings.Repeat("=", 70))
+	t.Log("\nSecurity guarantees:")
+	t.Log("  ✅ Only the token owner can remove the sale price")
+	t.Log("  ✅ Non-owner attempts are rejected with 'Not token owner' error")
+	t.Log("  ✅ Sale price remains protected from unauthorized modifications")
 }

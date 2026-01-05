@@ -10,6 +10,9 @@ function Transfers({ metamaskAddress, config, onToast }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [processingTransfer, setProcessingTransfer] = useState(null); // transferId being processed
+  const [baseBlockTime, setBaseBlockTime] = useState(null); // Reference blockchain timestamp
+  const [baseLocalTime, setBaseLocalTime] = useState(null); // Local time when we fetched the block
+  const [, setTick] = useState(0); // Used to force re-renders for countdown
 
   useEffect(() => {
     if (metamaskAddress && config) {
@@ -18,6 +21,25 @@ function Transfers({ metamaskAddress, config, onToast }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metamaskAddress, config]);
 
+  // Add a timer to update the UI every second for real-time countdown
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTick(prev => prev + 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  // Get current blockchain time estimate
+  // Uses the reference block timestamp + elapsed time since we fetched it
+  const getCurrentBlockchainTime = () => {
+    if (!baseBlockTime || !baseLocalTime) {
+      return Math.floor(Date.now() / 1000);
+    }
+    const elapsed = Math.floor(Date.now() / 1000) - baseLocalTime;
+    return baseBlockTime + elapsed;
+  };
+
   const loadTransfers = async () => {
     setLoading(true);
     setError(null);
@@ -25,6 +47,15 @@ function Transfers({ metamaskAddress, config, onToast }) {
     try {
       const web3 = new Web3(window.ethereum);
       const contract = new web3.eth.Contract(SKAVENGE_ABI, config.contractAddress);
+
+      // Get the latest block timestamp as our reference point
+      // Store both the block time and when we fetched it locally
+      // This allows us to estimate current blockchain time smoothly
+      const latestBlock = await web3.eth.getBlock('latest');
+      const blockTime = Number(latestBlock.timestamp);
+      const localTime = Math.floor(Date.now() / 1000);
+      setBaseBlockTime(blockTime);
+      setBaseLocalTime(localTime);
 
       // Get TransferInitiated events from the beginning of the contract
       const events = await contract.getPastEvents('TransferInitiated', {
@@ -55,6 +86,13 @@ function Transfers({ metamaskAddress, config, onToast }) {
           return null;
         }
 
+        // Get the clue data to access the timeout value, point value, and solve reward
+        const clue = await contract.methods.clues(tokenId).call();
+        const timeout = Number(clue.timeout);
+        const pointValue = Number(clue.pointValue);
+        const solveReward = clue.solveReward.toString();
+        const isSolved = clue.isSolved;
+
         // Determine status based on proof and proofVerified
         let status;
         if (transfer.proofVerified) {
@@ -73,26 +111,47 @@ function Transfers({ metamaskAddress, config, onToast }) {
           value: transfer.value.toString(),
           status,
           initiatedAt: new Date(Number(transfer.initiatedAt) * 1000).toLocaleString(),
+          initiatedAtTimestamp: Number(transfer.initiatedAt),
           proofProvidedAt: transfer.proofProvidedAt > 0
             ? new Date(Number(transfer.proofProvidedAt) * 1000).toLocaleString()
             : null,
+          proofProvidedAtTimestamp: Number(transfer.proofProvidedAt),
           verifiedAt: transfer.verifiedAt > 0
             ? new Date(Number(transfer.verifiedAt) * 1000).toLocaleString()
             : null,
+          verifiedAtTimestamp: Number(transfer.verifiedAt),
+          proofVerified: transfer.proofVerified,
+          timeout: timeout,
+          pointValue: pointValue,
+          solveReward: solveReward,
+          isSolved: isSolved,
           userRole: isBuyer ? 'buyer' : 'seller'
         };
       });
 
       const transfersData = (await Promise.all(transferPromises)).filter(t => t !== null);
 
+      // Deduplicate by transferId (keep only unique transfers)
+      // This handles cases where a transfer was cancelled and re-initiated
+      const uniqueTransfers = {};
+      transfersData.forEach(transfer => {
+        // Keep the transfer with the most recent initiation time if there are duplicates
+        if (!uniqueTransfers[transfer.transferId] ||
+          transfer.initiatedAtTimestamp > uniqueTransfers[transfer.transferId].initiatedAtTimestamp) {
+          uniqueTransfers[transfer.transferId] = transfer;
+        }
+      });
+
+      const deduplicatedTransfers = Object.values(uniqueTransfers);
+
       // Sort by initiation time (most recent first)
-      transfersData.sort((a, b) => {
+      deduplicatedTransfers.sort((a, b) => {
         const timeA = new Date(a.initiatedAt).getTime();
         const timeB = new Date(b.initiatedAt).getTime();
         return timeB - timeA;
       });
 
-      setTransfers(transfersData);
+      setTransfers(deduplicatedTransfers);
     } catch (err) {
       console.error('Error loading transfers:', err);
       setError('Failed to load transfers. Please try again.');
@@ -486,6 +545,192 @@ function Transfers({ metamaskAddress, config, onToast }) {
     }
   };
 
+  /**
+   * Check if a transfer can be cancelled based on the smart contract conditions
+   * @param {Object} transfer - Transfer object with all details
+   * @returns {Object} - { canCancel: boolean, reason: string }
+   */
+  const checkCancellationEligibility = (transfer) => {
+    const currentTime = getCurrentBlockchainTime(); // Use blockchain time for consistency
+    const isBuyer = transfer.userRole === 'buyer';
+    const isSeller = transfer.userRole === 'seller';
+
+    // Buyer cancellation conditions
+    if (isBuyer) {
+      // State 1: Waiting for seller to provide proof
+      if (transfer.proofProvidedAtTimestamp === 0) {
+        const timeSinceInitiation = currentTime - transfer.initiatedAtTimestamp;
+        if (timeSinceInitiation > transfer.timeout) {
+          return { canCancel: true, reason: 'Timeout elapsed waiting for seller to provide proof' };
+        } else {
+          const remainingTime = transfer.timeout - timeSinceInitiation;
+          return {
+            canCancel: false,
+            reason: 'Can cancel after timeout',
+            remainingTime: remainingTime
+          };
+        }
+      }
+      // State 2: Seller has provided proof (buyer can cancel anytime)
+      else if (transfer.proofProvidedAtTimestamp > 0 && !transfer.proofVerified) {
+        return { canCancel: true, reason: 'Proof provided - you can cancel anytime' };
+      }
+      // State 3: Proof verified, waiting for seller to complete
+      else if (transfer.verifiedAtTimestamp > 0) {
+        const timeSinceVerification = currentTime - transfer.verifiedAtTimestamp;
+        if (timeSinceVerification > transfer.timeout) {
+          return { canCancel: true, reason: 'Timeout elapsed waiting for seller to complete transfer' };
+        } else {
+          const remainingTime = transfer.timeout - timeSinceVerification;
+          return {
+            canCancel: false,
+            reason: 'Can cancel after timeout',
+            remainingTime: remainingTime
+          };
+        }
+      }
+    }
+
+    // Seller cancellation conditions
+    if (isSeller) {
+      // Proof provided but not verified and timeout elapsed (waiting for buyer)
+      if (transfer.proofProvidedAtTimestamp > 0 && !transfer.proofVerified) {
+        const timeSinceProof = currentTime - transfer.proofProvidedAtTimestamp;
+        if (timeSinceProof > transfer.timeout) {
+          return { canCancel: true, reason: 'Timeout elapsed waiting for buyer to verify proof' };
+        } else {
+          const remainingTime = transfer.timeout - timeSinceProof;
+          return {
+            canCancel: false,
+            reason: 'Can cancel after timeout',
+            remainingTime: remainingTime
+          };
+        }
+      }
+    }
+
+    return { canCancel: false, reason: 'Cannot cancel at this time' };
+  };
+
+  /**
+   * Format remaining time in a human-readable format
+   * @param {number} seconds - Remaining time in seconds
+   * @returns {string} - Formatted time string
+   */
+  const formatRemainingTime = (seconds) => {
+    if (seconds <= 0) return 'now';
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    } else {
+      return `${secs}s`;
+    }
+  };
+
+  /**
+   * Get the action deadline for the current actor
+   * Returns the remaining time before the other party can cancel
+   * @param {Object} transfer - Transfer object
+   * @returns {Object|null} - { remainingTime: number, warningMessage: string } or null
+   */
+  const getActionDeadline = (transfer) => {
+    const currentTime = getCurrentBlockchainTime(); // Use blockchain time for consistency
+
+    // Seller's turn to provide proof (initiated state)
+    if (transfer.userRole === 'seller' && transfer.status === 'initiated') {
+      const deadline = transfer.initiatedAtTimestamp + transfer.timeout;
+      const remainingTime = deadline - currentTime;
+      return {
+        remainingTime,
+        warningMessage: 'Buyer can cancel if you don\'t provide proof before:'
+      };
+    }
+
+    // Buyer's turn to verify proof (proof provided state)
+    if (transfer.userRole === 'buyer' && transfer.status === 'proof provided') {
+      const deadline = transfer.proofProvidedAtTimestamp + transfer.timeout;
+      const remainingTime = deadline - currentTime;
+      return {
+        remainingTime,
+        warningMessage: 'Seller can cancel if you don\'t verify before:'
+      };
+    }
+
+    // Seller's turn to complete transfer (proof verified state)
+    if (transfer.userRole === 'seller' && transfer.status === 'proof verified') {
+      const deadline = transfer.verifiedAtTimestamp + transfer.timeout;
+      const remainingTime = deadline - currentTime;
+      return {
+        remainingTime,
+        warningMessage: 'Buyer can cancel if you don\'t complete before:'
+      };
+    }
+
+    return null;
+  };
+
+  /**
+   * Handle cancelling a transfer
+   * @param {Object} transfer - Transfer object
+   */
+  const handleCancelTransfer = async (transfer) => {
+    setProcessingTransfer(transfer.transferId);
+
+    try {
+      const web3 = new Web3(window.ethereum);
+      const contract = new web3.eth.Contract(SKAVENGE_ABI, config.contractAddress);
+
+      onToast('Please confirm the cancellation in MetaMask...', 'info');
+
+      // Try to estimate gas first
+      try {
+        const gasEstimate = await contract.methods.cancelTransfer(
+          transfer.transferId
+        ).estimateGas({ from: metamaskAddress });
+        console.log('Gas estimate:', gasEstimate);
+      } catch (gasError) {
+        console.error('Gas estimation failed:', gasError);
+        if (gasError.message) {
+          throw new Error('Transaction would fail: ' + gasError.message);
+        }
+        throw gasError;
+      }
+
+      const tx = await contract.methods.cancelTransfer(
+        transfer.transferId
+      ).send({
+        from: metamaskAddress
+      });
+
+      console.log('CancelTransfer transaction:', tx);
+      onToast('Transfer cancelled successfully! Funds have been refunded.', 'success');
+
+      // Clean up: Remove the sharedR from local storage if it exists
+      localStorage.removeItem(`sharedR_${transfer.transferId}`);
+
+      // Reload transfers to update the UI
+      await loadTransfers();
+
+    } catch (err) {
+      console.error('Error cancelling transfer:', err);
+
+      // Handle user rejection
+      if (err.code === 4001 || err.message?.includes('User denied')) {
+        onToast('Cancellation was declined', 'info');
+      } else {
+        onToast('Failed to cancel transfer: ' + err.message, 'error');
+      }
+    } finally {
+      setProcessingTransfer(null);
+    }
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'initiated':
@@ -655,6 +900,87 @@ function Transfers({ metamaskAddress, config, onToast }) {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span className="detail-label">Point Value</span>
+                  <span className="detail-value" style={{ fontWeight: '600', color: '#667eea' }}>
+                    {transfer.pointValue} {transfer.pointValue === 1 ? 'point' : 'points'}
+                  </span>
+                </div>
+
+                {!transfer.isSolved && transfer.solveReward && transfer.solveReward !== '0' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span className="detail-label">
+                      Bonus Reward
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          marginLeft: '6px',
+                          cursor: 'help',
+                          fontSize: '14px',
+                          color: '#667eea',
+                          fontWeight: '700',
+                          position: 'relative'
+                        }}
+                        onMouseEnter={(e) => {
+                          const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                          if (tooltip) tooltip.style.visibility = 'visible';
+                        }}
+                        onMouseLeave={(e) => {
+                          const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                          if (tooltip) tooltip.style.visibility = 'hidden';
+                        }}
+                      >
+                        ⓘ
+                        <span
+                          className="tooltip-text"
+                          style={{
+                            visibility: 'hidden',
+                            position: 'absolute',
+                            backgroundColor: '#2d3748',
+                            color: 'white',
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            width: '220px',
+                            bottom: '125%',
+                            left: '50%',
+                            marginLeft: '-110px',
+                            zIndex: 1000,
+                            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                            lineHeight: '1.4'
+                          }}
+                        >
+                          This ETH reward is awarded to the owner immediately when the correct solution is provided
+                          <span
+                            style={{
+                              position: 'absolute',
+                              top: '100%',
+                              left: '50%',
+                              marginLeft: '-5px',
+                              borderWidth: '5px',
+                              borderStyle: 'solid',
+                              borderColor: '#2d3748 transparent transparent transparent'
+                            }}
+                          />
+                        </span>
+                      </span>
+                    </span>
+                    <span className="detail-value" style={{ fontWeight: '600', color: '#48bb78' }}>
+                      {formatValue(transfer.solveReward)} ETH
+                    </span>
+                  </div>
+                )}
+
+                {transfer.timeout > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span className="detail-label">Transfer Timeout</span>
+                    <span className="detail-value" style={{ fontSize: '13px' }}>
+                      {formatRemainingTime(transfer.timeout)}
+                    </span>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <span className="detail-label">Initiated</span>
                   <span className="detail-value" style={{ fontSize: '13px' }}>
                     {transfer.initiatedAt}
@@ -683,6 +1009,36 @@ function Transfers({ metamaskAddress, config, onToast }) {
               {/* Action Buttons */}
               {transfer.userRole === 'seller' && transfer.status === 'initiated' && (
                 <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                  {(() => {
+                    const deadline = getActionDeadline(transfer);
+                    return deadline && deadline.remainingTime > 0 ? (
+                      <div style={{
+                        marginBottom: '12px',
+                        padding: '10px 12px',
+                        backgroundColor: '#fff3cd',
+                        border: '1px solid #ffc107',
+                        borderRadius: '6px'
+                      }}>
+                        <p style={{
+                          fontSize: '11px',
+                          color: '#856404',
+                          margin: '0 0 4px 0',
+                          fontWeight: '500'
+                        }}>
+                          {deadline.warningMessage}
+                        </p>
+                        <p style={{
+                          fontSize: '18px',
+                          fontWeight: '700',
+                          color: deadline.remainingTime < 300 ? '#d32f2f' : '#f57c00',
+                          margin: 0,
+                          textAlign: 'center'
+                        }}>
+                          {formatRemainingTime(deadline.remainingTime)}
+                        </p>
+                      </div>
+                    ) : null;
+                  })()}
                   <button
                     onClick={() => handleProvideProof(transfer)}
                     disabled={processingTransfer === transfer.transferId}
@@ -718,6 +1074,36 @@ function Transfers({ metamaskAddress, config, onToast }) {
               {/* Verify Proof button for buyers when proof has been provided */}
               {transfer.userRole === 'buyer' && transfer.status === 'proof provided' && (
                 <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                  {(() => {
+                    const deadline = getActionDeadline(transfer);
+                    return deadline && deadline.remainingTime > 0 ? (
+                      <div style={{
+                        marginBottom: '12px',
+                        padding: '10px 12px',
+                        backgroundColor: '#fff3cd',
+                        border: '1px solid #ffc107',
+                        borderRadius: '6px'
+                      }}>
+                        <p style={{
+                          fontSize: '11px',
+                          color: '#856404',
+                          margin: '0 0 4px 0',
+                          fontWeight: '500'
+                        }}>
+                          {deadline.warningMessage}
+                        </p>
+                        <p style={{
+                          fontSize: '18px',
+                          fontWeight: '700',
+                          color: deadline.remainingTime < 300 ? '#d32f2f' : '#f57c00',
+                          margin: 0,
+                          textAlign: 'center'
+                        }}>
+                          {formatRemainingTime(deadline.remainingTime)}
+                        </p>
+                      </div>
+                    ) : null;
+                  })()}
                   <button
                     onClick={() => handleVerifyProof(transfer)}
                     disabled={processingTransfer === transfer.transferId}
@@ -753,6 +1139,36 @@ function Transfers({ metamaskAddress, config, onToast }) {
               {/* Complete Transfer button for sellers after buyer has verified */}
               {transfer.userRole === 'seller' && transfer.status === 'proof verified' && (
                 <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                  {(() => {
+                    const deadline = getActionDeadline(transfer);
+                    return deadline && deadline.remainingTime > 0 ? (
+                      <div style={{
+                        marginBottom: '12px',
+                        padding: '10px 12px',
+                        backgroundColor: '#fff3cd',
+                        border: '1px solid #ffc107',
+                        borderRadius: '6px'
+                      }}>
+                        <p style={{
+                          fontSize: '11px',
+                          color: '#856404',
+                          margin: '0 0 4px 0',
+                          fontWeight: '500'
+                        }}>
+                          {deadline.warningMessage}
+                        </p>
+                        <p style={{
+                          fontSize: '18px',
+                          fontWeight: '700',
+                          color: deadline.remainingTime < 300 ? '#d32f2f' : '#f57c00',
+                          margin: 0,
+                          textAlign: 'center'
+                        }}>
+                          {formatRemainingTime(deadline.remainingTime)}
+                        </p>
+                      </div>
+                    ) : null;
+                  })()}
                   <button
                     onClick={() => handleCompleteTransfer(transfer)}
                     disabled={processingTransfer === transfer.transferId}
@@ -784,6 +1200,87 @@ function Transfers({ metamaskAddress, config, onToast }) {
                   </p>
                 </div>
               )}
+
+              {/* Transfer Cancellation Section */}
+              {(() => {
+                const cancellationInfo = checkCancellationEligibility(transfer);
+
+                return (
+                  <div style={{
+                    marginTop: '16px',
+                    paddingTop: '16px',
+                    borderTop: '1px solid #e2e8f0'
+                  }}>
+                    {cancellationInfo.canCancel ? (
+                      // Show cancel button if eligible
+                      <>
+                        <button
+                          onClick={() => handleCancelTransfer(transfer)}
+                          disabled={processingTransfer === transfer.transferId}
+                          style={{
+                            width: '100%',
+                            padding: '12px 16px',
+                            backgroundColor: processingTransfer === transfer.transferId ? '#adb5bd' : '#e03131',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: processingTransfer === transfer.transferId ? 'not-allowed' : 'pointer',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px'
+                          }}
+                        >
+                          {processingTransfer === transfer.transferId ? 'Cancelling...' : 'Cancel Transfer'}
+                        </button>
+                        <p style={{
+                          fontSize: '12px',
+                          color: '#718096',
+                          marginTop: '8px',
+                          textAlign: 'center'
+                        }}>
+                          {cancellationInfo.reason}
+                        </p>
+                      </>
+                    ) : cancellationInfo.remainingTime !== undefined ? (
+                      // Show countdown if timeout hasn't elapsed yet
+                      <div style={{
+                        padding: '12px',
+                        backgroundColor: '#f8f9fa',
+                        borderRadius: '6px',
+                        border: '1px solid #e2e8f0'
+                      }}>
+                        <p style={{
+                          fontSize: '13px',
+                          color: '#495057',
+                          margin: 0,
+                          textAlign: 'center'
+                        }}>
+                          <span style={{ fontWeight: '600' }}>Cancellation available in:</span>
+                          <br />
+                          <span style={{
+                            fontSize: '16px',
+                            fontWeight: '700',
+                            color: '#e67700'
+                          }}>
+                            {formatRemainingTime(cancellationInfo.remainingTime)}
+                          </span>
+                        </p>
+                        <p style={{
+                          fontSize: '11px',
+                          color: '#868e96',
+                          margin: '4px 0 0 0',
+                          textAlign: 'center'
+                        }}>
+                          {cancellationInfo.reason}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })()}
             </div>
           ))}
         </div>

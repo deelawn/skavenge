@@ -44,12 +44,17 @@ function ClueMarketplace({ metamaskAddress, config, onToast }) {
       // Parse the result and check transfer status for each token
       const cluesPromises = result.tokenIds.map(async (tokenId, index) => {
         const transferInProgress = await contract.methods.transferInProgress(tokenId).call();
+        // Fetch clue data to get point value and timeout
+        const clueData = await contract.methods.clues(tokenId).call();
         return {
           tokenId: tokenId.toString(),
           owner: result.owners[index],
           price: result.prices[index].toString(),
           isSolved: result.solvedStatus[index],
-          transferInProgress
+          transferInProgress,
+          pointValue: Number(clueData.pointValue),
+          timeout: Number(clueData.timeout),
+          solveReward: clueData.solveReward.toString()
         };
       });
 
@@ -77,6 +82,18 @@ function ClueMarketplace({ metamaskAddress, config, onToast }) {
   const truncateAddress = (address) => {
     if (!address) return '';
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+  };
+
+  const formatTimeout = (seconds) => {
+    if (seconds < 3600) {
+      return `${Math.round(seconds / 60)} minutes`;
+    } else if (seconds % 3600 === 0) {
+      return `${seconds / 3600} hours`;
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.round((seconds % 3600) / 60);
+      return `${hours}h ${minutes}m`;
+    }
   };
 
   const handlePurchase = async (tokenId, price) => {
@@ -294,6 +311,85 @@ function ClueMarketplace({ metamaskAddress, config, onToast }) {
                   {clue.isSolved ? 'Solved' : 'Unsolved'}
                 </span>
               </div>
+
+              <div className="token-detail-row">
+                <span className="detail-label">Point Value:</span>
+                <span className="detail-value" style={{ fontWeight: '600', color: '#667eea' }}>
+                  {clue.pointValue} {clue.pointValue === 1 ? 'point' : 'points'}
+                </span>
+              </div>
+
+              {!clue.isSolved && clue.solveReward && clue.solveReward !== '0' && (
+                <div className="token-detail-row">
+                  <span className="detail-label">
+                    Bonus Reward:
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        marginLeft: '6px',
+                        cursor: 'help',
+                        fontSize: '14px',
+                        color: '#667eea',
+                        fontWeight: '700',
+                        position: 'relative'
+                      }}
+                      onMouseEnter={(e) => {
+                        const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                        if (tooltip) tooltip.style.visibility = 'visible';
+                      }}
+                      onMouseLeave={(e) => {
+                        const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                        if (tooltip) tooltip.style.visibility = 'hidden';
+                      }}
+                    >
+                      ⓘ
+                      <span
+                        className="tooltip-text"
+                        style={{
+                          visibility: 'hidden',
+                          position: 'absolute',
+                          backgroundColor: '#2d3748',
+                          color: 'white',
+                          padding: '8px 12px',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          fontWeight: '500',
+                          width: '220px',
+                          bottom: '125%',
+                          left: '50%',
+                          marginLeft: '-110px',
+                          zIndex: 1000,
+                          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                          lineHeight: '1.4'
+                        }}
+                      >
+                        This ETH reward is awarded to you immediately when you provide the correct solution
+                        <span
+                          style={{
+                            position: 'absolute',
+                            top: '100%',
+                            left: '50%',
+                            marginLeft: '-5px',
+                            borderWidth: '5px',
+                            borderStyle: 'solid',
+                            borderColor: '#2d3748 transparent transparent transparent'
+                          }}
+                        />
+                      </span>
+                    </span>
+                  </span>
+                  <span className="detail-value" style={{ fontWeight: '600', color: '#48bb78' }}>
+                    {formatPrice(clue.solveReward)} ETH
+                  </span>
+                </div>
+              )}
+
+              {clue.timeout > 0 && (
+                <div className="token-detail-row">
+                  <span className="detail-label">Transfer Timeout:</span>
+                  <span className="detail-value">{formatTimeout(clue.timeout)}</span>
+                </div>
+              )}
 
               {/* Purchase Button */}
               {metamaskAddress && metamaskAddress.toLowerCase() !== clue.owner.toLowerCase() && (

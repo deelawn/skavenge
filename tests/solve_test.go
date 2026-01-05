@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
@@ -72,7 +73,7 @@ func TestSuccessfulSolve(t *testing.T) {
 	deployerAuth, err = util.NewTransactOpts(client, deployer)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -92,8 +93,9 @@ func TestSuccessfulSolve(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	timeout := big.NewInt(180)                   // 3 minutes
 
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
@@ -205,7 +207,7 @@ func TestFailedSolveAttempt(t *testing.T) {
 	deployerAuth, err = util.NewTransactOpts(client, deployer)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(2), common.Address{})
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -220,17 +222,13 @@ func TestFailedSolveAttempt(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	timeout := big.NewInt(180)                   // 3 minutes
 
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), salePriceReceipt.Status, "Set sale price transaction failed")
-
-	// Verify initial solve attempts
-	clueData, err := contract.Clues(nil, tokenId)
-	require.NoError(t, err)
-	require.Equal(t, uint64(0), clueData.SolveAttempts.Uint64(), "Initial solve attempts should be 0")
 
 	// Attempt to solve with incorrect solution
 	incorrectSolution := "In the cave"
@@ -247,18 +245,15 @@ func TestFailedSolveAttempt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), solveReceipt.Status, "Solution attempt transaction failed")
 
-	// Verify the ClueAttempted event was emitted
-	clueAttemptedFound, err := listener.CheckEvent(solveReceipt, "ClueAttempted")
+	// Verify the ClueAttemptFailed event was emitted
+	clueAttemptFailedFound, err := listener.CheckEvent(solveReceipt, "ClueAttemptFailed")
 	require.NoError(t, err)
-	require.True(t, clueAttemptedFound, "ClueAttempted event not found")
+	require.True(t, clueAttemptFailedFound, "ClueAttemptFailed event not found")
 
 	// Verify the clue is still not solved
-	clueData, err = contract.Clues(nil, tokenId)
+	clueData, err := contract.Clues(nil, tokenId)
 	require.NoError(t, err)
 	require.False(t, clueData.IsSolved, "Clue should still not be solved")
-
-	// Verify solve attempts was incremented
-	require.Equal(t, uint64(1), clueData.SolveAttempts.Uint64(), "Solve attempts should be incremented to 1")
 
 	// Verify the sale price is still set
 	require.Equal(t, salePrice.String(), clueData.SalePrice.String(), "Sale price should still be set")
@@ -326,7 +321,7 @@ func TestSetSalePriceOnSolvedClue(t *testing.T) {
 	deployerAuth, err = util.NewTransactOpts(client, deployer)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(4), common.Address{})
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -358,9 +353,10 @@ func TestSetSalePriceOnSolvedClue(t *testing.T) {
 	minterAuth.GasLimit = 300000 // Set higher gas limit for failing transaction
 
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	timeout := big.NewInt(180)                   // 3 minutes
 
 	// This should fail because the clue is solved
-	_, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	_, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.Error(t, err, "Setting sale price on solved clue should fail")
 }
 
@@ -418,7 +414,7 @@ func TestRemoveSalePrice(t *testing.T) {
 	encryptedClueContent := encryptedCipher.Marshal()
 
 	// Mint the clue
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(5), common.Address{})
 	require.NoError(t, err)
 	receipt, err := util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -431,8 +427,9 @@ func TestRemoveSalePrice(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
+	timeout := big.NewInt(180)                   // 3 minutes
 
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)

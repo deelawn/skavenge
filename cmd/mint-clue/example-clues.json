@@ -1,0 +1,33 @@
+{
+  "clues": [
+    {
+      "content": "Find the hidden treasure in the old oak tree",
+      "solution": "Oak tree",
+      "pointValue": 3,
+      "solveReward": "1000000000000000000",
+      "salePrice": "500000000000000000",
+      "timeout": 3600
+    },
+    {
+      "content": "The answer lies in the stars above",
+      "solution": "Constellation",
+      "pointValue": 4,
+      "solveReward": "2000000000000000000"
+    },
+    {
+      "content": "Where the river meets the sea",
+      "solution": "Delta",
+      "pointValue": 2,
+      "recipientAddress": "0x1234567890123456789012345678901234567890"
+    },
+    {
+      "content": "The key is in the ancient library",
+      "solution": "Alexandria",
+      "pointValue": 5,
+      "solveReward": "5000000000000000000",
+      "salePrice": "3000000000000000000",
+      "timeout": 7200,
+      "recipientAddress": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+    }
+  ]
+}

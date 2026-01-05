@@ -10,7 +10,13 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
   const [revealedClues, setRevealedClues] = useState({});
   const [listingToken, setListingToken] = useState(null);
   const [listingPrice, setListingPrice] = useState('');
+  const [listingTimeout, setListingTimeout] = useState('');
+  const [timeoutUnit, setTimeoutUnit] = useState('hours'); // 'minutes' or 'hours'
+  const [minTimeout, setMinTimeout] = useState(null);
+  const [maxTimeout, setMaxTimeout] = useState(null);
   const [processingTx, setProcessingTx] = useState(false);
+  const [showSolvedClues, setShowSolvedClues] = useState(false);
+  const [solutionInputs, setSolutionInputs] = useState({});
 
   useEffect(() => {
     if (!metamaskAddress || !config || !config.contractAddress) {
@@ -19,6 +25,7 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
     }
 
     fetchUserTokens();
+    fetchTimeoutBounds();
 
     // Clear revealed clues when tokens are refetched for privacy
     setRevealedClues({});
@@ -73,12 +80,14 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
           return {
             tokenId: tokenId.toString(),
             isSolved: clueData.isSolved,
-            solveAttempts: clueData.solveAttempts.toString(),
             salePrice: clueData.salePrice.toString(),
             isForSale: isForSale,
             encryptedContents: clueData.encryptedContents,
             // Convert rValue to hex for display (only owner can see this)
-            rValue: clueData.rValue.toString()
+            rValue: clueData.rValue.toString(),
+            pointValue: Number(clueData.pointValue),
+            timeout: Number(clueData.timeout),
+            solveReward: clueData.solveReward.toString()
           };
         } catch (err) {
           console.error(`Error fetching data for token ${tokenId}:`, err);
@@ -100,6 +109,60 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
       if (onToast) {
         onToast('Failed to fetch tokens: ' + (err.message || 'Unknown error'), 'error');
       }
+    }
+  };
+
+  const fetchTimeoutBounds = async () => {
+    try {
+      // Create cache key based on contract address
+      const cacheKey = `timeout_bounds_${config.contractAddress}`;
+
+      // Check if we have cached values
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const { minTimeout: cachedMin, maxTimeout: cachedMax, timestamp } = JSON.parse(cached);
+          // Cache is valid for 24 hours (86400000 ms)
+          const cacheAge = Date.now() - timestamp;
+          if (cacheAge < 86400000 && cachedMin && cachedMax) {
+            console.log('Using cached timeout bounds:', { min: cachedMin, max: cachedMax });
+            setMinTimeout(Number(cachedMin));
+            setMaxTimeout(Number(cachedMax));
+            return;
+          }
+        } catch (parseErr) {
+          console.warn('Failed to parse cached timeout bounds:', parseErr);
+          localStorage.removeItem(cacheKey);
+        }
+      }
+
+      // Fetch from contract if no valid cache
+      console.log('Fetching timeout bounds from contract...');
+      const web3 = new Web3(window.ethereum);
+      const contract = new web3.eth.Contract(SKAVENGE_ABI, config.contractAddress);
+
+      // Fetch MIN_TIMEOUT and MAX_TIMEOUT from the contract
+      const minTimeoutValue = await contract.methods.MIN_TIMEOUT().call();
+      const maxTimeoutValue = await contract.methods.MAX_TIMEOUT().call();
+
+      const min = Number(minTimeoutValue);
+      const max = Number(maxTimeoutValue);
+
+      setMinTimeout(min);
+      setMaxTimeout(max);
+
+      // Cache the values
+      localStorage.setItem(cacheKey, JSON.stringify({
+        minTimeout: min,
+        maxTimeout: max,
+        timestamp: Date.now()
+      }));
+      console.log('Cached timeout bounds:', { min, max });
+    } catch (err) {
+      console.error('Error fetching timeout bounds:', err);
+      // Set default values if fetch fails (1 hour and 24 hours)
+      setMinTimeout(3600);
+      setMaxTimeout(86400);
     }
   };
 
@@ -167,7 +230,7 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
     }
   };
 
-  const handleSetSalePrice = async (tokenId, priceInEth) => {
+  const handleSetSalePrice = async (tokenId, priceInEth, timeoutInSeconds) => {
     try {
       setProcessingTx(true);
       const web3 = new Web3(window.ethereum);
@@ -176,19 +239,22 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
       // Convert ETH to Wei
       const priceInWei = web3.utils.toWei(priceInEth, 'ether');
 
-      // Call setSalePrice function
-      await contract.methods.setSalePrice(tokenId, priceInWei).send({
+      // Call setSalePrice function with timeout
+      await contract.methods.setSalePrice(tokenId, priceInWei, timeoutInSeconds).send({
         from: metamaskAddress
       });
 
       if (onToast) {
-        onToast(`Token #${tokenId} listed for ${priceInEth} ETH`, 'success');
+        const timeoutDisplay = formatTimeout(timeoutInSeconds);
+        onToast(`Token #${tokenId} listed for ${priceInEth} ETH with ${timeoutDisplay} timeout`, 'success');
       }
 
       // Refresh tokens to show updated sale status
       await fetchUserTokens();
       setListingToken(null);
       setListingPrice('');
+      setListingTimeout('');
+      setTimeoutUnit('hours');
     } catch (error) {
       console.error('Error setting sale price:', error);
       if (onToast) {
@@ -196,6 +262,18 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
       }
     } finally {
       setProcessingTx(false);
+    }
+  };
+
+  const formatTimeout = (seconds) => {
+    if (seconds < 3600) {
+      return `${Math.round(seconds / 60)} minutes`;
+    } else if (seconds % 3600 === 0) {
+      return `${seconds / 3600} hours`;
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.round((seconds % 3600) / 60);
+      return `${hours}h ${minutes}m`;
     }
   };
 
@@ -226,14 +304,110 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
     }
   };
 
+  const handleSubmitSolution = async (tokenId) => {
+    const solution = solutionInputs[tokenId];
+
+    if (!solution || solution.trim() === '') {
+      if (onToast) {
+        onToast('Please enter a solution', 'error');
+      }
+      return;
+    }
+
+    try {
+      setProcessingTx(true);
+      const web3 = new Web3(window.ethereum);
+      const contract = new web3.eth.Contract(SKAVENGE_ABI, config.contractAddress);
+
+      if (onToast) {
+        onToast('Submitting solution...', 'info');
+      }
+
+      // Call attemptSolution function and get the transaction
+      const tx = await contract.methods.attemptSolution(tokenId, solution.trim()).send({
+        from: metamaskAddress
+      });
+
+      // Wait for transaction receipt to get the events
+      const receipt = tx;
+
+      // Parse events from the receipt
+      let solutionCorrect = false;
+      let eventFound = false;
+
+      if (receipt.events) {
+        // Check for ClueSolved event
+        if (receipt.events.ClueSolved) {
+          const event = receipt.events.ClueSolved;
+          const eventTokenId = event.returnValues.tokenId;
+          if (eventTokenId.toString() === tokenId.toString()) {
+            solutionCorrect = true;
+            eventFound = true;
+          }
+        }
+        // Check for ClueAttemptFailed event
+        else if (receipt.events.ClueAttemptFailed) {
+          const event = receipt.events.ClueAttemptFailed;
+          const eventTokenId = event.returnValues.tokenId;
+          if (eventTokenId.toString() === tokenId.toString()) {
+            solutionCorrect = false;
+            eventFound = true;
+          }
+        }
+      }
+
+      // Provide feedback based on the event
+      if (eventFound) {
+        if (solutionCorrect) {
+          if (onToast) {
+            onToast(`🎉 Correct! Token #${tokenId} has been solved!`, 'success');
+          }
+          // Clear the solution input
+          setSolutionInputs(prev => ({
+            ...prev,
+            [tokenId]: ''
+          }));
+        } else {
+          if (onToast) {
+            onToast(`❌ Incorrect solution for Token #${tokenId}. Try again!`, 'error');
+          }
+          // Keep the input so user can try again
+        }
+      } else {
+        // Fallback if event not found (shouldn't happen)
+        if (onToast) {
+          onToast(`Solution submitted for Token #${tokenId}`, 'success');
+        }
+        setSolutionInputs(prev => ({
+          ...prev,
+          [tokenId]: ''
+        }));
+      }
+
+      // Refresh tokens to show updated solved status
+      await fetchUserTokens();
+    } catch (error) {
+      console.error('Error submitting solution:', error);
+      if (onToast) {
+        onToast('Failed to submit solution: ' + (error.message || 'Unknown error'), 'error');
+      }
+    } finally {
+      setProcessingTx(false);
+    }
+  };
+
   const startListing = (tokenId) => {
     setListingToken(tokenId);
     setListingPrice('');
+    setListingTimeout('');
+    setTimeoutUnit('hours');
   };
 
   const cancelListing = () => {
     setListingToken(null);
     setListingPrice('');
+    setListingTimeout('');
+    setTimeoutUnit('hours');
   };
 
   const confirmListing = (tokenId) => {
@@ -243,7 +417,38 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
       }
       return;
     }
-    handleSetSalePrice(tokenId, listingPrice);
+
+    if (!listingTimeout || parseFloat(listingTimeout) <= 0) {
+      if (onToast) {
+        onToast('Please enter a valid timeout', 'error');
+      }
+      return;
+    }
+
+    // Convert timeout to seconds based on unit
+    const timeoutValue = parseFloat(listingTimeout);
+    const timeoutInSeconds = timeoutUnit === 'hours'
+      ? Math.floor(timeoutValue * 3600)
+      : Math.floor(timeoutValue * 60);
+
+    // Validate timeout bounds
+    if (minTimeout !== null && timeoutInSeconds < minTimeout) {
+      if (onToast) {
+        const minDisplay = formatTimeout(minTimeout);
+        onToast(`Timeout must be at least ${minDisplay}`, 'error');
+      }
+      return;
+    }
+
+    if (maxTimeout !== null && timeoutInSeconds > maxTimeout) {
+      if (onToast) {
+        const maxDisplay = formatTimeout(maxTimeout);
+        onToast(`Timeout cannot exceed ${maxDisplay}`, 'error');
+      }
+      return;
+    }
+
+    handleSetSalePrice(tokenId, listingPrice, timeoutInSeconds);
   };
 
   if (!metamaskAddress) {
@@ -297,16 +502,39 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
     );
   }
 
+  // Filter tokens based on showSolvedClues
+  const filteredTokens = showSolvedClues
+    ? tokens
+    : tokens.filter(token => !token.isSolved);
+
   return (
     <div className="token-display-container">
       <div className="token-display-header">
         <h2>Your Skavenge NFTs</h2>
-        <p className="token-count">{tokens.length} {tokens.length === 1 ? 'token' : 'tokens'}</p>
-        <button onClick={fetchUserTokens} className="btn-refresh">Refresh</button>
+        <p className="token-count">{filteredTokens.length} {filteredTokens.length === 1 ? 'token' : 'tokens'}</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginTop: '12px' }}>
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '14px',
+            cursor: 'pointer',
+            userSelect: 'none'
+          }}>
+            <input
+              type="checkbox"
+              checked={showSolvedClues}
+              onChange={(e) => setShowSolvedClues(e.target.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+            Show solved clues
+          </label>
+          <button onClick={fetchUserTokens} className="btn-refresh">Refresh</button>
+        </div>
       </div>
 
       <div className="token-grid">
-        {tokens.map((token) => (
+        {filteredTokens.map((token) => (
           <div key={token.tokenId} className="token-card">
             <div className="token-card-header">
               <h3>Token #{token.tokenId}</h3>
@@ -326,15 +554,90 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
                 </div>
 
                 <div className="token-detail-row">
-                  <span className="detail-label">Solve Attempts:</span>
-                  <span className="detail-value">{token.solveAttempts} / 3</span>
+                  <span className="detail-label">Point Value:</span>
+                  <span className="detail-value" style={{ fontWeight: '600', color: '#667eea' }}>
+                    {token.pointValue} {token.pointValue === 1 ? 'point' : 'points'}
+                  </span>
                 </div>
 
-                {token.isForSale && (
+                {!token.isSolved && token.solveReward && token.solveReward !== '0' && (
                   <div className="token-detail-row">
-                    <span className="detail-label">Sale Price:</span>
-                    <span className="detail-value">{formatPrice(token.salePrice)} ETH</span>
+                    <span className="detail-label">
+                      Bonus Reward:
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          marginLeft: '6px',
+                          cursor: 'help',
+                          fontSize: '14px',
+                          color: '#667eea',
+                          fontWeight: '700',
+                          position: 'relative'
+                        }}
+                        onMouseEnter={(e) => {
+                          const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                          if (tooltip) tooltip.style.visibility = 'visible';
+                        }}
+                        onMouseLeave={(e) => {
+                          const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                          if (tooltip) tooltip.style.visibility = 'hidden';
+                        }}
+                      >
+                        ⓘ
+                        <span
+                          className="tooltip-text"
+                          style={{
+                            visibility: 'hidden',
+                            position: 'absolute',
+                            backgroundColor: '#2d3748',
+                            color: 'white',
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            width: '220px',
+                            bottom: '125%',
+                            left: '50%',
+                            marginLeft: '-110px',
+                            zIndex: 1000,
+                            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                            lineHeight: '1.4'
+                          }}
+                        >
+                          This ETH reward is awarded to you immediately when you provide the correct solution
+                          <span
+                            style={{
+                              position: 'absolute',
+                              top: '100%',
+                              left: '50%',
+                              marginLeft: '-5px',
+                              borderWidth: '5px',
+                              borderStyle: 'solid',
+                              borderColor: '#2d3748 transparent transparent transparent'
+                            }}
+                          />
+                        </span>
+                      </span>
+                    </span>
+                    <span className="detail-value" style={{ fontWeight: '600', color: '#48bb78' }}>
+                      {formatPrice(token.solveReward)} ETH
+                    </span>
                   </div>
+                )}
+
+                {token.isForSale && (
+                  <>
+                    <div className="token-detail-row">
+                      <span className="detail-label">Sale Price:</span>
+                      <span className="detail-value">{formatPrice(token.salePrice)} ETH</span>
+                    </div>
+                    {token.timeout > 0 && (
+                      <div className="token-detail-row">
+                        <span className="detail-label">Transfer Timeout:</span>
+                        <span className="detail-value">{formatTimeout(token.timeout)}</span>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {token.encryptedContents && token.rValue && token.rValue !== '0' && (
@@ -374,9 +677,73 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
                   </div>
                 )}
 
-                {/* Listing Controls */}
-                <div className="token-actions" style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {token.isForSale ? (
+                {/* Solution Submission for Unsolved Clues */}
+                {!token.isSolved && (
+                  <div style={{
+                    marginTop: '16px',
+                    padding: '16px',
+                    backgroundColor: '#f7fafc',
+                    borderRadius: '8px',
+                    border: '2px dashed #cbd5e0'
+                  }}>
+                    <div style={{ marginBottom: '8px' }}>
+                      <span style={{
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: '#2d3748'
+                      }}>
+                        Submit Solution
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <input
+                        type="text"
+                        placeholder="Enter your solution..."
+                        value={solutionInputs[token.tokenId] || ''}
+                        onChange={(e) => setSolutionInputs(prev => ({
+                          ...prev,
+                          [token.tokenId]: e.target.value
+                        }))}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && !processingTx) {
+                            handleSubmitSolution(token.tokenId);
+                          }
+                        }}
+                        disabled={processingTx}
+                        style={{
+                          padding: '10px 12px',
+                          fontSize: '14px',
+                          border: '1px solid #cbd5e0',
+                          borderRadius: '6px',
+                          outline: 'none',
+                          backgroundColor: processingTx ? '#e2e8f0' : 'white'
+                        }}
+                      />
+                      <button
+                        onClick={() => handleSubmitSolution(token.tokenId)}
+                        disabled={processingTx || !solutionInputs[token.tokenId]?.trim()}
+                        style={{
+                          padding: '10px',
+                          fontSize: '14px',
+                          backgroundColor: '#48bb78',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: (processingTx || !solutionInputs[token.tokenId]?.trim()) ? 'not-allowed' : 'pointer',
+                          fontWeight: '500',
+                          opacity: (processingTx || !solutionInputs[token.tokenId]?.trim()) ? 0.6 : 1
+                        }}
+                      >
+                        {processingTx ? 'Processing...' : 'Submit Solution'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Listing Controls - only show for unsolved clues */}
+                {!token.isSolved && (
+                  <div className="token-actions" style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {token.isForSale ? (
                     <button
                       onClick={() => handleRemoveSalePrice(token.tokenId)}
                       disabled={processingTx}
@@ -415,6 +782,54 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
                               outline: 'none'
                             }}
                           />
+
+                          {/* Timeout Input Section */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '12px', color: '#718096', fontWeight: '500' }}>
+                              Transfer Timeout
+                            </label>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                placeholder="Timeout"
+                                value={listingTimeout}
+                                onChange={(e) => setListingTimeout(e.target.value)}
+                                className="timeout-input"
+                                style={{
+                                  flex: 1,
+                                  padding: '8px 12px',
+                                  fontSize: '14px',
+                                  border: '1px solid #cbd5e0',
+                                  borderRadius: '6px',
+                                  outline: 'none'
+                                }}
+                              />
+                              <select
+                                value={timeoutUnit}
+                                onChange={(e) => setTimeoutUnit(e.target.value)}
+                                style={{
+                                  padding: '8px 12px',
+                                  fontSize: '14px',
+                                  border: '1px solid #cbd5e0',
+                                  borderRadius: '6px',
+                                  backgroundColor: 'white',
+                                  cursor: 'pointer',
+                                  outline: 'none'
+                                }}
+                              >
+                                <option value="minutes">Minutes</option>
+                                <option value="hours">Hours</option>
+                              </select>
+                            </div>
+                            {minTimeout !== null && maxTimeout !== null && (
+                              <span style={{ fontSize: '11px', color: '#718096' }}>
+                                Range: {formatTimeout(minTimeout)} - {formatTimeout(maxTimeout)}
+                              </span>
+                            )}
+                          </div>
+
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <button
                               onClick={() => confirmListing(token.tokenId)}
@@ -477,8 +892,9 @@ function TokenDisplay({ metamaskAddress, config, onToast }) {
                         </button>
                       )}
                     </>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

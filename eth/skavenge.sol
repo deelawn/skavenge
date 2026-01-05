@@ -14,9 +14,11 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         bytes encryptedContents; // ElGamal encrypted content of the clue
         bytes32 solutionHash; // Hash of the solution
         bool isSolved; // Whether the clue has been solved
-        uint256 solveAttempts; // Number of attempts made to solve the clue
         uint256 salePrice; // Price in wei for which the clue is for sale
         uint256 rValue; // ElGamal encryption r value (needed for decryption)
+        uint256 timeout; // Transfer timeout in seconds (set by seller)
+        uint8 pointValue; // Point value of the clue (1-5)
+        uint256 solveReward; // ETH reward for solving the clue
     }
 
     // TokenTransfer structure
@@ -33,11 +35,10 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         uint256 verifiedAt; // Timestamp when proof was verified
     }
 
-    // Maximum number of attempts to solve a clue
-    uint256 public constant MAX_SOLVE_ATTEMPTS = 3;
-
-    // Transfer timeout in seconds
-    uint256 public constant TRANSFER_TIMEOUT = 180; // 3 minutes
+    // Transfer timeout bounds in seconds
+    // uint256 public constant MIN_TIMEOUT = 3600; // 1 hour
+    uint256 public constant MIN_TIMEOUT = 0; // no minimum for testing
+    uint256 public constant MAX_TIMEOUT = 86400; // 24 hours
 
     // Current token ID counter
     uint256 private _tokenIdCounter;
@@ -84,10 +85,13 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     // Error for attempting to purchase a clue with an active transfer
     error TransferAlreadyInProgress();
 
+    // Error for invalid point value
+    error InvalidPointValue();
+
     // Events
-    event ClueMinted(uint256 indexed tokenId, address minter);
-    event ClueAttempted(uint256 indexed tokenId, uint256 remainingAttempts);
+    event ClueMinted(uint256 indexed tokenId, address indexed minter, address indexed recipient);
     event ClueSolved(uint256 indexed tokenId, string solution);
+    event ClueAttemptFailed(uint256 indexed tokenId, string attemptedSolution);
     event SalePriceSet(uint256 indexed tokenId, uint256 price);
     event SalePriceRemoved(uint256 indexed tokenId);
 
@@ -104,7 +108,10 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     );
     event ProofVerified(bytes32 indexed transferId);
     event TransferCompleted(bytes32 indexed transferId, uint256 rValue);
-    event TransferCancelled(bytes32 indexed transferId);
+    event TransferCancelled(
+        bytes32 indexed transferId,
+        address indexed cancelledBy
+    );
 
     // Event emitted when authorized minter is updated
     event AuthorizedMinterUpdated(
@@ -133,29 +140,47 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
      * @param encryptedContents ElGamal encrypted content of the clue
      * @param solutionHash Hash of the solution
      * @param rValue ElGamal encryption r value
+     * @param pointValue Point value of the clue (1-5)
+     * @param recipient Address to mint the clue to
+     * @notice Can optionally send ETH to set a solve reward for the clue
      */
     function mintClue(
         bytes calldata encryptedContents,
         bytes32 solutionHash,
-        uint256 rValue
-    ) external returns (uint256 tokenId) {
+        uint256 rValue,
+        uint8 pointValue,
+        address recipient
+    ) external payable returns (uint256 tokenId) {
         if (msg.sender != authorizedMinter) {
             revert UnauthorizedMinter();
         }
+
+        // If no recipient specified, mint to caller
+        if (recipient == address(0)) {
+            recipient = msg.sender;
+        }
+
+        // Validate point value is between 1 and 5 (inclusive)
+        if (pointValue < 1 || pointValue > 5) {
+            revert InvalidPointValue();
+        }
+
         tokenId = _tokenIdCounter++;
 
         clues[tokenId] = Clue({
             encryptedContents: encryptedContents,
             solutionHash: solutionHash,
             isSolved: false,
-            solveAttempts: 0,
             salePrice: 0,
-            rValue: rValue
+            rValue: rValue,
+            timeout: 0,
+            pointValue: pointValue,
+            solveReward: msg.value
         });
 
-        _mint(msg.sender, tokenId);
+        _mint(recipient, tokenId);
 
-        emit ClueMinted(tokenId, msg.sender);
+        emit ClueMinted(tokenId, msg.sender, recipient);
 
         return tokenId;
     }
@@ -180,15 +205,47 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     }
 
     /**
+     * @dev Get the point value for a clue
+     * @param tokenId Token ID of the clue
+     */
+    function getPointValue(uint256 tokenId) external view returns (uint8) {
+        ownerOf(tokenId); // Will revert if token doesn't exist
+        return clues[tokenId].pointValue;
+    }
+
+    /**
+     * @dev Get the solve reward for a clue
+     * @param tokenId Token ID of the clue
+     */
+    function getSolveReward(uint256 tokenId) external view returns (uint256) {
+        ownerOf(tokenId); // Will revert if token doesn't exist
+        return clues[tokenId].solveReward;
+    }
+
+    /**
      * @dev Set a sale price for a clue
      * @param tokenId Token ID of the clue
      * @param price Price in wei
+     * @param timeout Transfer timeout in seconds (must be between MIN_TIMEOUT and MAX_TIMEOUT)
      */
-    function setSalePrice(uint256 tokenId, uint256 price) external {
+    function setSalePrice(
+        uint256 tokenId,
+        uint256 price,
+        uint256 timeout
+    ) external {
         require(ownerOf(tokenId) == msg.sender, "Not token owner");
 
         if (clues[tokenId].isSolved) {
             revert SolvedClueCannotBeSold();
+        }
+
+        // Validate timeout only if listing for sale (price > 0)
+        if (price > 0) {
+            require(
+                timeout >= MIN_TIMEOUT && timeout <= MAX_TIMEOUT,
+                "Invalid timeout"
+            );
+            clues[tokenId].timeout = timeout;
         }
 
         clues[tokenId].salePrice = price;
@@ -274,20 +331,9 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     function attemptSolution(
         uint256 tokenId,
         string calldata solution
-    ) external {
+    ) external nonReentrant {
         require(ownerOf(tokenId) == msg.sender, "Not token owner");
         require(!clues[tokenId].isSolved, "Clue already solved");
-        require(
-            clues[tokenId].solveAttempts < MAX_SOLVE_ATTEMPTS,
-            "No attempts remaining"
-        );
-
-        clues[tokenId].solveAttempts++;
-
-        emit ClueAttempted(
-            tokenId,
-            MAX_SOLVE_ATTEMPTS - clues[tokenId].solveAttempts
-        );
 
         if (keccak256(bytes(solution)) == clues[tokenId].solutionHash) {
             clues[tokenId].isSolved = true;
@@ -299,7 +345,17 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
                 emit SalePriceRemoved(tokenId);
             }
 
+            // Transfer solve reward if one exists
+            uint256 reward = clues[tokenId].solveReward;
+            if (reward > 0) {
+                clues[tokenId].solveReward = 0; // Clear reward before transfer
+                (bool sent, ) = payable(msg.sender).call{value: reward}("");
+                require(sent, "Failed to send solve reward");
+            }
+
             emit ClueSolved(tokenId, solution);
+        } else {
+            emit ClueAttemptFailed(tokenId, solution);
         }
     }
 
@@ -390,7 +446,8 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
 
         // Check if transfer has timed out
         require(
-            block.timestamp - transfer.initiatedAt <= TRANSFER_TIMEOUT,
+            block.timestamp - transfer.initiatedAt <=
+                clues[transfer.tokenId].timeout,
             "Transfer expired"
         );
 
@@ -430,7 +487,8 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
 
         // Check if proof provision has timed out
         require(
-            block.timestamp - transfer.proofProvidedAt <= TRANSFER_TIMEOUT,
+            block.timestamp - transfer.proofProvidedAt <=
+                clues[transfer.tokenId].timeout,
             "Proof verification expired"
         );
 
@@ -458,7 +516,8 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         // Check if verification has timed out
         require(transfer.verifiedAt > 0, "Proof not verified");
         require(
-            block.timestamp - transfer.verifiedAt <= TRANSFER_TIMEOUT,
+            block.timestamp - transfer.verifiedAt <=
+                clues[transfer.tokenId].timeout,
             "Transfer completion expired"
         );
 
@@ -488,7 +547,6 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         // Update the clue contents and r value
         clues[transfer.tokenId].encryptedContents = newEncryptedContents;
         clues[transfer.tokenId].rValue = rValue;
-        clues[transfer.tokenId].solveAttempts = 0;
 
         // Store values we'll need after clearing transfer state
         address buyer = transfer.buyer;
@@ -547,36 +605,41 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         // Check cancellation conditions
         bool canCancel = false;
 
-        // Buyer can cancel ONLY if proof has not been verified yet
-        // This prevents mempool frontrunning attack where buyer extracts r value
-        // from seller's completeTransfer() transaction and cancels before it mines
+        // Buyer can cancel if:
+        // 1. Timeout elapsed since initiation and waiting for seller to provide proof
+        // 2. Seller has provided proof (can cancel anytime, regardless of timeout)
+        // 3. Timeout elapsed since verification and waiting for seller to complete
         if (isBuyer) {
-            require(
-                transfer.verifiedAt == 0,
-                "Cannot cancel after proof verification"
-            );
-            canCancel = true;
+            // State 1: Waiting for seller to provide proof
+            if (
+                transfer.proofProvidedAt == 0 &&
+                block.timestamp - transfer.initiatedAt >
+                clues[transfer.tokenId].timeout
+            ) {
+                canCancel = true;
+            }
+            // State 2: Seller has provided proof (buyer can cancel anytime)
+            else if (transfer.proofProvidedAt > 0 && !transfer.proofVerified) {
+                canCancel = true;
+            }
+            // State 3: Proof verified, waiting for seller to complete
+            else if (
+                transfer.verifiedAt > 0 &&
+                block.timestamp - transfer.verifiedAt >
+                clues[transfer.tokenId].timeout
+            ) {
+                canCancel = true;
+            }
         }
 
         // Seller can cancel if:
-        // 1. No proof provided and timeout elapsed, or
-        // 2. Proof provided but not verified and timeout elapsed, or
-        // 3. Proof verified but not completed and timeout elapsed
+        // Proof provided but not verified and timeout elapsed (waiting for buyer)
         if (isSeller) {
             if (
-                transfer.proofProvidedAt == 0 &&
-                block.timestamp - transfer.initiatedAt > TRANSFER_TIMEOUT
-            ) {
-                canCancel = true;
-            } else if (
                 transfer.proofProvidedAt > 0 &&
                 !transfer.proofVerified &&
-                block.timestamp - transfer.proofProvidedAt > TRANSFER_TIMEOUT
-            ) {
-                canCancel = true;
-            } else if (
-                transfer.verifiedAt > 0 &&
-                block.timestamp - transfer.verifiedAt > TRANSFER_TIMEOUT
+                block.timestamp - transfer.proofProvidedAt >
+                clues[transfer.tokenId].timeout
             ) {
                 canCancel = true;
             }
@@ -598,7 +661,7 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
         // Clear the active transfer ID
         delete activeTransferIds[transfer.tokenId];
 
-        emit TransferCancelled(transferId);
+        emit TransferCancelled(transferId, msg.sender);
 
         // Clear the transfer
         delete transfers[transferId];
@@ -632,7 +695,7 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
                 // Clear the active transfer ID
                 delete activeTransferIds[tokenId];
 
-                emit TransferCancelled(transferId);
+                emit TransferCancelled(transferId, msg.sender);
 
                 // Clear the transfer
                 delete transfers[transferId];

@@ -91,7 +91,7 @@ func TestAlteredTransfer(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -108,7 +108,8 @@ func TestAlteredTransfer(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                   // 3 minutes
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
@@ -218,6 +219,18 @@ func TestAlteredTransfer(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, transferCancelledFound, "TransferCancelled event not found")
 
+	// Verify the TransferCancelled event parameters
+	cancelEvents, err := listener.GetEventsByName(cancelReceipt, "TransferCancelled")
+	require.NoError(t, err)
+	require.Len(t, cancelEvents, 1, "Expected exactly one TransferCancelled event")
+
+	cancelEventData := cancelEvents[0].(map[string]interface{})
+	emittedTransferId := cancelEventData["transferId"].([32]byte)
+	emittedCancelledBy := cancelEventData["cancelledBy"].(common.Address)
+
+	require.Equal(t, transferId, emittedTransferId, "TransferCancelled event should contain correct transferId")
+	require.Equal(t, buyerAddr, emittedCancelledBy, "TransferCancelled event should contain buyer address as cancelledBy")
+
 	t.Log("✅ Buyer successfully cancelled the fraudulent transfer and received refund")
 }
 
@@ -285,7 +298,7 @@ func TestSuccessfulTransferWithCorrectContent(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -302,7 +315,8 @@ func TestSuccessfulTransferWithCorrectContent(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                   // 3 minutes
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
@@ -506,7 +520,7 @@ func TestInvalidProofVerification(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -514,11 +528,12 @@ func TestInvalidProofVerification(t *testing.T) {
 	tokenId, err := getLastMintedTokenID(contract)
 	require.NoError(t, err)
 
-	// Set sale price
+	// Set sale price with short timeout for testing
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(2)                     // 2 seconds for testing
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
@@ -564,8 +579,12 @@ func TestInvalidProofVerification(t *testing.T) {
 
 	t.Log("✅ Contract correctly rejected proof with corrupted structure")
 
-	// The transfer should still be in ProofPending state since the invalid proof was rejected
-	// We can verify the buyer can cancel since no valid proof was provided
+	// The transfer should still be in State 1 since the invalid proof was rejected
+	// Buyer must wait for timeout to elapse before cancelling (State 1: waiting for seller)
+
+	// Wait for timeout to elapse
+	t.Log("Waiting for timeout to elapse before buyer can cancel...")
+	time.Sleep(3 * time.Second) // Wait longer than the 2 second timeout
 
 	// Cancel the transfer
 	buyerAuth, err = util.NewTransactOpts(client, buyer)
@@ -580,6 +599,18 @@ func TestInvalidProofVerification(t *testing.T) {
 	transferCancelledFound, err := listener.CheckEvent(cancelReceipt, "TransferCancelled")
 	require.NoError(t, err)
 	require.True(t, transferCancelledFound, "TransferCancelled event not found")
+
+	// Verify the TransferCancelled event parameters
+	cancelEvents, err := listener.GetEventsByName(cancelReceipt, "TransferCancelled")
+	require.NoError(t, err)
+	require.Len(t, cancelEvents, 1, "Expected exactly one TransferCancelled event")
+
+	cancelEventData := cancelEvents[0].(map[string]interface{})
+	emittedTransferId := cancelEventData["transferId"].([32]byte)
+	emittedCancelledBy := cancelEventData["cancelledBy"].(common.Address)
+
+	require.Equal(t, transferId, emittedTransferId, "TransferCancelled event should contain correct transferId")
+	require.Equal(t, buyerAddr, emittedCancelledBy, "TransferCancelled event should contain buyer address as cancelledBy")
 }
 
 func TestInvalidProofContentAltered(t *testing.T) {
@@ -644,7 +675,7 @@ func TestInvalidProofContentAltered(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -656,7 +687,8 @@ func TestInvalidProofContentAltered(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                   // 3 minutes
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
@@ -738,6 +770,18 @@ func TestInvalidProofContentAltered(t *testing.T) {
 	transferCancelledFound, err := listener.CheckEvent(cancelReceipt, "TransferCancelled")
 	require.NoError(t, err)
 	require.True(t, transferCancelledFound, "TransferCancelled event not found")
+
+	// Verify the TransferCancelled event parameters
+	cancelEvents, err := listener.GetEventsByName(cancelReceipt, "TransferCancelled")
+	require.NoError(t, err)
+	require.Len(t, cancelEvents, 1, "Expected exactly one TransferCancelled event")
+
+	cancelEventData := cancelEvents[0].(map[string]interface{})
+	emittedTransferId := cancelEventData["transferId"].([32]byte)
+	emittedCancelledBy := cancelEventData["cancelledBy"].(common.Address)
+
+	require.Equal(t, transferId, emittedTransferId, "TransferCancelled event should contain correct transferId")
+	require.Equal(t, buyerAddr, emittedCancelledBy, "TransferCancelled event should contain buyer address as cancelledBy")
 }
 
 // TestCompletingTransferWithoutVerification tests completing a transfer without verification.
@@ -796,7 +840,7 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	// Marshal to bytes for on-chain storage
 	encryptedClueContent := encryptedCipher.Marshal()
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -808,7 +852,8 @@ func TestCompletingTransferWithoutVerification(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                   // 3 minutes
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
@@ -928,7 +973,7 @@ func TestCancelTransfer(t *testing.T) {
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -936,11 +981,12 @@ func TestCancelTransfer(t *testing.T) {
 	tokenId, err := getLastMintedTokenID(contract)
 	require.NoError(t, err)
 
-	// Set sale price
+	// Set sale price with short timeout for testing
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(2)                     // 2 seconds for testing
+	salePriceTx, err := contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	salePriceReceipt, err := util.WaitForTransaction(client, salePriceTx)
 	require.NoError(t, err)
@@ -958,6 +1004,10 @@ func TestCancelTransfer(t *testing.T) {
 	transferId, err := contract.GenerateTransferId(nil, buyerAddr, tokenId)
 	require.NoError(t, err)
 
+	// Wait for timeout to elapse (State 1: waiting for seller to provide proof)
+	t.Log("Waiting for timeout to elapse before buyer can cancel...")
+	time.Sleep(3 * time.Second) // Wait longer than the 2 second timeout
+
 	// Cancel the transfer
 	buyerAuth, err = util.NewTransactOpts(client, buyer)
 	require.NoError(t, err)
@@ -971,6 +1021,18 @@ func TestCancelTransfer(t *testing.T) {
 	transferCancelledFound, err := listener.CheckEvent(cancelReceipt, "TransferCancelled")
 	require.NoError(t, err)
 	require.True(t, transferCancelledFound, "TransferCancelled event not found")
+
+	// Verify the TransferCancelled event parameters
+	cancelEvents, err := listener.GetEventsByName(cancelReceipt, "TransferCancelled")
+	require.NoError(t, err)
+	require.Len(t, cancelEvents, 1, "Expected exactly one TransferCancelled event")
+
+	cancelEventData := cancelEvents[0].(map[string]interface{})
+	emittedTransferId := cancelEventData["transferId"].([32]byte)
+	emittedCancelledBy := cancelEventData["cancelledBy"].(common.Address)
+
+	require.Equal(t, transferId, emittedTransferId, "TransferCancelled event should contain correct transferId")
+	require.Equal(t, buyerAddr, emittedCancelledBy, "TransferCancelled event should contain buyer address as cancelledBy")
 
 	// Verify buyer received refund
 	transferData, err := contract.Transfers(nil, transferId)
@@ -1045,7 +1107,7 @@ func TestCorruptedRValueRejected(t *testing.T) {
 
 	// Mint clue
 	minterAuth, err = util.NewTransactOpts(client, minter)
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)
@@ -1056,7 +1118,8 @@ func TestCorruptedRValueRejected(t *testing.T) {
 	// Set sale price
 	minterAuth, err = util.NewTransactOpts(client, minter)
 	salePrice := big.NewInt(1000000000000000000) // 1 ETH
-	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice)
+	timeout := big.NewInt(180)                   // 3 minutes
+	tx, err = contract.SetSalePrice(minterAuth, tokenId, salePrice, timeout)
 	require.NoError(t, err)
 	_, err = util.WaitForTransaction(client, tx)
 	require.NoError(t, err)

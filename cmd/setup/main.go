@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 
@@ -98,7 +98,7 @@ func main() {
 	// Sample data for the clue
 	clueContent := []byte("Welcome to Skavenge! This is your first clue.")
 	solution := "test-solution"
-	solutionHash := sha256.Sum256([]byte(solution))
+	solutionHash := crypto.Keccak256Hash([]byte(solution))
 
 	// Generate random r value for ElGamal encryption
 	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
@@ -125,7 +125,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	tx, err := contract.MintClue(auth, encryptedClueContent, solutionHash, mintR)
+	auth.Value = big.NewInt(1000000000000000000)
+	tx, err := contract.MintClue(auth, encryptedClueContent, solutionHash, mintR, 1, common.Address{})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error minting token: %v\n", err)
 		os.Exit(1)
