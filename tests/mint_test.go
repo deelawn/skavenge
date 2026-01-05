@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
@@ -74,7 +75,7 @@ func TestSuccessfulMint(t *testing.T) {
 
 	// Mint a new clue with the encrypted content, but to the minter address
 	pointValue := uint8(3) // Test with point value 3
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, pointValue)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, pointValue, common.Address{})
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -181,7 +182,7 @@ func TestMintWithEmptySolutionHash(t *testing.T) {
 
 	// Try to mint with empty solution hash
 	pointValue := uint8(1) // Test with point value 1
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, emptySolutionHash, mintR, pointValue)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, emptySolutionHash, mintR, pointValue, common.Address{})
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -260,7 +261,7 @@ func TestMintMultipleClues(t *testing.T) {
 	firstEncryptedClueContent := firstEncryptedCipher.Marshal()
 
 	firstPointValue := uint8(2) // Test with point value 2
-	tx1, err := contract.MintClue(minterAuth, firstEncryptedClueContent, firstSolutionHash, firstMintR, firstPointValue)
+	tx1, err := contract.MintClue(minterAuth, firstEncryptedClueContent, firstSolutionHash, firstMintR, firstPointValue, common.Address{})
 	require.NoError(t, err)
 	receipt1, err := util.WaitForTransaction(client, tx1)
 	require.NoError(t, err)
@@ -287,7 +288,7 @@ func TestMintMultipleClues(t *testing.T) {
 	require.NoError(t, err)
 
 	secondPointValue := uint8(5) // Test with point value 5
-	tx2, err := contract.MintClue(minterAuth, secondEncryptedClueContent, secondSolutionHash, secondMintR, secondPointValue)
+	tx2, err := contract.MintClue(minterAuth, secondEncryptedClueContent, secondSolutionHash, secondMintR, secondPointValue, common.Address{})
 	require.NoError(t, err)
 	receipt2, err := util.WaitForTransaction(client, tx2)
 	require.NoError(t, err)
@@ -383,14 +384,14 @@ func TestUpdateAuthorizedMinter(t *testing.T) {
 	require.NoError(t, err)
 	deployerAuth.GasLimit = 300000 // Higher gas limit for failing transaction
 
-	_, err = contract.MintClue(deployerAuth, []byte{1, 2, 3}, [32]byte{}, big.NewInt(1), uint8(1))
+	_, err = contract.MintClue(deployerAuth, []byte{1, 2, 3}, [32]byte{}, big.NewInt(1), uint8(1), common.Address{})
 	require.Error(t, err, "Non-authorized account should not be able to mint")
 
 	// Mint a clue with the new authorized minter
 	minterAuth, err := util.NewTransactOpts(client, minter)
 	require.NoError(t, err)
 
-	mintTx, err := contract.MintClue(minterAuth, []byte{1, 2, 3}, [32]byte{}, big.NewInt(1), uint8(4))
+	mintTx, err := contract.MintClue(minterAuth, []byte{1, 2, 3}, [32]byte{}, big.NewInt(1), uint8(4), common.Address{})
 	require.NoError(t, err)
 
 	_, err = util.WaitForTransaction(client, mintTx)

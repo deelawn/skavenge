@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
@@ -72,7 +73,7 @@ func TestSuccessfulSolve(t *testing.T) {
 	deployerAuth, err = util.NewTransactOpts(client, deployer)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3))
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(3), common.Address{})
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -206,7 +207,7 @@ func TestFailedSolveAttempt(t *testing.T) {
 	deployerAuth, err = util.NewTransactOpts(client, deployer)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(2))
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(2), common.Address{})
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -320,7 +321,7 @@ func TestSetSalePriceOnSolvedClue(t *testing.T) {
 	deployerAuth, err = util.NewTransactOpts(client, deployer)
 	require.NoError(t, err)
 
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(4))
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(4), common.Address{})
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -413,7 +414,7 @@ func TestRemoveSalePrice(t *testing.T) {
 	encryptedClueContent := encryptedCipher.Marshal()
 
 	// Mint the clue
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(5))
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, uint8(5), common.Address{})
 	require.NoError(t, err)
 	receipt, err := util.WaitForTransaction(client, tx)
 	require.NoError(t, err)

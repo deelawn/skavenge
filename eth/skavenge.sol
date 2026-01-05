@@ -89,7 +89,7 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
     error InvalidPointValue();
 
     // Events
-    event ClueMinted(uint256 indexed tokenId, address minter);
+    event ClueMinted(uint256 indexed tokenId, address indexed minter, address indexed recipient);
     event ClueSolved(uint256 indexed tokenId, string solution);
     event ClueAttemptFailed(uint256 indexed tokenId, string attemptedSolution);
     event SalePriceSet(uint256 indexed tokenId, uint256 price);
@@ -141,16 +141,23 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
      * @param solutionHash Hash of the solution
      * @param rValue ElGamal encryption r value
      * @param pointValue Point value of the clue (1-5)
+     * @param recipient Address to mint the clue to
      * @notice Can optionally send ETH to set a solve reward for the clue
      */
     function mintClue(
         bytes calldata encryptedContents,
         bytes32 solutionHash,
         uint256 rValue,
-        uint8 pointValue
+        uint8 pointValue,
+        address recipient
     ) external payable returns (uint256 tokenId) {
         if (msg.sender != authorizedMinter) {
             revert UnauthorizedMinter();
+        }
+
+        // If no recipient specified, mint to caller
+        if (recipient == address(0)) {
+            recipient = msg.sender;
         }
 
         // Validate point value is between 1 and 5 (inclusive)
@@ -171,9 +178,9 @@ contract Skavenge is ERC721Enumerable, ReentrancyGuard {
             solveReward: msg.value
         });
 
-        _mint(msg.sender, tokenId);
+        _mint(recipient, tokenId);
 
-        emit ClueMinted(tokenId, msg.sender);
+        emit ClueMinted(tokenId, msg.sender, recipient);
 
         return tokenId;
     }

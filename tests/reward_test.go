@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
@@ -74,7 +75,7 @@ func TestMintClueWithReward(t *testing.T) {
 	minterAuth.Value = rewardValue
 
 	pointValue := uint8(3)
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, pointValue)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, pointValue, common.Address{})
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -149,7 +150,7 @@ func TestMintClueWithoutReward(t *testing.T) {
 	require.NoError(t, err)
 
 	pointValue := uint8(2)
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, pointValue)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, pointValue, common.Address{})
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -227,7 +228,7 @@ func TestSolveClueWithReward(t *testing.T) {
 	minterAuth.Value = rewardValue
 
 	pointValue := uint8(4)
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, pointValue)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, pointValue, common.Address{})
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -337,7 +338,7 @@ func TestSolveClueWithoutReward(t *testing.T) {
 	require.NoError(t, err)
 
 	pointValue := uint8(1)
-	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, pointValue)
+	tx, err = contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, pointValue, common.Address{})
 	require.NoError(t, err)
 
 	// Wait for the transaction to be mined
@@ -482,7 +483,7 @@ func TestMultipleCluesWithDifferentRewards(t *testing.T) {
 			require.NoError(t, err)
 			minterAuth.Value = tc.rewardValue
 
-			tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, tc.pointValue)
+			tx, err := contract.MintClue(minterAuth, encryptedClueContent, solutionHash, mintR, tc.pointValue, common.Address{})
 			require.NoError(t, err)
 
 			// Wait for the transaction to be mined
