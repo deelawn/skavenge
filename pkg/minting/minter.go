@@ -121,6 +121,7 @@ func (m *Minter) MintClue(ctx context.Context, clueData *ClueData, options *Mint
 		recipientPubKey = &m.skavengePrivKey.PublicKey
 
 		// Generate r value
+		var err error
 		encryptionR, err = rand.Int(rand.Reader, m.proofSystem.Curve.Params().N)
 		if err != nil {
 			result.Error = fmt.Errorf("failed to generate r value: %w", err)
