@@ -282,7 +282,7 @@ func (m *Minter) createTransactOpts(ctx context.Context) (*bind.TransactOpts, er
 	auth.Nonce = big.NewInt(int64(nonce))
 
 	// Set gas limit
-	auth.GasLimit = uint64(300000)
+	auth.GasLimit = uint64(500000)
 
 	// Get gas price
 	gasPrice, err := m.client.SuggestGasPrice(ctx)
