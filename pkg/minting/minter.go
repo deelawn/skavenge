@@ -51,11 +51,14 @@ func NewMinter(config *Config) (*Minter, error) {
 		return nil, fmt.Errorf("failed to load minter private key: %w", err)
 	}
 
-	// Load Skavenge private key for encryption
-	skavengePrivKey, err := crypto.HexToECDSA(strings.TrimPrefix(config.SkavengePrivateKey, "0x"))
-	if err != nil {
-		client.Close()
-		return nil, fmt.Errorf("failed to load skavenge private key: %w", err)
+	// Load Skavenge private key for encryption (optional - only needed when minting to self)
+	var skavengePrivKey *ecdsa.PrivateKey
+	if config.SkavengePrivateKey != "" {
+		skavengePrivKey, err = crypto.HexToECDSA(strings.TrimPrefix(config.SkavengePrivateKey, "0x"))
+		if err != nil {
+			client.Close()
+			return nil, fmt.Errorf("failed to load skavenge private key: %w", err)
+		}
 	}
 
 	// Create proof system
@@ -111,10 +114,13 @@ func (m *Minter) MintClue(ctx context.Context, clueData *ClueData, options *Mint
 		}
 	} else {
 		// Minting to self - use our own public key
+		if m.skavengePrivKey == nil {
+			result.Error = fmt.Errorf("skavenge private key is required when minting to self")
+			return result, result.Error
+		}
 		recipientPubKey = &m.skavengePrivKey.PublicKey
 
 		// Generate r value
-		var err error
 		encryptionR, err = rand.Int(rand.Reader, m.proofSystem.Curve.Params().N)
 		if err != nil {
 			result.Error = fmt.Errorf("failed to generate r value: %w", err)

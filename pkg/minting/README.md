@@ -83,7 +83,7 @@ type Config struct {
     RPCURL             string // Blockchain RPC URL
     ContractAddress    string // Skavenge contract address
     MinterPrivateKey   string // Ethereum private key (authorized minter)
-    SkavengePrivateKey string // Skavenge private key for encryption
+    SkavengePrivateKey string // Skavenge private key for encryption (optional - only needed when minting to self)
     GatewayURL         string // URL of the linked accounts gateway
 }
 ```
