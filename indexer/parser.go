@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -23,139 +24,7 @@ type EventParser struct {
 func NewEventParser() (*EventParser, error) {
 	// Define the ABI for the Skavenge contract events
 	// This is a simplified ABI containing only the events we care about
-	abiJSON := `[
-		{
-			"anonymous": false,
-			"inputs": [
-				{"indexed": true, "name": "tokenId", "type": "uint256"},
-				{"indexed": false, "name": "minter", "type": "address"}
-			],
-			"name": "ClueMinted",
-			"type": "event"
-		},
-		{
-			"anonymous": false,
-			"inputs": [
-				{"indexed": true, "name": "tokenId", "type": "uint256"},
-				{"indexed": false, "name": "remainingAttempts", "type": "uint256"}
-			],
-			"name": "ClueAttempted",
-			"type": "event"
-		},
-		{
-			"anonymous": false,
-			"inputs": [
-				{"indexed": true, "name": "tokenId", "type": "uint256"},
-				{"indexed": false, "name": "solution", "type": "string"}
-			],
-			"name": "ClueSolved",
-			"type": "event"
-		},
-		{
-			"anonymous": false,
-			"inputs": [
-				{"indexed": true, "name": "tokenId", "type": "uint256"},
-				{"indexed": false, "name": "price", "type": "uint256"}
-			],
-			"name": "SalePriceSet",
-			"type": "event"
-		},
-		{
-			"anonymous": false,
-			"inputs": [
-				{"indexed": true, "name": "tokenId", "type": "uint256"}
-			],
-			"name": "SalePriceRemoved",
-			"type": "event"
-		},
-		{
-			"anonymous": false,
-			"inputs": [
-				{"indexed": true, "name": "transferId", "type": "bytes32"},
-				{"indexed": true, "name": "buyer", "type": "address"},
-				{"indexed": true, "name": "tokenId", "type": "uint256"}
-			],
-			"name": "TransferInitiated",
-			"type": "event"
-		},
-		{
-			"anonymous": false,
-			"inputs": [
-				{"indexed": true, "name": "transferId", "type": "bytes32"},
-				{"indexed": false, "name": "proof", "type": "bytes"},
-				{"indexed": false, "name": "newClueHash", "type": "bytes32"},
-				{"indexed": false, "name": "rValueHash", "type": "bytes32"}
-			],
-			"name": "ProofProvided",
-			"type": "event"
-		},
-		{
-			"anonymous": false,
-			"inputs": [
-				{"indexed": true, "name": "transferId", "type": "bytes32"}
-			],
-			"name": "ProofVerified",
-			"type": "event"
-		},
-		{
-			"anonymous": false,
-			"inputs": [
-				{"indexed": true, "name": "transferId", "type": "bytes32"},
-				{"indexed": false, "name": "rValue", "type": "uint256"}
-			],
-			"name": "TransferCompleted",
-			"type": "event"
-		},
-		{
-			"anonymous": false,
-			"inputs": [
-				{"indexed": true, "name": "transferId", "type": "bytes32"}
-			],
-			"name": "TransferCancelled",
-			"type": "event"
-		},
-		{
-			"anonymous": false,
-			"inputs": [
-				{"indexed": true, "name": "oldMinter", "type": "address"},
-				{"indexed": true, "name": "newMinter", "type": "address"}
-			],
-			"name": "AuthorizedMinterUpdated",
-			"type": "event"
-		},
-		{
-			"anonymous": false,
-			"inputs": [
-				{"indexed": true, "name": "from", "type": "address"},
-				{"indexed": true, "name": "to", "type": "address"},
-				{"indexed": true, "name": "tokenId", "type": "uint256"}
-			],
-			"name": "Transfer",
-			"type": "event"
-		},
-		{
-			"anonymous": false,
-			"inputs": [
-				{"indexed": true, "name": "owner", "type": "address"},
-				{"indexed": true, "name": "approved", "type": "address"},
-				{"indexed": true, "name": "tokenId", "type": "uint256"}
-			],
-			"name": "Approval",
-			"type": "event"
-		},
-		{
-			"anonymous": false,
-			"inputs": [
-				{"indexed": true, "name": "owner", "type": "address"},
-				{"indexed": true, "name": "operator", "type": "address"},
-				{"indexed": false, "name": "approved", "type": "bool"}
-			],
-			"name": "ApprovalForAll",
-			"type": "event"
-		}
-	]`
-
-	contractABI, err := abi.JSON(strings.NewReader(abiJSON))
+	contractABI, err := abi.JSON(bytes.NewReader(abiJSON))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse ABI: %w", err)
 	}

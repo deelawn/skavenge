@@ -94,13 +94,10 @@ services:
       dockerfile: Dockerfile.indexer
     container_name: skavenge-indexer
     depends_on:
-      setup:
-        condition: service_completed_successfully
-      hardhat:
+      gateway:
         condition: service_healthy
     volumes:
       - ./webapp/config.json:/app/webapp-config.json:ro
-      - indexer-data:/data
     networks:
       - skavenge-network
     restart: unless-stopped
@@ -108,6 +105,3 @@ services:
 networks:
   skavenge-network:
     driver: bridge
-
-volumes:
-  indexer-data:

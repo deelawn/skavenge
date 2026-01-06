@@ -272,6 +272,8 @@ func (idx *Indexer) indexBlock(ctx context.Context, blockNumber uint64) error {
 			continue
 		}
 
+		idx.logger.Printf("Saving event: %+v\n", event)
+
 		if err := idx.storage.SaveEvent(ctx, event); err != nil {
 			return fmt.Errorf("failed to save event: %w", err)
 		}
