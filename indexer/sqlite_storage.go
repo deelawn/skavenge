@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -199,7 +200,7 @@ func (s *SQLiteStorage) GetEventByUniqueKey(ctx context.Context, clueID uint64, 
 		return nil, fmt.Errorf("failed to get event: %w", err)
 	}
 
-	event.BlockHash.SetBytes([]byte(blockHash))
+	event.BlockHash = common.HexToHash(blockHash)
 	event.Removed = intToBool(removed)
 
 	return event, nil
@@ -350,7 +351,7 @@ func (s *SQLiteStorage) queryEvents(ctx context.Context, query string, args ...i
 			return nil, fmt.Errorf("failed to scan event: %w", err)
 		}
 
-		event.BlockHash.SetBytes([]byte(blockHash))
+		event.BlockHash = common.HexToHash(blockHash)
 		event.Removed = intToBool(removed)
 
 		events = append(events, event)
@@ -409,7 +410,7 @@ func (s *SQLiteStorage) GetBlock(ctx context.Context, blockNumber uint64) (*Bloc
 		return nil, fmt.Errorf("failed to get block: %w", err)
 	}
 
-	block.Hash.SetBytes([]byte(hashStr))
+	block.Hash = common.HexToHash(hashStr)
 	block.Timestamp = timeFromUnix(timestamp)
 
 	return block, nil
@@ -423,7 +424,10 @@ func (s *SQLiteStorage) GetBlockByHash(ctx context.Context, hash [32]byte) (*Blo
 	var hashStr string
 	var timestamp int64
 
-	err := s.db.QueryRowContext(ctx, query, hash).Scan(
+	// Convert hash to hex string for query
+	hashHex := common.BytesToHash(hash[:]).Hex()
+
+	err := s.db.QueryRowContext(ctx, query, hashHex).Scan(
 		&block.Number,
 		&hashStr,
 		&timestamp,
@@ -437,7 +441,7 @@ func (s *SQLiteStorage) GetBlockByHash(ctx context.Context, hash [32]byte) (*Blo
 		return nil, fmt.Errorf("failed to get block: %w", err)
 	}
 
-	block.Hash.SetBytes([]byte(hashStr))
+	block.Hash = common.HexToHash(hashStr)
 	block.Timestamp = timeFromUnix(timestamp)
 
 	return block, nil
@@ -465,7 +469,7 @@ func (s *SQLiteStorage) GetLatestBlock(ctx context.Context) (*Block, error) {
 		return nil, fmt.Errorf("failed to get latest block: %w", err)
 	}
 
-	block.Hash.SetBytes([]byte(hashStr))
+	block.Hash = common.HexToHash(hashStr)
 	block.Timestamp = timeFromUnix(timestamp)
 
 	return block, nil
