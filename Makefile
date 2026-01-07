@@ -5,6 +5,7 @@ all: compile
 compile:
 	solc --abi --bin --base-path eth/node_modules --overwrite eth/skavenge.sol -o eth/build
 	abigen --bin eth/build/Skavenge.bin --abi eth/build/Skavenge.abi --pkg bindings --type Skavenge --out eth/bindings/bindings.go
+	cat eth/build/Skavenge.abi > indexer/abi.json
 
 compile-js:
 	solc --abi --base-path eth/node_modules --overwrite eth/skavenge.sol -o eth/build
@@ -48,29 +49,31 @@ start: start-with-setup
 
 .PHONY: start-services
 start-services:
-	docker compose up -d hardhat webapp gateway
+	docker compose up -d hardhat webapp gateway indexer
 	@echo "Services starting..."
 	@echo "Hardhat: http://localhost:8545"
 	@echo "Webapp: http://localhost:8080"
 	@echo "Gateway: http://localhost:4591"
+	@echo "Indexer: running"
 
 .PHONY: start-with-setup
 start-with-setup:
 	docker compose up -d hardhat
 	@echo "Waiting for Hardhat to be ready..."
 	@sleep 5
-	docker compose up -d webapp gateway
+	docker compose up -d webapp gateway indexer
 	@echo "Services started with contract deployment..."
 	@echo "Hardhat: http://localhost:8545"
 	@echo "Webapp: http://localhost:8080"
 	@echo "Gateway: http://localhost:4591"
+	@echo "Indexer: running"
 
 .PHONY: stop
 stop: stop-services
 
 .PHONY: stop-services
 stop-services:
-	docker compose stop hardhat webapp gateway
+	docker compose stop hardhat webapp gateway indexer
 
 .PHONY: docker-test
 docker-test:
