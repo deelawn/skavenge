@@ -97,6 +97,7 @@ func (api *APIServer) handleGetAllClues(w http.ResponseWriter, r *http.Request) 
 		})
 	}
 
+	api.logger.Printf("Retrieved all clues: count=%d", len(cluesWithOwnership))
 	api.jsonResponse(w, http.StatusOK, cluesWithOwnership)
 }
 
@@ -139,6 +140,7 @@ func (api *APIServer) handleClueByID(w http.ResponseWriter, r *http.Request) {
 		Ownership: ownership,
 	}
 
+	api.logger.Printf("Retrieved clue: clueId=%d", clueID)
 	api.jsonResponse(w, http.StatusOK, clueWithOwnership)
 }
 
@@ -176,6 +178,8 @@ func (api *APIServer) handleCreateClue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	api.logger.Printf("Saved clue: clueId=%d, pointValue=%d, solveReward=%d, force=%v",
+		clue.ClueID, clue.PointValue, clue.SolveReward, req.Force)
 	api.jsonResponse(w, http.StatusCreated, clue)
 }
 
@@ -251,6 +255,25 @@ func (api *APIServer) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Log the query parameters and result count
+	logMsg := fmt.Sprintf("Retrieved events: count=%d", len(events))
+	if clueIDStr := query.Get("clueId"); clueIDStr != "" {
+		logMsg += fmt.Sprintf(", clueId=%s", clueIDStr)
+	}
+	if eventType := query.Get("type"); eventType != "" {
+		logMsg += fmt.Sprintf(", type=%s", eventType)
+	}
+	if initiator := query.Get("initiator"); initiator != "" {
+		logMsg += fmt.Sprintf(", initiator=%s", initiator)
+	}
+	if opts.Limit > 0 {
+		logMsg += fmt.Sprintf(", limit=%d", opts.Limit)
+	}
+	if opts.Offset > 0 {
+		logMsg += fmt.Sprintf(", offset=%d", opts.Offset)
+	}
+	api.logger.Println(logMsg)
+
 	api.jsonResponse(w, http.StatusOK, events)
 }
 
@@ -286,6 +309,7 @@ func (api *APIServer) handleOwnership(w http.ResponseWriter, r *http.Request) {
 			api.errorResponse(w, http.StatusInternalServerError, "failed to retrieve ownership")
 			return
 		}
+		api.logger.Printf("Retrieved ownership: clueId=%d, owner=%s", clueID, ownership.OwnerAddress)
 		api.jsonResponse(w, http.StatusOK, ownership)
 		return
 	} else {
@@ -298,6 +322,13 @@ func (api *APIServer) handleOwnership(w http.ResponseWriter, r *http.Request) {
 		api.errorResponse(w, http.StatusInternalServerError, "failed to retrieve ownerships")
 		return
 	}
+
+	// Log the query parameters and result count
+	logMsg := fmt.Sprintf("Retrieved ownerships: count=%d", len(ownerships))
+	if owner := query.Get("owner"); owner != "" {
+		logMsg += fmt.Sprintf(", owner=%s", owner)
+	}
+	api.logger.Println(logMsg)
 
 	api.jsonResponse(w, http.StatusOK, ownerships)
 }

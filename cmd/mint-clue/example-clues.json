@@ -18,7 +18,7 @@
       "content": "Where the river meets the sea",
       "solution": "Delta",
       "pointValue": 2,
-      "recipientAddress": "0x1234567890123456789012345678901234567890"
+      "recipientAddress": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
     },
     {
       "content": "The key is in the ancient library",
@@ -27,7 +27,7 @@
       "solveReward": "5000000000000000000",
       "salePrice": "3000000000000000000",
       "timeout": 7200,
-      "recipientAddress": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+      "recipientAddress": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
     }
   ]
 }
