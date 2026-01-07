@@ -171,8 +171,10 @@ func (api *APIServer) handleCreateClue(w http.ResponseWriter, r *http.Request) {
 	if err := api.storage.SaveClue(r.Context(), clue, req.Force); err != nil {
 		if errors.Is(err, ErrAlreadyExists) {
 			api.errorResponse(w, http.StatusConflict, "clue already exists, use force=true to overwrite")
+			api.logger.Printf("Failed to save clue: %v", err)
 			return
 		}
+
 		api.logger.Printf("Failed to save clue: %v", err)
 		api.errorResponse(w, http.StatusInternalServerError, "failed to save clue")
 		return

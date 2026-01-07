@@ -12,12 +12,18 @@ import (
 	"github.com/deelawn/skavenge/indexer"
 )
 
+const defaultDbPath = ":memory:"
+
 func main() {
 	// Parse command line flags
 	configPath := flag.String("config", "config.json", "Path to configuration file")
-	dbPath := flag.String("db", "indexer.db", "Path to SQLite database file")
+	dbPath := flag.String("db", "", "Path to SQLite database file")
 	apiPort := flag.Int("api-port", 4040, "Port for API server")
 	flag.Parse()
+
+	if *dbPath == "" {
+		*dbPath = defaultDbPath
+	}
 
 	// Load configuration
 	config, err := indexer.LoadConfig(*configPath)
