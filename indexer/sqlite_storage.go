@@ -62,12 +62,22 @@ func (s *SQLiteStorage) initialize() error {
 		event_count INTEGER NOT NULL DEFAULT 0
 	);
 
-	CREATE TABLE IF NOT EXISTS nft_state (
+	CREATE TABLE IF NOT EXISTS clues (
 		clue_id INTEGER PRIMARY KEY,
-		owner TEXT NOT NULL,
-		is_solved INTEGER NOT NULL DEFAULT 0,
-		sale_price TEXT,
-		for_sale INTEGER NOT NULL DEFAULT 0
+		contents TEXT NOT NULL,
+		solution_hash TEXT NOT NULL,
+		point_value INTEGER NOT NULL,
+		solve_reward INTEGER NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS clue_owners (
+		owner_address TEXT NOT NULL,
+		clue_id INTEGER NOT NULL,
+		ownership_granted_block_number INTEGER NOT NULL,
+		ownership_granted_transaction_index INTEGER NOT NULL,
+		ownership_granted_event_index INTEGER NOT NULL,
+		ownership_granted_event_type TEXT NOT NULL,
+		UNIQUE(clue_id)
 	);
 	`
 
@@ -106,16 +116,16 @@ func (s *SQLiteStorage) SaveEvent(ctx context.Context, event *Event) error {
 		return fmt.Errorf("failed to save event: %w", err)
 	}
 
-	// Update NFT state based on event type
+	// Update clue ownership based on event type
 	if event.ClueID > 0 {
-		return s.updateNFTState(ctx, event)
+		return s.updateClueOwners(ctx, event)
 	}
 
 	return nil
 }
 
-// updateNFTState updates the NFT state table based on an event
-func (s *SQLiteStorage) updateNFTState(ctx context.Context, event *Event) error {
+// updateClueOwners updates the clue_owners table based on ownership change events
+func (s *SQLiteStorage) updateClueOwners(ctx context.Context, event *Event) error {
 	switch event.EventType {
 	case string(EventTypeClueMinted), string(EventTypeTransfer):
 		// Parse metadata to get owner
@@ -124,41 +134,24 @@ func (s *SQLiteStorage) updateNFTState(ctx context.Context, event *Event) error 
 		// For now, we'll handle this in the indexer when creating events
 
 		query := `
-			INSERT INTO nft_state (clue_id, owner, is_solved, for_sale)
-			VALUES (?, ?, 0, 0)
-			ON CONFLICT(clue_id) DO UPDATE SET owner = ?
+			INSERT OR REPLACE INTO clue_owners (
+				owner_address,
+				clue_id,
+				ownership_granted_block_number,
+				ownership_granted_transaction_index,
+				ownership_granted_event_index,
+				ownership_granted_event_type
+			)
+			VALUES (?, ?, ?, ?, ?, ?)
 		`
-		_, err := s.db.ExecContext(ctx, query, event.ClueID, owner, owner)
-		return err
-
-	case string(EventTypeClueSolved):
-		query := `
-			UPDATE nft_state
-			SET is_solved = 1, for_sale = 0, sale_price = NULL
-			WHERE clue_id = ?
-		`
-		_, err := s.db.ExecContext(ctx, query, event.ClueID)
-		return err
-
-	case string(EventTypeSalePriceSet):
-		// Parse metadata to get price
-		query := `
-			INSERT INTO nft_state (clue_id, owner, is_solved, for_sale, sale_price)
-			VALUES (?, ?, 0, 1, ?)
-			ON CONFLICT(clue_id) DO UPDATE SET for_sale = 1, sale_price = ?
-		`
-		// We'll need to extract price from metadata - for now use empty string
-		price := "" // TODO: parse from metadata
-		_, err := s.db.ExecContext(ctx, query, event.ClueID, event.InitiatedBy, price, price)
-		return err
-
-	case string(EventTypeSalePriceRemoved):
-		query := `
-			UPDATE nft_state
-			SET for_sale = 0, sale_price = NULL
-			WHERE clue_id = ?
-		`
-		_, err := s.db.ExecContext(ctx, query, event.ClueID)
+		_, err := s.db.ExecContext(ctx, query,
+			owner,
+			event.ClueID,
+			event.BlockNumber,
+			event.TransactionIndex,
+			event.EventIndex,
+			event.EventType,
+		)
 		return err
 	}
 
@@ -495,33 +488,56 @@ func (s *SQLiteStorage) DeleteBlocksFrom(ctx context.Context, blockNumber uint64
 		return fmt.Errorf("failed to delete blocks: %w", err)
 	}
 
-	// Rebuild NFT state from remaining events
-	if err := s.rebuildNFTState(ctx, tx); err != nil {
-		return fmt.Errorf("failed to rebuild NFT state: %w", err)
+	// Rebuild clue ownership from remaining events
+	if err := s.rebuildClueOwners(ctx, tx); err != nil {
+		return fmt.Errorf("failed to rebuild clue owners: %w", err)
 	}
 
 	return tx.Commit()
 }
 
-// rebuildNFTState rebuilds the NFT state table from events
-func (s *SQLiteStorage) rebuildNFTState(ctx context.Context, tx *sql.Tx) error {
-	// Clear current state
-	_, err := tx.ExecContext(ctx, "DELETE FROM nft_state")
+// rebuildClueOwners rebuilds the clue_owners table from events
+func (s *SQLiteStorage) rebuildClueOwners(ctx context.Context, tx *sql.Tx) error {
+	// Clear current ownership state
+	_, err := tx.ExecContext(ctx, "DELETE FROM clue_owners")
 	if err != nil {
 		return err
 	}
 
-	// Rebuild from events (this is a simplified version)
-	// In a real implementation, you'd process events in order to rebuild accurate state
-	// For now, we'll just mark this as TODO
-	// TODO: Implement proper NFT state rebuilding from events
-
-	return nil
+	// Rebuild ownership from remaining events
+	// Find the most recent ownership event (ClueMinted or Transfer) for each clue
+	query := `
+		INSERT INTO clue_owners (
+			owner_address,
+			clue_id,
+			ownership_granted_block_number,
+			ownership_granted_transaction_index,
+			ownership_granted_event_index,
+			ownership_granted_event_type
+		)
+		SELECT
+			initiated_by,
+			clue_id,
+			block_number,
+			transaction_index,
+			event_index,
+			event_type
+		FROM events
+		WHERE event_type IN ('ClueMinted', 'Transfer')
+		AND (clue_id, block_number, transaction_index, event_index) IN (
+			SELECT clue_id, MAX(block_number), MAX(transaction_index), MAX(event_index)
+			FROM events
+			WHERE event_type IN ('ClueMinted', 'Transfer')
+			GROUP BY clue_id
+		)
+	`
+	_, err = tx.ExecContext(ctx, query)
+	return err
 }
 
-// GetNFTCurrentOwner retrieves the current owner of an NFT
+// GetNFTCurrentOwner retrieves the current owner of a clue
 func (s *SQLiteStorage) GetNFTCurrentOwner(ctx context.Context, clueID uint64) (string, error) {
-	query := "SELECT owner FROM nft_state WHERE clue_id = ?"
+	query := "SELECT owner_address FROM clue_owners WHERE clue_id = ?"
 
 	var owner string
 	err := s.db.QueryRowContext(ctx, query, clueID).Scan(&owner)
@@ -530,97 +546,32 @@ func (s *SQLiteStorage) GetNFTCurrentOwner(ctx context.Context, clueID uint64) (
 		return "", ErrNotFound
 	}
 	if err != nil {
-		return "", fmt.Errorf("failed to get NFT owner: %w", err)
+		return "", fmt.Errorf("failed to get clue owner: %w", err)
 	}
 
 	return owner, nil
 }
 
-// GetNFTsByOwner retrieves all NFTs owned by an address
+// GetNFTsByOwner retrieves all clues owned by an address
 func (s *SQLiteStorage) GetNFTsByOwner(ctx context.Context, owner string) ([]uint64, error) {
-	query := "SELECT clue_id FROM nft_state WHERE owner = ? ORDER BY clue_id"
+	query := "SELECT clue_id FROM clue_owners WHERE owner_address = ? ORDER BY clue_id"
 
 	rows, err := s.db.QueryContext(ctx, query, owner)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query NFTs: %w", err)
+		return nil, fmt.Errorf("failed to query clues: %w", err)
 	}
 	defer rows.Close()
 
-	var nfts []uint64
+	var clues []uint64
 	for rows.Next() {
 		var clueID uint64
 		if err := rows.Scan(&clueID); err != nil {
-			return nil, fmt.Errorf("failed to scan NFT: %w", err)
+			return nil, fmt.Errorf("failed to scan clue: %w", err)
 		}
-		nfts = append(nfts, clueID)
+		clues = append(clues, clueID)
 	}
 
-	return nfts, rows.Err()
-}
-
-// GetNFTsForSale retrieves NFTs currently for sale
-func (s *SQLiteStorage) GetNFTsForSale(ctx context.Context, limit, offset int) ([]*NFTSaleInfo, error) {
-	query := `
-		SELECT clue_id, owner, sale_price, is_solved
-		FROM nft_state
-		WHERE for_sale = 1
-		ORDER BY clue_id
-		LIMIT ? OFFSET ?
-	`
-
-	rows, err := s.db.QueryContext(ctx, query, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query NFTs for sale: %w", err)
-	}
-	defer rows.Close()
-
-	var nfts []*NFTSaleInfo
-	for rows.Next() {
-		info := &NFTSaleInfo{}
-		var isSolved int
-		var price sql.NullString
-
-		err := rows.Scan(&info.ClueID, &info.Owner, &price, &isSolved)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan NFT: %w", err)
-		}
-
-		if price.Valid {
-			info.Price = price.String
-		}
-		info.IsSolved = intToBool(isSolved)
-
-		nfts = append(nfts, info)
-	}
-
-	return nfts, rows.Err()
-}
-
-// GetSolvedNFTs retrieves NFTs that have been solved
-func (s *SQLiteStorage) GetSolvedNFTs(ctx context.Context, limit, offset int) ([]uint64, error) {
-	query := `
-		SELECT clue_id FROM nft_state
-		WHERE is_solved = 1
-		ORDER BY clue_id
-		LIMIT ? OFFSET ?
-	`
-
-	rows, err := s.db.QueryContext(ctx, query, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query solved NFTs: %w", err)
-	}
-	defer rows.Close()
-
-	var nfts []uint64
-	for rows.Next() {
-		var clueID uint64
-		if err := rows.Scan(&clueID); err != nil {
-			return nil, fmt.Errorf("failed to scan NFT: %w", err)
-		}
-		nfts = append(nfts, clueID)
-	}
-
-	return nfts, rows.Err()
+	return clues, rows.Err()
 }
 
 // GetTotalEvents returns the total number of events
@@ -636,14 +587,14 @@ func (s *SQLiteStorage) GetTotalEvents(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
-// GetTotalNFTs returns the total number of NFTs
+// GetTotalNFTs returns the total number of clues
 func (s *SQLiteStorage) GetTotalNFTs(ctx context.Context) (int64, error) {
-	query := "SELECT COUNT(*) FROM nft_state"
+	query := "SELECT COUNT(*) FROM clues"
 
 	var count int64
 	err := s.db.QueryRowContext(ctx, query).Scan(&count)
 	if err != nil {
-		return 0, fmt.Errorf("failed to count NFTs: %w", err)
+		return 0, fmt.Errorf("failed to count clues: %w", err)
 	}
 
 	return count, nil

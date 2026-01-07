@@ -60,11 +60,9 @@ type Storage interface {
 	GetLatestBlock(ctx context.Context) (*Block, error)
 	DeleteBlocksFrom(ctx context.Context, blockNumber uint64) error
 
-	// NFT state queries (aggregated from events)
+	// Clue ownership queries
 	GetNFTCurrentOwner(ctx context.Context, clueID uint64) (string, error)
 	GetNFTsByOwner(ctx context.Context, owner string) ([]uint64, error)
-	GetNFTsForSale(ctx context.Context, limit, offset int) ([]*NFTSaleInfo, error)
-	GetSolvedNFTs(ctx context.Context, limit, offset int) ([]uint64, error)
 
 	// Stats
 	GetTotalEvents(ctx context.Context) (int64, error)
@@ -72,12 +70,4 @@ type Storage interface {
 
 	// Close closes the storage and releases resources
 	Close() error
-}
-
-// NFTSaleInfo contains information about an NFT for sale
-type NFTSaleInfo struct {
-	ClueID   uint64 `json:"clueId"`
-	Owner    string `json:"owner"`
-	Price    string `json:"price"` // Price in wei as string
-	IsSolved bool   `json:"isSolved"`
 }
