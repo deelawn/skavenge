@@ -27,6 +27,7 @@ type Minter struct {
 	skavengePubKey   *ecdsa.PublicKey
 	proofSystem      *zkproof.ProofSystem
 	gatewayClient    *GatewayClient
+	indexerClient    *IndexerClient
 }
 
 // NewMinter creates a new Minter instance
@@ -68,6 +69,9 @@ func NewMinter(config *Config) (*Minter, error) {
 	// Create gateway client
 	gatewayClient := NewGatewayClient(config.GatewayURL)
 
+	// Create indexer client
+	indexerClient := NewIndexerClient(config.IndexerURL)
+
 	return &Minter{
 		config:           config,
 		client:           client,
@@ -76,6 +80,7 @@ func NewMinter(config *Config) (*Minter, error) {
 		skavengePubKey:   skavengePubKey,
 		proofSystem:      ps,
 		gatewayClient:    gatewayClient,
+		indexerClient:    indexerClient,
 	}, nil
 }
 
@@ -193,6 +198,16 @@ func (m *Minter) MintClue(ctx context.Context, clueData *ClueData, options *Mint
 
 	// CurrentTokenId is the next token ID to be minted, so subtract 1
 	result.TokenID = new(big.Int).Sub(tokenID, big.NewInt(1))
+
+	// Send clue data to indexer API
+	if m.indexerClient != nil && m.config.IndexerURL != "" {
+		if err := m.indexerClient.SaveClue(clueData, result.TokenID.Uint64()); err != nil {
+			// Log the error but don't fail the minting operation
+			// The clue was successfully minted on-chain, indexer failure shouldn't block that
+			result.Error = fmt.Errorf("minted successfully but failed to save to indexer: %w", err)
+			return result, result.Error
+		}
+	}
 
 	// If sale price is set and this is a self-mint, list the clue for sale
 	if recipientInfo == nil && options != nil && options.SalePrice != nil && options.SalePrice.Cmp(big.NewInt(0)) > 0 {

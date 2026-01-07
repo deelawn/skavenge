@@ -49,6 +49,9 @@ type Config struct {
 
 	// Gateway service
 	GatewayURL string // URL of the linked accounts gateway
+
+	// Indexer service
+	IndexerURL string // URL of the indexer API for storing clue data
 }
 
 // RecipientInfo contains the recipient's information for encrypted minting

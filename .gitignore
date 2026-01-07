@@ -20,3 +20,4 @@ test-key.txt
 webapp/config.json
 indexer/config.json
 mint
+mint.sh
