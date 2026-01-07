@@ -600,6 +600,212 @@ func (s *SQLiteStorage) GetTotalNFTs(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
+// GetClueOwnership retrieves ownership information for a specific clue
+func (s *SQLiteStorage) GetClueOwnership(ctx context.Context, clueID uint64) (*ClueOwnership, error) {
+	query := `
+		SELECT owner_address, clue_id, ownership_granted_block_number,
+		       ownership_granted_transaction_index, ownership_granted_event_index,
+		       ownership_granted_event_type
+		FROM clue_owners
+		WHERE clue_id = ?
+	`
+
+	ownership := &ClueOwnership{}
+	err := s.db.QueryRowContext(ctx, query, clueID).Scan(
+		&ownership.OwnerAddress,
+		&ownership.ClueID,
+		&ownership.OwnershipGrantedBlockNumber,
+		&ownership.OwnershipGrantedTransactionIndex,
+		&ownership.OwnershipGrantedEventIndex,
+		&ownership.OwnershipGrantedEventType,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get clue ownership: %w", err)
+	}
+
+	return ownership, nil
+}
+
+// GetAllClueOwnerships retrieves all clue ownership records
+func (s *SQLiteStorage) GetAllClueOwnerships(ctx context.Context) ([]*ClueOwnership, error) {
+	query := `
+		SELECT owner_address, clue_id, ownership_granted_block_number,
+		       ownership_granted_transaction_index, ownership_granted_event_index,
+		       ownership_granted_event_type
+		FROM clue_owners
+		ORDER BY clue_id
+	`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query clue ownerships: %w", err)
+	}
+	defer rows.Close()
+
+	var ownerships []*ClueOwnership
+	for rows.Next() {
+		ownership := &ClueOwnership{}
+		err := rows.Scan(
+			&ownership.OwnerAddress,
+			&ownership.ClueID,
+			&ownership.OwnershipGrantedBlockNumber,
+			&ownership.OwnershipGrantedTransactionIndex,
+			&ownership.OwnershipGrantedEventIndex,
+			&ownership.OwnershipGrantedEventType,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan clue ownership: %w", err)
+		}
+		ownerships = append(ownerships, ownership)
+	}
+
+	return ownerships, rows.Err()
+}
+
+// GetClueOwnershipsByOwner retrieves all clue ownership records for a specific owner
+func (s *SQLiteStorage) GetClueOwnershipsByOwner(ctx context.Context, owner string) ([]*ClueOwnership, error) {
+	query := `
+		SELECT owner_address, clue_id, ownership_granted_block_number,
+		       ownership_granted_transaction_index, ownership_granted_event_index,
+		       ownership_granted_event_type
+		FROM clue_owners
+		WHERE owner_address = ?
+		ORDER BY clue_id
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, owner)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query clue ownerships by owner: %w", err)
+	}
+	defer rows.Close()
+
+	var ownerships []*ClueOwnership
+	for rows.Next() {
+		ownership := &ClueOwnership{}
+		err := rows.Scan(
+			&ownership.OwnerAddress,
+			&ownership.ClueID,
+			&ownership.OwnershipGrantedBlockNumber,
+			&ownership.OwnershipGrantedTransactionIndex,
+			&ownership.OwnershipGrantedEventIndex,
+			&ownership.OwnershipGrantedEventType,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan clue ownership: %w", err)
+		}
+		ownerships = append(ownerships, ownership)
+	}
+
+	return ownerships, rows.Err()
+}
+
+// SaveClue saves a clue to the database
+func (s *SQLiteStorage) SaveClue(ctx context.Context, clue *Clue, force bool) error {
+	if force {
+		// Use INSERT OR REPLACE to overwrite existing record
+		query := `
+			INSERT OR REPLACE INTO clues (clue_id, contents, solution_hash, point_value, solve_reward)
+			VALUES (?, ?, ?, ?, ?)
+		`
+		_, err := s.db.ExecContext(ctx, query,
+			clue.ClueID,
+			clue.Contents,
+			clue.SolutionHash,
+			clue.PointValue,
+			clue.SolveReward,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to save clue: %w", err)
+		}
+		return nil
+	}
+
+	// Regular insert - will fail on uniqueness constraint violation
+	query := `
+		INSERT INTO clues (clue_id, contents, solution_hash, point_value, solve_reward)
+		VALUES (?, ?, ?, ?, ?)
+	`
+	_, err := s.db.ExecContext(ctx, query,
+		clue.ClueID,
+		clue.Contents,
+		clue.SolutionHash,
+		clue.PointValue,
+		clue.SolveReward,
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return ErrAlreadyExists
+		}
+		return fmt.Errorf("failed to save clue: %w", err)
+	}
+
+	return nil
+}
+
+// GetClue retrieves a clue by ID
+func (s *SQLiteStorage) GetClue(ctx context.Context, clueID uint64) (*Clue, error) {
+	query := `
+		SELECT clue_id, contents, solution_hash, point_value, solve_reward
+		FROM clues
+		WHERE clue_id = ?
+	`
+
+	clue := &Clue{}
+	err := s.db.QueryRowContext(ctx, query, clueID).Scan(
+		&clue.ClueID,
+		&clue.Contents,
+		&clue.SolutionHash,
+		&clue.PointValue,
+		&clue.SolveReward,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get clue: %w", err)
+	}
+
+	return clue, nil
+}
+
+// GetAllClues retrieves all clues
+func (s *SQLiteStorage) GetAllClues(ctx context.Context) ([]*Clue, error) {
+	query := `
+		SELECT clue_id, contents, solution_hash, point_value, solve_reward
+		FROM clues
+		ORDER BY clue_id
+	`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query clues: %w", err)
+	}
+	defer rows.Close()
+
+	var clues []*Clue
+	for rows.Next() {
+		clue := &Clue{}
+		err := rows.Scan(
+			&clue.ClueID,
+			&clue.Contents,
+			&clue.SolutionHash,
+			&clue.PointValue,
+			&clue.SolveReward,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan clue: %w", err)
+		}
+		clues = append(clues, clue)
+	}
+
+	return clues, rows.Err()
+}
+
 // Close closes the database connection
 func (s *SQLiteStorage) Close() error {
 	if s.db != nil {

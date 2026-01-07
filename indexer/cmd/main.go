@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/deelawn/skavenge/indexer"
 )
@@ -15,6 +16,7 @@ func main() {
 	// Parse command line flags
 	configPath := flag.String("config", "config.json", "Path to configuration file")
 	dbPath := flag.String("db", "indexer.db", "Path to SQLite database file")
+	apiPort := flag.Int("api-port", 4040, "Port for API server")
 	flag.Parse()
 
 	// Load configuration
@@ -25,6 +27,7 @@ func main() {
 
 	// Create logger
 	logger := log.New(os.Stdout, "[INDEXER] ", log.LstdFlags)
+	apiLogger := log.New(os.Stdout, "[API] ", log.LstdFlags)
 
 	// Create storage (using SQLite)
 	storage, err := indexer.NewSQLiteStorage(*dbPath)
@@ -40,6 +43,9 @@ func main() {
 	}
 	defer idx.Close()
 
+	// Create API server
+	apiServer := indexer.NewAPIServer(storage, apiLogger, *apiPort)
+
 	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -47,17 +53,36 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
+	// Start API server in a separate goroutine
 	go func() {
-		<-sigChan
-		logger.Println("Received shutdown signal")
-		cancel()
+		if err := apiServer.Start(); err != nil {
+			logger.Printf("API server error: %v", err)
+		}
 	}()
 
-	// Start indexer
-	logger.Println("Starting blockchain indexer...")
-	if err := idx.Start(ctx); err != nil && err != context.Canceled {
+	// Start indexer in a separate goroutine
+	indexerDone := make(chan error, 1)
+	go func() {
+		logger.Println("Starting blockchain indexer...")
+		indexerDone <- idx.Start(ctx)
+	}()
+
+	// Wait for shutdown signal
+	<-sigChan
+	logger.Println("Received shutdown signal")
+	cancel()
+
+	// Shutdown API server
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	if err := apiServer.Shutdown(shutdownCtx); err != nil {
+		logger.Printf("Error shutting down API server: %v", err)
+	}
+
+	// Wait for indexer to finish
+	if err := <-indexerDone; err != nil && err != context.Canceled {
 		log.Fatalf("Indexer error: %v", err)
 	}
 
-	logger.Println("Indexer shutdown complete")
+	logger.Println("Shutdown complete")
 }
