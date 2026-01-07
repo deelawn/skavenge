@@ -172,3 +172,28 @@ type Block struct {
 	Timestamp time.Time   `json:"timestamp"`
 	EventCount int        `json:"eventCount"`
 }
+
+// Clue represents NFT clue metadata
+type Clue struct {
+	ClueID       uint64 `json:"clueId"`
+	Contents     string `json:"contents"`
+	SolutionHash string `json:"solutionHash"`
+	PointValue   uint64 `json:"pointValue"`
+	SolveReward  uint64 `json:"solveReward"`
+}
+
+// ClueOwnership represents ownership information for a clue
+type ClueOwnership struct {
+	OwnerAddress                     string `json:"ownerAddress"`
+	ClueID                          uint64 `json:"clueId"`
+	OwnershipGrantedBlockNumber      uint64 `json:"ownershipGrantedBlockNumber"`
+	OwnershipGrantedTransactionIndex uint   `json:"ownershipGrantedTransactionIndex"`
+	OwnershipGrantedEventIndex       uint   `json:"ownershipGrantedEventIndex"`
+	OwnershipGrantedEventType        string `json:"ownershipGrantedEventType"`
+}
+
+// ClueWithOwner represents a clue with its ownership information
+type ClueWithOwner struct {
+	Clue
+	Ownership *ClueOwnership `json:"ownership,omitempty"`
+}

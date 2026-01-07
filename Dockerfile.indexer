@@ -37,5 +37,8 @@ RUN mkdir -p /data
 # Set environment variables
 ENV DB_PATH=/data/indexer.db
 
+# Expose API port
+EXPOSE 4040
+
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["/app/indexer", "-config", "/app/config.json", "-db", "/data/indexer.db"]

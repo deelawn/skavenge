@@ -63,6 +63,14 @@ type Storage interface {
 	// Clue ownership queries
 	GetNFTCurrentOwner(ctx context.Context, clueID uint64) (string, error)
 	GetNFTsByOwner(ctx context.Context, owner string) ([]uint64, error)
+	GetClueOwnership(ctx context.Context, clueID uint64) (*ClueOwnership, error)
+	GetAllClueOwnerships(ctx context.Context) ([]*ClueOwnership, error)
+	GetClueOwnershipsByOwner(ctx context.Context, owner string) ([]*ClueOwnership, error)
+
+	// Clue operations
+	SaveClue(ctx context.Context, clue *Clue, force bool) error
+	GetClue(ctx context.Context, clueID uint64) (*Clue, error)
+	GetAllClues(ctx context.Context) ([]*Clue, error)
 
 	// Stats
 	GetTotalEvents(ctx context.Context) (int64, error)
