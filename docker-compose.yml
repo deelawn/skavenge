@@ -96,6 +96,8 @@ services:
     depends_on:
       gateway:
         condition: service_healthy
+    ports:
+      - "4040:4040"
     volumes:
       - ./webapp/config.json:/app/webapp-config.json:ro
     networks:
