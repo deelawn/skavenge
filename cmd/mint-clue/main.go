@@ -34,6 +34,7 @@ func main() {
 	rpcURL := flag.String("rpc", "http://localhost:8545", "Blockchain RPC URL")
 	contractAddr := flag.String("contract", "", "Skavenge contract address")
 	gatewayURL := flag.String("gateway", "http://localhost:4591", "Gateway service URL")
+	indexerURL := flag.String("indexer", "http://localhost:4040", "Indexer API URL")
 
 	// Single clue flags
 	content := flag.String("content", "", "Clue content (plaintext)")
@@ -68,19 +69,19 @@ func main() {
 	// Determine mode: single clue vs batch
 	if *inputFile != "" {
 		// Batch mode
-		if err := mintFromFile(*inputFile, *rpcURL, *contractAddr, minterKey, skavengePubKey, *gatewayURL); err != nil {
+		if err := mintFromFile(*inputFile, *rpcURL, *contractAddr, minterKey, skavengePubKey, *gatewayURL, *indexerURL); err != nil {
 			fmt.Fprintf(os.Stderr, "Error minting from file: %v\n", err)
 			os.Exit(1)
 		}
 	} else if *content != "" && *solution != "" {
 		// Single clue mode
-		if err := mintSingleClue(*content, *solution, uint8(*pointValue), *solveReward, *salePrice, *timeout, *recipientAddr, *rpcURL, *contractAddr, minterKey, skavengePubKey, *gatewayURL); err != nil {
+		if err := mintSingleClue(*content, *solution, uint8(*pointValue), *solveReward, *salePrice, *timeout, *recipientAddr, *rpcURL, *contractAddr, minterKey, skavengePubKey, *gatewayURL, *indexerURL); err != nil {
 			fmt.Fprintf(os.Stderr, "Error minting clue: %v\n", err)
 			os.Exit(1)
 		}
 	} else if *configFile != "" {
 		// Config file mode (legacy support)
-		if err := mintFromConfigFile(*configFile, *rpcURL, *contractAddr, minterKey, skavengePubKey, *gatewayURL); err != nil {
+		if err := mintFromConfigFile(*configFile, *rpcURL, *contractAddr, minterKey, skavengePubKey, *gatewayURL, *indexerURL); err != nil {
 			fmt.Fprintf(os.Stderr, "Error minting from config file: %v\n", err)
 			os.Exit(1)
 		}
@@ -91,7 +92,7 @@ func main() {
 	}
 }
 
-func mintSingleClue(content, solution string, pointValue uint8, solveRewardStr, salePriceStr string, timeout uint64, recipientAddr, rpcURL, contractAddr, minterKey, skavengePubKey, gatewayURL string) error {
+func mintSingleClue(content, solution string, pointValue uint8, solveRewardStr, salePriceStr string, timeout uint64, recipientAddr, rpcURL, contractAddr, minterKey, skavengePubKey, gatewayURL, indexerURL string) error {
 	// Validate point value
 	if pointValue < 1 || pointValue > 5 {
 		return fmt.Errorf("point value must be between 1 and 5")
@@ -130,6 +131,7 @@ func mintSingleClue(content, solution string, pointValue uint8, solveRewardStr, 
 		MinterPrivateKey:  minterKey,
 		SkavengePublicKey: skavengePubKey,
 		GatewayURL:        gatewayURL,
+		IndexerURL:        indexerURL,
 	}
 
 	// Create minter
@@ -194,7 +196,7 @@ func mintSingleClue(content, solution string, pointValue uint8, solveRewardStr, 
 	return nil
 }
 
-func mintFromFile(inputFile, rpcURL, contractAddr, minterKey, skavengePubKey, gatewayURL string) error {
+func mintFromFile(inputFile, rpcURL, contractAddr, minterKey, skavengePubKey, gatewayURL, indexerURL string) error {
 	// Read the input file
 	data, err := os.ReadFile(inputFile)
 	if err != nil {
@@ -231,6 +233,7 @@ func mintFromFile(inputFile, rpcURL, contractAddr, minterKey, skavengePubKey, ga
 		MinterPrivateKey:  minterKey,
 		SkavengePublicKey: skavengePubKey,
 		GatewayURL:        gatewayURL,
+		IndexerURL:        indexerURL,
 	}
 
 	// Create minter
@@ -344,7 +347,7 @@ func mintFromFile(inputFile, rpcURL, contractAddr, minterKey, skavengePubKey, ga
 	return nil
 }
 
-func mintFromConfigFile(configFile, rpcURL, contractAddr, minterKey, skavengePubKey, gatewayURL string) error {
+func mintFromConfigFile(configFile, rpcURL, contractAddr, minterKey, skavengePubKey, gatewayURL, indexerURL string) error {
 	// This is similar to mintFromFile but kept separate for backward compatibility
-	return mintFromFile(configFile, rpcURL, contractAddr, minterKey, skavengePubKey, gatewayURL)
+	return mintFromFile(configFile, rpcURL, contractAddr, minterKey, skavengePubKey, gatewayURL, indexerURL)
 }
