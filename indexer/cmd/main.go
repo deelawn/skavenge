@@ -12,7 +12,8 @@ import (
 	"github.com/deelawn/skavenge/indexer"
 )
 
-const defaultDbPath = ":memory:"
+// defaultDbPath needs to use shared memory to be accessible by the API server
+const defaultDbPath = "file::memory:?cache=shared"
 
 func main() {
 	// Parse command line flags

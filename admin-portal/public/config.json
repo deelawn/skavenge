@@ -1,0 +1,7 @@
+{
+  "indexerApiUrl": "http://localhost:4040",
+  "gatewayApiUrl": "http://localhost:4591",
+  "contractAddress": "0xB69BaDFD884FD97d900ec8028EBF5E0975725bA6",
+  "rpcUrl": "http://localhost:8545",
+  "chainId": 1337
+}
