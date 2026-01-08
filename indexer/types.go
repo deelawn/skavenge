@@ -12,7 +12,7 @@ type EventType string
 
 const (
 	EventTypeClueMinted              EventType = "ClueMinted"
-	EventTypeClueAttempted           EventType = "ClueAttempted"
+	EventTypeClueAttemptFailed       EventType = "ClueAttemptFailed"
 	EventTypeClueSolved              EventType = "ClueSolved"
 	EventTypeSalePriceSet            EventType = "SalePriceSet"
 	EventTypeSalePriceRemoved        EventType = "SalePriceRemoved"
@@ -59,13 +59,13 @@ type ClueMintedData struct {
 
 func (d ClueMintedData) EventType() EventType { return EventTypeClueMinted }
 
-// ClueAttemptedData represents data for ClueAttempted event
-type ClueAttemptedData struct {
-	TokenID            *big.Int `json:"token_id"`
-	RemainingAttempts  *big.Int `json:"remaining_attempts"`
+// ClueAttemptFailedData represents data for ClueAttemptFailed event
+type ClueAttemptFailedData struct {
+	TokenID           *big.Int `json:"token_id"`
+	AttemptedSolution string   `json:"attempted_solution"`
 }
 
-func (d ClueAttemptedData) EventType() EventType { return EventTypeClueAttempted }
+func (d ClueAttemptFailedData) EventType() EventType { return EventTypeClueAttemptFailed }
 
 // ClueSolvedData represents data for ClueSolved event
 type ClueSolvedData struct {
@@ -126,7 +126,8 @@ func (d TransferCompletedData) EventType() EventType { return EventTypeTransferC
 
 // TransferCancelledData represents data for TransferCancelled event
 type TransferCancelledData struct {
-	TransferID [32]byte `json:"transfer_id"`
+	TransferID  [32]byte       `json:"transfer_id"`
+	CancelledBy common.Address `json:"cancelled_by"`
 }
 
 func (d TransferCancelledData) EventType() EventType { return EventTypeTransferCancelled }
