@@ -198,6 +198,12 @@ func (s *Server) HandleTransfers(w http.ResponseWriter, r *http.Request) {
 
 // handlePostTransfers processes POST /transfers requests (seller stores ciphertext)
 func (s *Server) handlePostTransfers(w http.ResponseWriter, r *http.Request) {
+	// Check if contract client is available
+	if s.contractClient == nil {
+		writeErrorResponse(w, http.StatusServiceUnavailable, "contract not configured - transfers endpoint not available")
+		return
+	}
+
 	var req TransferCiphertextRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "invalid JSON payload")
@@ -281,6 +287,12 @@ func (s *Server) handlePostTransfers(w http.ResponseWriter, r *http.Request) {
 
 // handleGetTransfers processes GET /transfers requests (buyer retrieves ciphertext)
 func (s *Server) handleGetTransfers(w http.ResponseWriter, r *http.Request) {
+	// Check if contract client is available
+	if s.contractClient == nil {
+		writeErrorResponse(w, http.StatusServiceUnavailable, "contract not configured - transfers endpoint not available")
+		return
+	}
+
 	// Get the transfer ID from query parameter
 	transferID := r.URL.Query().Get("transferId")
 	if transferID == "" {
@@ -418,23 +430,27 @@ func main() {
 	// Parse command-line flags
 	port := flag.Int("port", 4591, "Port to listen on")
 	rpcURL := flag.String("rpc", "http://localhost:8545", "Blockchain RPC URL")
-	contractAddress := flag.String("contract", "", "Skavenge contract address")
+	contractAddress := flag.String("contract", "", "Skavenge contract address (optional)")
 	flag.Parse()
-
-	if *contractAddress == "" {
-		log.Fatal("Contract address is required. Use -contract flag.")
-	}
 
 	// Initialize in-memory storage
 	store := NewInMemoryStorage()
 	transferStore := NewInMemoryTransferStorage()
 
-	// Initialize contract client
-	contractClient, err := NewContractClient(*rpcURL, *contractAddress)
-	if err != nil {
-		log.Fatalf("Failed to create contract client: %v", err)
+	// Initialize contract client (optional)
+	var contractClient ContractClientInterface
+	if *contractAddress != "" {
+		client, err := NewContractClient(*rpcURL, *contractAddress)
+		if err != nil {
+			log.Fatalf("Failed to create contract client: %v", err)
+		}
+		defer client.Close()
+		contractClient = client
+		log.Printf("Using contract at %s", *contractAddress)
+	} else {
+		log.Println("Warning: No contract address provided. /transfers endpoint will not be available.")
+		contractClient = nil
 	}
-	defer contractClient.Close()
 
 	// Create server
 	server := NewServer(store, transferStore, contractClient)
@@ -448,7 +464,6 @@ func main() {
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("Starting linked accounts gateway server on %s", addr)
 	log.Printf("Connected to blockchain at %s", *rpcURL)
-	log.Printf("Using contract at %s", *contractAddress)
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}

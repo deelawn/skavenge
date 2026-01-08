@@ -39,8 +39,12 @@ services:
     depends_on:
       hardhat:
         condition: service_healthy
+      gateway:
+        condition: service_healthy
     environment:
       - HARDHAT_URL=http://hardhat:8545
+      - GATEWAY_URL=http://gateway:4591
+      - INDEXER_URL=http://indexer:4040
     volumes:
       - ./test-config.json:/app/test-config.json:ro
       - ./webapp/config.json:/app/webapp/config.json
@@ -68,16 +72,10 @@ services:
       dockerfile: Dockerfile.gateway
     container_name: skavenge-gateway
     depends_on:
-      setup:
-        condition: service_completed_successfully
       hardhat:
         condition: service_healthy
     ports:
       - "4591:4591"
-    volumes:
-      - ./webapp/config.json:/app/config.json:ro
-    environment:
-      - CONFIG_FILE=/app/config.json
     networks:
       - skavenge-network
     restart: unless-stopped

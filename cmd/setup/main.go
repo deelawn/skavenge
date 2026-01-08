@@ -1,27 +1,50 @@
 package main
 
 import (
+	"bytes"
 	"context"
-	"crypto/rand"
+	"crypto/ecdsa"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 
+	"github.com/deelawn/skavenge/pkg/minting"
 	"github.com/deelawn/skavenge/tests/util"
-	"github.com/deelawn/skavenge/zkproof"
 )
 
-// Config holds the setup configuration
-type Config struct {
-	PrivateKey         string `json:"privateKey"`
-	HardhatURL         string `json:"hardhatUrl"`
+// KeyPair represents an Ethereum/Skavenge key pair to register with the gateway
+type KeyPair struct {
+	EthereumPrivateKey string `json:"ethereumPrivateKey"`
 	SkavengePrivateKey string `json:"skavengePrivateKey"`
+}
+
+// NFTConfig combines clue data and mint options for configuration
+type NFTConfig struct {
+	Content          string `json:"content"`
+	Solution         string `json:"solution"`
+	PointValue       uint8  `json:"pointValue"`
+	SolveReward      string `json:"solveReward,omitempty"`      // Wei as string
+	SalePrice        string `json:"salePrice,omitempty"`        // Wei as string
+	Timeout          uint64 `json:"timeout,omitempty"`          // Transfer timeout in seconds
+	RecipientAddress string `json:"recipientAddress,omitempty"` // Optional recipient
+}
+
+// SetupConfig holds the complete setup configuration
+type SetupConfig struct {
+	Minting            minting.Config `json:"minting"`
+	DeployerPrivateKey string         `json:"deployerPrivateKey"`
+	KeyPairs           []KeyPair      `json:"keyPairs"`
+	NFTs               []NFTConfig    `json:"nfts"`
 }
 
 // WebappConfig holds the webapp configuration
@@ -32,6 +55,14 @@ type WebappConfig struct {
 	GatewayUrl      string `json:"gatewayUrl"`
 }
 
+// LinkRequest represents the JSON payload for POST /link
+type LinkRequest struct {
+	EthereumAddress   string `json:"ethereum_address"`
+	SkavengePublicKey string `json:"skavenge_public_key"`
+	Message           string `json:"message"`
+	Signature         string `json:"signature"`
+}
+
 func main() {
 	// Load config
 	configData, err := os.ReadFile("test-config.json")
@@ -40,18 +71,36 @@ func main() {
 		os.Exit(1)
 	}
 
-	var config Config
+	var config SetupConfig
 	if err := json.Unmarshal(configData, &config); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing test-config.json: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Use hardhat URL from config or environment
-	hardhatURL := config.HardhatURL
+	// Use RPCURL from config or environment
+	hardhatURL := config.Minting.RPCURL
 	if hardhatURL == "" {
 		hardhatURL = os.Getenv("HARDHAT_URL")
 		if hardhatURL == "" {
 			hardhatURL = "http://localhost:8545"
+		}
+	}
+
+	// Use gateway URL from config or environment
+	gatewayURL := config.Minting.GatewayURL
+	if gatewayURL == "" {
+		gatewayURL = os.Getenv("GATEWAY_URL")
+		if gatewayURL == "" {
+			gatewayURL = "http://gateway:4591"
+		}
+	}
+
+	// Use indexer URL from config or environment
+	indexerURL := config.Minting.IndexerURL
+	if indexerURL == "" {
+		indexerURL = os.Getenv("INDEXER_URL")
+		if indexerURL == "" {
+			indexerURL = "http://indexer:4040"
 		}
 	}
 
@@ -65,109 +114,25 @@ func main() {
 
 	fmt.Printf("Connected to Hardhat at %s\n", hardhatURL)
 
-	// Setup account (same account for deployer and minter)
-	auth, err := util.NewTransactOpts(client, config.PrivateKey)
+	// Setup deployer account
+	auth, err := util.NewTransactOpts(client, config.DeployerPrivateKey)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating transaction options: %v\n", err)
 		os.Exit(1)
 	}
 
-	accountAddress := auth.From
-	fmt.Printf("Using account: %s\n", accountAddress.Hex())
+	deployerAddress := auth.From
+	fmt.Printf("Using deployer account: %s\n", deployerAddress.Hex())
 
 	// Deploy contract
 	fmt.Println("Deploying Skavenge contract...")
-	contract, contractAddress, err := util.DeployContract(client, auth)
+	_, contractAddress, err := util.DeployContract(client, auth)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error deploying contract: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Printf("Contract deployed at: %s\n", contractAddress.Hex())
-
-	// Load private key for encryption
-	skavengePrivateKey, err := crypto.HexToECDSA(config.SkavengePrivateKey)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading private key: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Create ZK proof system
-	ps := zkproof.NewProofSystem()
-
-	// Sample data for the clue
-	clueContent := []byte("Welcome to Skavenge! This is your first clue.")
-	solution := "test-solution"
-	solutionHash := crypto.Keccak256Hash([]byte(solution))
-
-	// Generate random r value for ElGamal encryption
-	mintR, err := rand.Int(rand.Reader, ps.Curve.Params().N)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error generating r value: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Encrypt the clue content using ElGamal
-	encryptedCipher, err := ps.EncryptElGamal(clueContent, &skavengePrivateKey.PublicKey, mintR)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error encrypting clue content: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Marshal to bytes for on-chain storage
-	encryptedClueContent := encryptedCipher.Marshal()
-
-	// Mint a token to the same account
-	fmt.Println("Minting token to account...")
-	auth, err = util.NewTransactOpts(client, config.PrivateKey)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating transaction options for mint: %v\n", err)
-		os.Exit(1)
-	}
-
-	auth.Value = big.NewInt(1000000000000000000)
-	tx, err := contract.MintClue(auth, encryptedClueContent, solutionHash, mintR, 1, common.Address{})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error minting token: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Wait for the transaction to be mined
-	receipt, err := util.WaitForTransaction(client, tx)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error waiting for mint transaction: %v\n", err)
-		os.Exit(1)
-	}
-
-	if receipt.Status == 0 {
-		fmt.Fprintf(os.Stderr, "Mint transaction failed\n")
-		os.Exit(1)
-	}
-
-	// Get the minted token ID
-	tokenId, err := contract.GetCurrentTokenId(nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting current token ID: %v\n", err)
-		os.Exit(1)
-	}
-
-	// CurrentTokenId is the next token ID to be minted, so we need to subtract 1 to get the actual token ID
-	tokenId = new(big.Int).Sub(tokenId, big.NewInt(1))
-	fmt.Printf("Token minted successfully! Token ID: %s\n", tokenId.String())
-
-	// Verify ownership
-	owner, err := contract.OwnerOf(nil, tokenId)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting token owner: %v\n", err)
-		os.Exit(1)
-	}
-
-	if owner != accountAddress {
-		fmt.Fprintf(os.Stderr, "Error: Token owner mismatch. Expected %s, got %s\n", accountAddress.Hex(), owner.Hex())
-		os.Exit(1)
-	}
-
-	fmt.Printf("Token ownership verified: %s owns token %s\n", owner.Hex(), tokenId.String())
 
 	// Get chain ID
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
@@ -177,12 +142,6 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting chain ID: %v\n", err)
 		os.Exit(1)
-	}
-
-	// Get gateway URL from environment, default to internal Docker service name
-	gatewayURL := os.Getenv("GATEWAY_URL")
-	if gatewayURL == "" {
-		gatewayURL = "http://gateway:4591"
 	}
 
 	// Update webapp config.json
@@ -206,5 +165,188 @@ func main() {
 	}
 
 	fmt.Printf("Updated %s with contract address: %s\n", configPath, contractAddress.Hex())
-	fmt.Println("Setup completed successfully!")
+
+	// Wait a moment for gateway to reload config if needed
+	time.Sleep(2 * time.Second)
+
+	// Register key pairs with the gateway
+	fmt.Printf("\nRegistering %d key pair(s) with the gateway...\n", len(config.KeyPairs))
+	for i, keyPair := range config.KeyPairs {
+		if err := registerKeyPair(gatewayURL, keyPair); err != nil {
+			fmt.Fprintf(os.Stderr, "Error registering key pair %d: %v\n", i+1, err)
+			os.Exit(1)
+		}
+		fmt.Printf("Successfully registered key pair %d\n", i+1)
+	}
+
+	// Update minting config with deployed contract address
+	config.Minting.RPCURL = hardhatURL
+	config.Minting.ContractAddress = contractAddress.Hex()
+	config.Minting.GatewayURL = gatewayURL
+	config.Minting.IndexerURL = indexerURL
+
+	// Create minter
+	fmt.Printf("\nInitializing minter...\n")
+	minter, err := minting.NewMinter(&config.Minting)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating minter: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Minter address: %s\n", minter.GetMinterAddress().Hex())
+
+	// Mint NFTs
+	fmt.Printf("\nMinting %d NFT(s)...\n", len(config.NFTs))
+	for i, nftConfig := range config.NFTs {
+		if err := mintNFT(minter, nftConfig, i+1); err != nil {
+			fmt.Fprintf(os.Stderr, "Error minting NFT %d: %v\n", i+1, err)
+			os.Exit(1)
+		}
+	}
+
+	fmt.Println("\nSetup completed successfully!")
+}
+
+// registerKeyPair registers an Ethereum/Skavenge key pair with the gateway
+func registerKeyPair(gatewayURL string, keyPair KeyPair) error {
+	// Load Ethereum private key
+	ethPrivateKey, err := crypto.HexToECDSA(keyPair.EthereumPrivateKey)
+	if err != nil {
+		return fmt.Errorf("failed to parse ethereum private key: %w", err)
+	}
+
+	// Derive Ethereum address
+	ethAddress := crypto.PubkeyToAddress(ethPrivateKey.PublicKey)
+
+	// Load Skavenge private key
+	skavengePrivateKey, err := crypto.HexToECDSA(keyPair.SkavengePrivateKey)
+	if err != nil {
+		return fmt.Errorf("failed to parse skavenge private key: %w", err)
+	}
+
+	// Derive Skavenge public key (uncompressed format)
+	skavengePublicKeyBytes := crypto.FromECDSAPub(&skavengePrivateKey.PublicKey)
+	skavengePublicKeyHex := hex.EncodeToString(skavengePublicKeyBytes)
+
+	// Create message to sign
+	message := fmt.Sprintf("Link Ethereum address %s to Skavenge public key %s", ethAddress.Hex(), skavengePublicKeyHex)
+
+	// Sign message with Ethereum private key (EIP-191 personal_sign)
+	messageHash := crypto.Keccak256Hash([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)))
+	signature, err := crypto.Sign(messageHash.Bytes(), ethPrivateKey)
+	if err != nil {
+		return fmt.Errorf("failed to sign message: %w", err)
+	}
+
+	// Adjust v value for Ethereum signature format
+	if signature[64] < 27 {
+		signature[64] += 27
+	}
+
+	signatureHex := hex.EncodeToString(signature)
+
+	// Create request
+	linkReq := LinkRequest{
+		EthereumAddress:   ethAddress.Hex(),
+		SkavengePublicKey: skavengePublicKeyHex,
+		Message:           message,
+		Signature:         signatureHex,
+	}
+
+	reqBody, err := json.Marshal(linkReq)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Send request to gateway
+	resp, err := http.Post(gatewayURL+"/link", "application/json", bytes.NewBuffer(reqBody))
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("gateway returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
+// mintNFT mints a single NFT using the minting package
+func mintNFT(minter *minting.Minter, nftConfig NFTConfig, index int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+
+	// Convert NFTConfig to ClueData
+	clueData := minting.ClueData{
+		Content:    nftConfig.Content,
+		Solution:   nftConfig.Solution,
+		PointValue: nftConfig.PointValue,
+	}
+
+	// Parse solve reward if provided
+	if nftConfig.SolveReward != "" {
+		solveReward, ok := new(big.Int).SetString(nftConfig.SolveReward, 10)
+		if !ok {
+			return fmt.Errorf("invalid solve reward value: %s", nftConfig.SolveReward)
+		}
+		clueData.SolveReward = solveReward
+	}
+
+	// Convert NFTConfig to MintOptions
+	mintOptions := minting.MintOptions{
+		RecipientAddress: nftConfig.RecipientAddress,
+		Timeout:          nftConfig.Timeout,
+	}
+
+	// Parse sale price if provided
+	if nftConfig.SalePrice != "" {
+		salePrice, ok := new(big.Int).SetString(nftConfig.SalePrice, 10)
+		if !ok {
+			return fmt.Errorf("invalid sale price value: %s", nftConfig.SalePrice)
+		}
+		mintOptions.SalePrice = salePrice
+	}
+
+	fmt.Printf("  [%d] Minting clue: %s (point value: %d)\n", index, truncateString(nftConfig.Content, 50), nftConfig.PointValue)
+
+	// Mint the NFT
+	result, err := minter.MintClue(ctx, &clueData, &mintOptions)
+	if err != nil {
+		return fmt.Errorf("minting failed: %w", err)
+	}
+
+	if result.Error != nil {
+		return fmt.Errorf("minting error: %w", result.Error)
+	}
+
+	fmt.Printf("  [%d] ✓ Minted token ID %s (tx: %s)\n", index, result.TokenID.String(), result.TxHash)
+
+	return nil
+}
+
+// truncateString truncates a string to maxLen characters
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
+// derivePublicKeyFromPrivate derives public key from private key string
+func derivePublicKeyFromPrivate(privateKeyHex string) (*ecdsa.PublicKey, error) {
+	// Remove 0x prefix if present
+	privateKeyHex = strings.TrimPrefix(privateKeyHex, "0x")
+
+	privateKey, err := crypto.HexToECDSA(privateKeyHex)
+	if err != nil {
+		return nil, err
+	}
+
+	return &privateKey.PublicKey, nil
 }
