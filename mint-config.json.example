@@ -1,4 +1,5 @@
 {
+  "_comment": "contractAddress will be automatically set from webapp/config.json written by deploy-contract",
   "minting": {
     "rpcUrl": "http://hardhat:8545",
     "contractAddress": "",
