@@ -52,8 +52,9 @@ type EventData interface {
 
 // ClueMintedData represents data for ClueMinted event
 type ClueMintedData struct {
-	TokenID *big.Int       `json:"tokenId"`
-	Minter  common.Address `json:"minter"`
+	TokenID   *big.Int       `json:"tokenId"`
+	Minter    common.Address `json:"minter"`
+	Recipient common.Address `json:"recipient"`
 }
 
 func (d ClueMintedData) EventType() EventType { return EventTypeClueMinted }

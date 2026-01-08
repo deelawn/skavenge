@@ -365,12 +365,12 @@ func (idx *Indexer) updateClueOwnership(ctx context.Context, event *Event) error
 
 	switch event.EventType {
 	case string(EventTypeClueMinted):
-		// Parse metadata to extract the minter address
+		// Parse metadata to extract the recipient address (actual owner)
 		var data ClueMintedData
 		if err := json.Unmarshal(event.Metadata, &data); err != nil {
 			return fmt.Errorf("failed to parse ClueMinted metadata: %w", err)
 		}
-		newOwner = strings.ToLower(data.Minter.Hex())
+		newOwner = strings.ToLower(data.Recipient.Hex())
 		needsUpdate = true
 
 	case string(EventTypeTransfer):

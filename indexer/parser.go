@@ -214,16 +214,10 @@ func (p *EventParser) ParseLog(log types.Log, txSender common.Address, txIndex u
 
 func (p *EventParser) parseClueMinted(log types.Log) (ClueMintedData, error) {
 	var data ClueMintedData
+	// All fields are indexed, so they're in the topics array
 	data.TokenID = new(big.Int).SetBytes(log.Topics[1].Bytes())
-
-	var decoded struct {
-		Minter common.Address
-	}
-	err := p.contractABI.UnpackIntoInterface(&decoded, "ClueMinted", log.Data)
-	if err != nil {
-		return data, err
-	}
-	data.Minter = decoded.Minter
+	data.Minter = common.BytesToAddress(log.Topics[2].Bytes())
+	data.Recipient = common.BytesToAddress(log.Topics[3].Bytes())
 	return data, nil
 }
 
