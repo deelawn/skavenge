@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { IndexerAPI } from '../utils/api';
+import { formatWei } from '../utils/web3';
 import { Loading } from '../components/Loading';
 import { ErrorMessage } from '../components/ErrorMessage';
 import { Pagination } from '../components/Pagination';
@@ -125,7 +126,7 @@ export const CluesList = () => {
                         </span>
                       </td>
                       <td className="table-cell">
-                        {clue.solve_reward ? `${clue.solve_reward} wei` : '-'}
+                        {clue.solve_reward ? `${formatWei(clue.solve_reward)} ETH` : '-'}
                       </td>
                       <td className="table-cell">
                         <div className="flex gap-2">

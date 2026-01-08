@@ -79,3 +79,23 @@ export const formatAddress = (address) => {
   if (!address || address.length < 10) return address;
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 };
+
+export const formatDuration = (seconds) => {
+  if (!seconds || seconds === '0' || seconds === 0) return '0 seconds';
+
+  // Convert BigInt to Number if needed
+  const totalSeconds = typeof seconds === 'bigint' ? Number(seconds) : Number(seconds);
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+
+  const parts = [];
+  if (hours > 0) parts.push(`${hours} hour${hours !== 1 ? 's' : ''}`);
+  if (minutes > 0) parts.push(`${minutes} minute${minutes !== 1 ? 's' : ''}`);
+  if (remainingSeconds > 0 || parts.length === 0) {
+    parts.push(`${remainingSeconds} second${remainingSeconds !== 1 ? 's' : ''}`);
+  }
+
+  return parts.join(', ');
+};

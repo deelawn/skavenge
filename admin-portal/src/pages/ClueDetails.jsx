@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { IndexerAPI } from '../utils/api';
-import { getClueFromContract, formatWei } from '../utils/web3';
+import { getClueFromContract, formatWei, formatDuration } from '../utils/web3';
 import { formatEventMetadata } from '../utils/json';
 import { Loading } from '../components/Loading';
 import { ErrorMessage } from '../components/ErrorMessage';
@@ -111,7 +111,9 @@ export const ClueDetails = () => {
             </div>
             <div>
               <dt className="text-sm font-medium text-gray-500">Solve Reward</dt>
-              <dd className="mt-1 text-sm text-gray-900">{clue.solve_reward || 0} wei</dd>
+              <dd className="mt-1 text-sm text-gray-900">
+                {clue.solve_reward ? `${formatWei(clue.solve_reward)} ETH` : '0 ETH'}
+              </dd>
             </div>
             <div>
               <dt className="text-sm font-medium text-gray-500">Solution Hash</dt>
@@ -157,7 +159,7 @@ export const ClueDetails = () => {
               <div>
                 <dt className="text-sm font-medium text-gray-500">Timeout</dt>
                 <dd className="mt-1 text-sm text-gray-900">
-                  {contractData.timeout ? formatTimestamp(contractData.timeout) : 'N/A'}
+                  {contractData.timeout ? formatDuration(contractData.timeout) : 'N/A'}
                 </dd>
               </div>
               <div>
