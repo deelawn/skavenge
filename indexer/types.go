@@ -30,19 +30,19 @@ const (
 // Event represents a generic blockchain event
 type Event struct {
 	// Primary fields matching schema requirements
-	ClueID           uint64 `json:"clueId"`           // NFT Token ID (0 if not applicable)
-	BlockNumber      uint64 `json:"blockNumber"`      // Block number
-	TransactionIndex uint   `json:"transactionIndex"` // Transaction index within block
-	EventIndex       uint   `json:"eventIndex"`       // Event/Log index within transaction
-	TransactionHash  string `json:"transactionHash"`  // Transaction hash
-	InitiatedBy      string `json:"initiatedBy"`      // Transaction sender address
-	EventType        string `json:"eventType"`        // Event type
-	Metadata         []byte `json:"metadata"`         // Event-specific data as JSON
-	Timestamp        int64  `json:"timestamp"`        // Unix timestamp
+	ClueID           uint64 `json:"clue_id"`           // NFT Token ID (0 if not applicable)
+	BlockNumber      uint64 `json:"block_number"`      // Block number
+	TransactionIndex uint   `json:"transaction_index"` // Transaction index within block
+	EventIndex       uint   `json:"event_index"`       // Event/Log index within transaction
+	TransactionHash  string `json:"transaction_hash"`  // Transaction hash
+	InitiatedBy      string `json:"initiated_by"`      // Transaction sender address
+	EventType        string `json:"event_type"`        // Event type
+	Metadata         []byte `json:"metadata"`          // Event-specific data as JSON
+	Timestamp        int64  `json:"timestamp"`         // Unix timestamp
 
 	// Additional fields for internal use
-	BlockHash common.Hash `json:"blockHash"` // Block hash
-	Removed   bool        `json:"removed"`   // True if log was removed due to reorg
+	BlockHash common.Hash `json:"block_hash"` // Block hash
+	Removed   bool        `json:"removed"`    // True if log was removed due to reorg
 }
 
 // EventData contains event-specific data
@@ -52,7 +52,7 @@ type EventData interface {
 
 // ClueMintedData represents data for ClueMinted event
 type ClueMintedData struct {
-	TokenID   *big.Int       `json:"tokenId"`
+	TokenID   *big.Int       `json:"token_id"`
 	Minter    common.Address `json:"minter"`
 	Recipient common.Address `json:"recipient"`
 }
@@ -61,15 +61,15 @@ func (d ClueMintedData) EventType() EventType { return EventTypeClueMinted }
 
 // ClueAttemptedData represents data for ClueAttempted event
 type ClueAttemptedData struct {
-	TokenID            *big.Int `json:"tokenId"`
-	RemainingAttempts  *big.Int `json:"remainingAttempts"`
+	TokenID            *big.Int `json:"token_id"`
+	RemainingAttempts  *big.Int `json:"remaining_attempts"`
 }
 
 func (d ClueAttemptedData) EventType() EventType { return EventTypeClueAttempted }
 
 // ClueSolvedData represents data for ClueSolved event
 type ClueSolvedData struct {
-	TokenID  *big.Int `json:"tokenId"`
+	TokenID  *big.Int `json:"token_id"`
 	Solution string   `json:"solution"`
 }
 
@@ -77,7 +77,7 @@ func (d ClueSolvedData) EventType() EventType { return EventTypeClueSolved }
 
 // SalePriceSetData represents data for SalePriceSet event
 type SalePriceSetData struct {
-	TokenID *big.Int `json:"tokenId"`
+	TokenID *big.Int `json:"token_id"`
 	Price   *big.Int `json:"price"`
 }
 
@@ -85,56 +85,56 @@ func (d SalePriceSetData) EventType() EventType { return EventTypeSalePriceSet }
 
 // SalePriceRemovedData represents data for SalePriceRemoved event
 type SalePriceRemovedData struct {
-	TokenID *big.Int `json:"tokenId"`
+	TokenID *big.Int `json:"token_id"`
 }
 
 func (d SalePriceRemovedData) EventType() EventType { return EventTypeSalePriceRemoved }
 
 // TransferInitiatedData represents data for TransferInitiated event
 type TransferInitiatedData struct {
-	TransferID [32]byte       `json:"transferId"`
+	TransferID [32]byte       `json:"transfer_id"`
 	Buyer      common.Address `json:"buyer"`
-	TokenID    *big.Int       `json:"tokenId"`
+	TokenID    *big.Int       `json:"token_id"`
 }
 
 func (d TransferInitiatedData) EventType() EventType { return EventTypeTransferInitiated }
 
 // ProofProvidedData represents data for ProofProvided event
 type ProofProvidedData struct {
-	TransferID  [32]byte `json:"transferId"`
+	TransferID  [32]byte `json:"transfer_id"`
 	Proof       []byte   `json:"proof"`
-	NewClueHash [32]byte `json:"newClueHash"`
-	RValueHash  [32]byte `json:"rValueHash"`
+	NewClueHash [32]byte `json:"new_clue_hash"`
+	RValueHash  [32]byte `json:"r_value_hash"`
 }
 
 func (d ProofProvidedData) EventType() EventType { return EventTypeProofProvided }
 
 // ProofVerifiedData represents data for ProofVerified event
 type ProofVerifiedData struct {
-	TransferID [32]byte `json:"transferId"`
+	TransferID [32]byte `json:"transfer_id"`
 }
 
 func (d ProofVerifiedData) EventType() EventType { return EventTypeProofVerified }
 
 // TransferCompletedData represents data for TransferCompleted event
 type TransferCompletedData struct {
-	TransferID [32]byte `json:"transferId"`
-	RValue     *big.Int `json:"rValue"`
+	TransferID [32]byte `json:"transfer_id"`
+	RValue     *big.Int `json:"r_value"`
 }
 
 func (d TransferCompletedData) EventType() EventType { return EventTypeTransferCompleted }
 
 // TransferCancelledData represents data for TransferCancelled event
 type TransferCancelledData struct {
-	TransferID [32]byte `json:"transferId"`
+	TransferID [32]byte `json:"transfer_id"`
 }
 
 func (d TransferCancelledData) EventType() EventType { return EventTypeTransferCancelled }
 
 // AuthorizedMinterUpdatedData represents data for AuthorizedMinterUpdated event
 type AuthorizedMinterUpdatedData struct {
-	OldMinter common.Address `json:"oldMinter"`
-	NewMinter common.Address `json:"newMinter"`
+	OldMinter common.Address `json:"old_minter"`
+	NewMinter common.Address `json:"new_minter"`
 }
 
 func (d AuthorizedMinterUpdatedData) EventType() EventType { return EventTypeAuthorizedMinterUpdated }
@@ -143,7 +143,7 @@ func (d AuthorizedMinterUpdatedData) EventType() EventType { return EventTypeAut
 type TransferData struct {
 	From    common.Address `json:"from"`
 	To      common.Address `json:"to"`
-	TokenID *big.Int       `json:"tokenId"`
+	TokenID *big.Int       `json:"token_id"`
 }
 
 func (d TransferData) EventType() EventType { return EventTypeTransfer }
@@ -152,7 +152,7 @@ func (d TransferData) EventType() EventType { return EventTypeTransfer }
 type ApprovalData struct {
 	Owner    common.Address `json:"owner"`
 	Approved common.Address `json:"approved"`
-	TokenID  *big.Int       `json:"tokenId"`
+	TokenID  *big.Int       `json:"token_id"`
 }
 
 func (d ApprovalData) EventType() EventType { return EventTypeApproval }
@@ -171,26 +171,26 @@ type Block struct {
 	Number    uint64      `json:"number"`
 	Hash      common.Hash `json:"hash"`
 	Timestamp time.Time   `json:"timestamp"`
-	EventCount int        `json:"eventCount"`
+	EventCount int        `json:"event_count"`
 }
 
 // Clue represents NFT clue metadata
 type Clue struct {
-	ClueID       uint64 `json:"clueId"`
+	ClueID       uint64 `json:"clue_id"`
 	Contents     string `json:"contents"`
-	SolutionHash string `json:"solutionHash"`
-	PointValue   uint64 `json:"pointValue"`
-	SolveReward  uint64 `json:"solveReward"`
+	SolutionHash string `json:"solution_hash"`
+	PointValue   uint64 `json:"point_value"`
+	SolveReward  uint64 `json:"solve_reward"`
 }
 
 // ClueOwnership represents ownership information for a clue
 type ClueOwnership struct {
-	OwnerAddress                     string `json:"ownerAddress"`
-	ClueID                          uint64 `json:"clueId"`
-	OwnershipGrantedBlockNumber      uint64 `json:"ownershipGrantedBlockNumber"`
-	OwnershipGrantedTransactionIndex uint   `json:"ownershipGrantedTransactionIndex"`
-	OwnershipGrantedEventIndex       uint   `json:"ownershipGrantedEventIndex"`
-	OwnershipGrantedEventType        string `json:"ownershipGrantedEventType"`
+	OwnerAddress                     string `json:"owner_address"`
+	ClueID                          uint64 `json:"clue_id"`
+	OwnershipGrantedBlockNumber      uint64 `json:"ownership_granted_block_number"`
+	OwnershipGrantedTransactionIndex uint   `json:"ownership_granted_transaction_index"`
+	OwnershipGrantedEventIndex       uint   `json:"ownership_granted_event_index"`
+	OwnershipGrantedEventType        string `json:"ownership_granted_event_type"`
 }
 
 // ClueWithOwner represents a clue with its ownership information
