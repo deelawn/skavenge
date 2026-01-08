@@ -79,14 +79,14 @@ func (p *EventParser) ParseLog(log types.Log, txSender common.Address, txIndex u
 		clueID = data.TokenID.Uint64()
 		event.EventType = string(EventTypeClueMinted)
 
-	case "ClueAttempted":
-		data, parseErr := p.parseClueAttempted(log)
+	case "ClueAttemptFailed":
+		data, parseErr := p.parseClueAttemptFailed(log)
 		if parseErr != nil {
 			return nil, parseErr
 		}
 		eventData = data
 		clueID = data.TokenID.Uint64()
-		event.EventType = string(EventTypeClueAttempted)
+		event.EventType = string(EventTypeClueAttemptFailed)
 
 	case "ClueSolved":
 		data, parseErr := p.parseClueSolved(log)
@@ -221,18 +221,18 @@ func (p *EventParser) parseClueMinted(log types.Log) (ClueMintedData, error) {
 	return data, nil
 }
 
-func (p *EventParser) parseClueAttempted(log types.Log) (ClueAttemptedData, error) {
-	var data ClueAttemptedData
+func (p *EventParser) parseClueAttemptFailed(log types.Log) (ClueAttemptFailedData, error) {
+	var data ClueAttemptFailedData
 	data.TokenID = new(big.Int).SetBytes(log.Topics[1].Bytes())
 
 	var decoded struct {
-		RemainingAttempts *big.Int
+		AttemptedSolution string
 	}
-	err := p.contractABI.UnpackIntoInterface(&decoded, "ClueAttempted", log.Data)
+	err := p.contractABI.UnpackIntoInterface(&decoded, "ClueAttemptFailed", log.Data)
 	if err != nil {
 		return data, err
 	}
-	data.RemainingAttempts = decoded.RemainingAttempts
+	data.AttemptedSolution = decoded.AttemptedSolution
 	return data, nil
 }
 
@@ -323,6 +323,7 @@ func (p *EventParser) parseTransferCompleted(log types.Log) (TransferCompletedDa
 func (p *EventParser) parseTransferCancelled(log types.Log) (TransferCancelledData, error) {
 	var data TransferCancelledData
 	copy(data.TransferID[:], log.Topics[1].Bytes())
+	data.CancelledBy = common.BytesToAddress(log.Topics[2].Bytes())
 	return data, nil
 }
 

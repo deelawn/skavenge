@@ -8,7 +8,7 @@ A high-performance blockchain indexer for the Skavenge NFT smart contract. This 
 - **Chain Reorganization Handling**: Automatically detects and handles blockchain reorgs to maintain data consistency
 - **Comprehensive Event Coverage**: Indexes all 14 event types from the Skavenge contract:
   - `ClueMinted` - New NFT minting events
-  - `ClueAttempted` - Solution attempt events
+  - `ClueAttemptFailed` - Solution attempt events
   - `ClueSolved` - Successful solution events
   - `SalePriceSet` / `SalePriceRemoved` - NFT marketplace events
   - `TransferInitiated` / `ProofProvided` / `ProofVerified` / `TransferCompleted` / `TransferCancelled` - Secure transfer protocol events
