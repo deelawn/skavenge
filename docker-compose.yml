@@ -136,8 +136,10 @@ services:
       dockerfile: Dockerfile
     container_name: skavenge-admin-portal
     depends_on:
-      - indexer
-      - gateway
+      gateway:
+        condition: service_healthy
+      indexer:
+        condition: service_healthy
     ports:
       - "3000:3000"
     networks:
