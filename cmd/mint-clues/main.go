@@ -50,8 +50,31 @@ type LinkRequest struct {
 	Signature         string `json:"signature"`
 }
 
+// WebappConfig holds the webapp configuration
+type WebappConfig struct {
+	ContractAddress string `json:"contractAddress"`
+	NetworkRpcUrl   string `json:"networkRpcUrl"`
+	ChainId         int64  `json:"chainId"`
+	GatewayUrl      string `json:"gatewayUrl"`
+}
+
 func main() {
-	// Load config
+	// Load webapp config to get contract address
+	webappConfigData, err := os.ReadFile("webapp/config.json")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading webapp/config.json: %v\n", err)
+		os.Exit(1)
+	}
+
+	var webappConfig WebappConfig
+	if err := json.Unmarshal(webappConfigData, &webappConfig); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing webapp/config.json: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Using contract address from webapp config: %s\n", webappConfig.ContractAddress)
+
+	// Load mint config
 	configData, err := os.ReadFile("mint-config.json")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading mint-config.json: %v\n", err)
@@ -63,6 +86,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error parsing mint-config.json: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Set contract address from webapp config
+	config.Minting.ContractAddress = webappConfig.ContractAddress
 
 	// Use environment variables for URLs if not specified in config
 	if config.Minting.RPCURL == "" {
