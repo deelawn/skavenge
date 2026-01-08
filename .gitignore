@@ -21,3 +21,4 @@ webapp/config.json
 indexer/config.json
 mint
 mint.sh
+mint-config.json

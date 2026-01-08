@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -21,7 +20,7 @@ import (
 // KeyPair represents an Ethereum/Skavenge key pair to register with the gateway
 type KeyPair struct {
 	EthereumPrivateKey string `json:"ethereumPrivateKey"`
-	SkavengePrivateKey string `json:"skavengePrivateKey"`
+	SkavengePublicKey  string `json:"skavengePublicKey"`
 }
 
 // NFTConfig combines clue data and mint options for configuration
@@ -129,14 +128,14 @@ func registerKeyPair(gatewayURL string, keyPair KeyPair) error {
 	// Derive Ethereum address
 	ethAddress := crypto.PubkeyToAddress(ethPrivateKey.PublicKey)
 
-	// Load Skavenge private key
-	skavengePrivateKey, err := crypto.HexToECDSA(keyPair.SkavengePrivateKey)
+	// Load Skavenge public key
+	skavengePublicKey, err := minting.ParsePublicKeyFromHex(keyPair.SkavengePublicKey)
 	if err != nil {
 		return fmt.Errorf("failed to parse skavenge private key: %w", err)
 	}
 
 	// Derive Skavenge public key (uncompressed format)
-	skavengePublicKeyBytes := crypto.FromECDSAPub(&skavengePrivateKey.PublicKey)
+	skavengePublicKeyBytes := crypto.FromECDSAPub(skavengePublicKey)
 	skavengePublicKeyHex := hex.EncodeToString(skavengePublicKeyBytes)
 
 	// Create message to sign

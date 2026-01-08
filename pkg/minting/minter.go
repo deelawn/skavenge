@@ -56,7 +56,7 @@ func NewMinter(config *Config) (*Minter, error) {
 	// Load Skavenge public key for encryption (optional - only needed when minting to self)
 	var skavengePubKey *ecdsa.PublicKey
 	if config.SkavengePublicKey != "" {
-		skavengePubKey, err = parsePublicKeyFromHex(config.SkavengePublicKey)
+		skavengePubKey, err = ParsePublicKeyFromHex(config.SkavengePublicKey)
 		if err != nil {
 			client.Close()
 			return nil, fmt.Errorf("failed to load skavenge public key: %w", err)
@@ -324,9 +324,9 @@ func (m *Minter) GetMinterAddress() common.Address {
 	return crypto.PubkeyToAddress(m.minterPrivateKey.PublicKey)
 }
 
-// parsePublicKeyFromHex parses a hex-encoded public key
+// ParsePublicKeyFromHex parses a hex-encoded public key
 // Expected format: 0x04 + X (32 bytes) + Y (32 bytes) = 65 bytes total
-func parsePublicKeyFromHex(hexKey string) (*ecdsa.PublicKey, error) {
+func ParsePublicKeyFromHex(hexKey string) (*ecdsa.PublicKey, error) {
 	// Decode hex string
 	pubKeyBytes, err := hexutil.Decode(hexKey)
 	if err != nil {

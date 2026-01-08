@@ -10,11 +10,11 @@
   "keyPairs": [
     {
       "ethereumPrivateKey": "PUT_ETHEREUM_PRIVATE_KEY_1_HERE",
-      "skavengePrivateKey": "PUT_SKAVENGE_PRIVATE_KEY_1_HERE"
+      "skavengePublicKey": "PUT_SKAVENGE_PUBLIC_KEY_1_HERE"
     },
     {
       "ethereumPrivateKey": "PUT_ETHEREUM_PRIVATE_KEY_2_HERE",
-      "skavengePrivateKey": "PUT_SKAVENGE_PRIVATE_KEY_2_HERE"
+      "skavengePublicKey": "PUT_SKAVENGE_PUBLIC_KEY_2_HERE"
     }
   ],
   "nfts": [
