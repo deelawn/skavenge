@@ -60,7 +60,8 @@ type Storage interface {
 	GetLatestBlock(ctx context.Context) (*Block, error)
 	DeleteBlocksFrom(ctx context.Context, blockNumber uint64) error
 
-	// Clue ownership queries
+	// Clue ownership operations
+	UpdateClueOwnership(ctx context.Context, clueID uint64, newOwner string, blockNumber uint64, txIndex uint, eventIndex uint, eventType string) error
 	GetNFTCurrentOwner(ctx context.Context, clueID uint64) (string, error)
 	GetNFTsByOwner(ctx context.Context, owner string) ([]uint64, error)
 	GetClueOwnership(ctx context.Context, clueID uint64) (*ClueOwnership, error)
