@@ -2,6 +2,7 @@ package indexer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
@@ -275,7 +276,13 @@ func (idx *Indexer) indexBlock(ctx context.Context, blockNumber uint64) error {
 		idx.logger.Printf("Saving event: %+v\n", event)
 
 		if err := idx.storage.SaveEvent(ctx, event); err != nil {
-			return fmt.Errorf("failed to save event: %w", err)
+			// If the event already exists, log it and continue instead of failing
+			if errors.Is(err, ErrAlreadyExists) {
+				idx.logger.Printf("Warning: event already exists (clueID=%d, block=%d, txIndex=%d, eventIndex=%d), skipping",
+					event.ClueID, event.BlockNumber, event.TransactionIndex, event.EventIndex)
+			} else {
+				return fmt.Errorf("failed to save event: %w", err)
+			}
 		}
 
 		events = append(events, event)
