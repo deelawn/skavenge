@@ -1,38 +1,34 @@
 #!/bin/sh
 set -e
 
-# Default values from environment or defaults
-RPC_URL=${RPC_URL:-http://hardhat:8545}
-CONTRACT_ADDRESS=${CONTRACT_ADDRESS:-}
-
-# Try to read configuration from JSON file if it exists
+# Default config file path
 CONFIG_FILE=${CONFIG_FILE:-/app/config.json}
-if [ -f "$CONFIG_FILE" ]; then
-    echo "Config file found at $CONFIG_FILE, reading configuration..."
 
-    CONFIG_CONTRACT_ADDRESS=$(jq -r '.contractAddress' "$CONFIG_FILE" 2>/dev/null || echo "")
-    CONFIG_RPC_URL=$(jq -r '.networkRpcUrl' "$CONFIG_FILE" 2>/dev/null || echo "")
+# Check if config file exists
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Error: Config file not found at $CONFIG_FILE"
+    exit 1
+fi
 
-    # Use config file values if available and not null
-    if [ -n "$CONFIG_CONTRACT_ADDRESS" ] && [ "$CONFIG_CONTRACT_ADDRESS" != "null" ]; then
-        CONTRACT_ADDRESS="$CONFIG_CONTRACT_ADDRESS"
-    fi
+# Read configuration from JSON file
+CONTRACT_ADDRESS=$(jq -r '.contractAddress' "$CONFIG_FILE")
+RPC_URL=$(jq -r '.networkRpcUrl' "$CONFIG_FILE")
 
-    if [ -n "$CONFIG_RPC_URL" ] && [ "$CONFIG_RPC_URL" != "null" ]; then
-        RPC_URL="$CONFIG_RPC_URL"
-    fi
+# Validate required configuration
+if [ -z "$CONTRACT_ADDRESS" ] || [ "$CONTRACT_ADDRESS" = "null" ]; then
+    echo "Error: contractAddress not found in config file"
+    exit 1
+fi
+
+if [ -z "$RPC_URL" ] || [ "$RPC_URL" = "null" ]; then
+    echo "Error: networkRpcUrl not found in config file"
+    exit 1
 fi
 
 echo "Starting gateway with:"
-echo "  Contract Address: ${CONTRACT_ADDRESS:-<not set>}"
+echo "  Contract Address: $CONTRACT_ADDRESS"
 echo "  RPC URL: $RPC_URL"
 
 # Start the gateway with the configuration
-# Contract address is optional - if not set, only /link endpoint will work
-if [ -n "$CONTRACT_ADDRESS" ]; then
-    exec ./gateway -contract "$CONTRACT_ADDRESS" -rpc "$RPC_URL"
-else
-    echo "Warning: Contract address not set. /transfers endpoint will not be available."
-    exec ./gateway -rpc "$RPC_URL"
-fi
+exec ./gateway -contract "$CONTRACT_ADDRESS" -rpc "$RPC_URL"
 

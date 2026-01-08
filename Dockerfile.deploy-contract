@@ -1,0 +1,23 @@
+# Dockerfile for deploying contract
+FROM golang:1.23.5-alpine
+
+# Install git and other build dependencies
+RUN apk add --no-cache git gcc musl-dev
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy the rest of the code
+COPY . .
+
+# Build the deploy-contract program
+RUN go build -o /app/deploy-contract ./cmd/deploy-contract
+
+# Default command - run deploy-contract
+CMD ["/app/deploy-contract"]

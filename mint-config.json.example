@@ -1,0 +1,45 @@
+{
+  "minting": {
+    "rpcUrl": "http://hardhat:8545",
+    "contractAddress": "",
+    "minterPrivateKey": "PUT_YOUR_MINTER_ETHEREUM_PRIVATE_KEY_HERE",
+    "skavengePublicKey": "PUT_YOUR_MINTER_SKAVENGE_PUBLIC_KEY_HERE",
+    "gatewayUrl": "http://gateway:4591",
+    "indexerUrl": "http://indexer:4040"
+  },
+  "keyPairs": [
+    {
+      "ethereumPrivateKey": "PUT_ETHEREUM_PRIVATE_KEY_1_HERE",
+      "skavengePrivateKey": "PUT_SKAVENGE_PRIVATE_KEY_1_HERE"
+    },
+    {
+      "ethereumPrivateKey": "PUT_ETHEREUM_PRIVATE_KEY_2_HERE",
+      "skavengePrivateKey": "PUT_SKAVENGE_PRIVATE_KEY_2_HERE"
+    }
+  ],
+  "nfts": [
+    {
+      "content": "Welcome to Skavenge! This is your first clue. Find the hidden treasure in the ancient ruins.",
+      "solution": "ancient-temple",
+      "pointValue": 1,
+      "solveReward": "1000000000000000000",
+      "salePrice": "500000000000000000",
+      "timeout": 3600
+    },
+    {
+      "content": "The second clue leads you to the mountains. Look for the peak where the eagles nest.",
+      "solution": "eagle-peak",
+      "pointValue": 2,
+      "solveReward": "2000000000000000000",
+      "salePrice": "1000000000000000000",
+      "timeout": 7200,
+      "recipientAddress": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+    },
+    {
+      "content": "A challenging clue awaits! Deep in the forest, three paths diverge. Choose wisely.",
+      "solution": "middle-path",
+      "pointValue": 3,
+      "solveReward": "3000000000000000000"
+    }
+  ]
+}
