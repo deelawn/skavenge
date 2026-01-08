@@ -1,4 +1,5 @@
 {
+  "_comment": "contractAddress will be automatically set from webapp/config.json written by deploy-contract",
   "minting": {
     "rpcUrl": "http://hardhat:8545",
     "contractAddress": "",
@@ -7,15 +8,14 @@
     "gatewayUrl": "http://gateway:4591",
     "indexerUrl": "http://indexer:4040"
   },
-  "deployerPrivateKey": "PUT_YOUR_DEPLOYER_ETHEREUM_PRIVATE_KEY_HERE",
   "keyPairs": [
     {
       "ethereumPrivateKey": "PUT_ETHEREUM_PRIVATE_KEY_1_HERE",
-      "skavengePrivateKey": "PUT_SKAVENGE_PRIVATE_KEY_1_HERE"
+      "skavengePublicKey": "PUT_SKAVENGE_PUBLIC_KEY_1_HERE"
     },
     {
       "ethereumPrivateKey": "PUT_ETHEREUM_PRIVATE_KEY_2_HERE",
-      "skavengePrivateKey": "PUT_SKAVENGE_PRIVATE_KEY_2_HERE"
+      "skavengePublicKey": "PUT_SKAVENGE_PUBLIC_KEY_2_HERE"
     }
   ],
   "nfts": [
