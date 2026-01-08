@@ -22,3 +22,4 @@ indexer/config.json
 mint
 mint.sh
 mint-config.json
+deploy-config.json

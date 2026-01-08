@@ -114,11 +114,13 @@ func main() {
 	// Register key pairs with the gateway
 	fmt.Printf("Registering %d key pair(s) with the gateway...\n", len(config.KeyPairs))
 	for i, keyPair := range config.KeyPairs {
-		if err := registerKeyPair(config.Minting.GatewayURL, keyPair); err != nil {
+		var err error
+		var registeredHexPair *RegisteredHexPair
+		if registeredHexPair, err = registerKeyPair(config.Minting.GatewayURL, keyPair); err != nil {
 			fmt.Fprintf(os.Stderr, "Error registering key pair %d: %v\n", i+1, err)
 			os.Exit(1)
 		}
-		fmt.Printf("Successfully registered key pair %d\n", i+1)
+		fmt.Printf("Successfully registered key pair %d: %s -> %s\n", i+1, registeredHexPair.EthereumAddress, registeredHexPair.SkavengePublicKey)
 	}
 
 	// Create minter
@@ -143,12 +145,17 @@ func main() {
 	fmt.Println("\nNFT minting completed successfully!")
 }
 
+type RegisteredHexPair struct {
+	EthereumAddress   string
+	SkavengePublicKey string
+}
+
 // registerKeyPair registers an Ethereum/Skavenge key pair with the gateway
-func registerKeyPair(gatewayURL string, keyPair KeyPair) error {
+func registerKeyPair(gatewayURL string, keyPair KeyPair) (*RegisteredHexPair, error) {
 	// Load Ethereum private key
 	ethPrivateKey, err := crypto.HexToECDSA(keyPair.EthereumPrivateKey)
 	if err != nil {
-		return fmt.Errorf("failed to parse ethereum private key: %w", err)
+		return nil, fmt.Errorf("failed to parse ethereum private key: %w", err)
 	}
 
 	// Derive Ethereum address
@@ -157,7 +164,7 @@ func registerKeyPair(gatewayURL string, keyPair KeyPair) error {
 	// Load Skavenge public key
 	skavengePublicKey, err := minting.ParsePublicKeyFromHex(keyPair.SkavengePublicKey)
 	if err != nil {
-		return fmt.Errorf("failed to parse skavenge private key: %w", err)
+		return nil, fmt.Errorf("failed to parse skavenge private key: %w", err)
 	}
 
 	// Derive Skavenge public key (uncompressed format)
@@ -171,7 +178,7 @@ func registerKeyPair(gatewayURL string, keyPair KeyPair) error {
 	messageHash := crypto.Keccak256Hash([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)))
 	signature, err := crypto.Sign(messageHash.Bytes(), ethPrivateKey)
 	if err != nil {
-		return fmt.Errorf("failed to sign message: %w", err)
+		return nil, fmt.Errorf("failed to sign message: %w", err)
 	}
 
 	// Adjust v value for Ethereum signature format
@@ -191,26 +198,29 @@ func registerKeyPair(gatewayURL string, keyPair KeyPair) error {
 
 	reqBody, err := json.Marshal(linkReq)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	// Send request to gateway
 	resp, err := http.Post(gatewayURL+"/link", "application/json", bytes.NewBuffer(reqBody))
 	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
+		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("gateway returned status %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("gateway returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	return nil
+	return &RegisteredHexPair{
+		EthereumAddress:   ethAddress.Hex(),
+		SkavengePublicKey: skavengePublicKeyHex,
+	}, nil
 }
 
 // mintNFT mints a single NFT using the minting package
