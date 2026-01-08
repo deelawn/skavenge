@@ -63,6 +63,18 @@ type LinkRequest struct {
 	Signature         string `json:"signature"`
 }
 
+// ContractRequest represents the JSON payload for POST /contract
+type ContractRequest struct {
+	ContractAddress string `json:"contract_address"`
+}
+
+// ContractResponse represents the JSON response for contract operations
+type ContractResponse struct {
+	Success         bool   `json:"success"`
+	Message         string `json:"message,omitempty"`
+	ContractAddress string `json:"contract_address,omitempty"`
+}
+
 func main() {
 	// Load config
 	configData, err := os.ReadFile("test-config.json")
@@ -166,8 +178,13 @@ func main() {
 
 	fmt.Printf("Updated %s with contract address: %s\n", configPath, contractAddress.Hex())
 
-	// Wait a moment for gateway to reload config if needed
-	time.Sleep(2 * time.Second)
+	// Register contract address with gateway
+	fmt.Printf("\nRegistering contract address with gateway...\n")
+	if err := registerContract(gatewayURL, contractAddress.Hex()); err != nil {
+		fmt.Fprintf(os.Stderr, "Error registering contract with gateway: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Successfully registered contract address: %s\n", contractAddress.Hex())
 
 	// Register key pairs with the gateway
 	fmt.Printf("\nRegistering %d key pair(s) with the gateway...\n", len(config.KeyPairs))
@@ -205,6 +222,37 @@ func main() {
 	}
 
 	fmt.Println("\nSetup completed successfully!")
+}
+
+// registerContract registers the contract address with the gateway
+func registerContract(gatewayURL string, contractAddress string) error {
+	// Create request
+	contractReq := ContractRequest{
+		ContractAddress: contractAddress,
+	}
+
+	reqBody, err := json.Marshal(contractReq)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Send request to gateway
+	resp, err := http.Post(gatewayURL+"/contract", "application/json", bytes.NewBuffer(reqBody))
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("gateway returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
 }
 
 // registerKeyPair registers an Ethereum/Skavenge key pair with the gateway

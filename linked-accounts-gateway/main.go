@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -50,20 +51,70 @@ type ErrorResponse struct {
 	Error   string `json:"error"`
 }
 
+// ContractRequest represents the JSON payload for POST /contract
+type ContractRequest struct {
+	ContractAddress string `json:"contract_address"`
+}
+
+// ContractResponse represents the JSON response for contract operations
+type ContractResponse struct {
+	Success         bool   `json:"success"`
+	Message         string `json:"message,omitempty"`
+	ContractAddress string `json:"contract_address,omitempty"`
+}
+
 // Server holds the dependencies for the HTTP handlers
 type Server struct {
 	storage         Storage
 	transferStorage TransferCiphertextStorage
 	contractClient  ContractClientInterface
+	contractMu      sync.RWMutex
+	rpcURL          string
+	contractAddress string
 }
 
 // NewServer creates a new Server instance
-func NewServer(store Storage, transferStore TransferCiphertextStorage, client ContractClientInterface) *Server {
+func NewServer(store Storage, transferStore TransferCiphertextStorage, client ContractClientInterface, rpcURL string) *Server {
+	contractAddr := ""
+	if client != nil {
+		// If client is provided, get the contract address from it
+		contractAddr = client.GetAddress().Hex()
+	}
 	return &Server{
 		storage:         store,
 		transferStorage: transferStore,
 		contractClient:  client,
+		rpcURL:          rpcURL,
+		contractAddress: contractAddr,
 	}
+}
+
+// SetContractClient safely sets the contract client (thread-safe)
+func (s *Server) SetContractClient(client ContractClientInterface, contractAddress string) error {
+	s.contractMu.Lock()
+	defer s.contractMu.Unlock()
+
+	if s.contractClient != nil {
+		return errors.New("contract already registered")
+	}
+
+	s.contractClient = client
+	s.contractAddress = contractAddress
+	return nil
+}
+
+// GetContractClient safely gets the contract client (thread-safe)
+func (s *Server) GetContractClient() ContractClientInterface {
+	s.contractMu.RLock()
+	defer s.contractMu.RUnlock()
+	return s.contractClient
+}
+
+// GetContractAddress safely gets the contract address (thread-safe)
+func (s *Server) GetContractAddress() string {
+	s.contractMu.RLock()
+	defer s.contractMu.RUnlock()
+	return s.contractAddress
 }
 
 // corsMiddleware adds CORS headers to all responses
@@ -199,7 +250,8 @@ func (s *Server) HandleTransfers(w http.ResponseWriter, r *http.Request) {
 // handlePostTransfers processes POST /transfers requests (seller stores ciphertext)
 func (s *Server) handlePostTransfers(w http.ResponseWriter, r *http.Request) {
 	// Check if contract client is available
-	if s.contractClient == nil {
+	contractClient := s.GetContractClient()
+	if contractClient == nil {
 		writeErrorResponse(w, http.StatusServiceUnavailable, "contract not configured - transfers endpoint not available")
 		return
 	}
@@ -230,7 +282,7 @@ func (s *Server) handlePostTransfers(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
-	transfer, err := s.contractClient.GetTransferInfo(ctx, transferID)
+	transfer, err := contractClient.GetTransferInfo(ctx, transferID)
 	if err != nil {
 		log.Printf("Failed to retrieve transfer: %v", err)
 		writeErrorResponse(w, http.StatusNotFound, "transfer not found: "+err.Error())
@@ -238,7 +290,7 @@ func (s *Server) handlePostTransfers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the owner (seller) of the token being transferred
-	owner, err := s.contractClient.GetTokenOwner(ctx, transfer.TokenID)
+	owner, err := contractClient.GetTokenOwner(ctx, transfer.TokenID)
 	if err != nil {
 		log.Printf("Failed to get token owner: %v", err)
 		writeErrorResponse(w, http.StatusInternalServerError, "failed to get token owner")
@@ -288,7 +340,8 @@ func (s *Server) handlePostTransfers(w http.ResponseWriter, r *http.Request) {
 // handleGetTransfers processes GET /transfers requests (buyer retrieves ciphertext)
 func (s *Server) handleGetTransfers(w http.ResponseWriter, r *http.Request) {
 	// Check if contract client is available
-	if s.contractClient == nil {
+	contractClient := s.GetContractClient()
+	if contractClient == nil {
 		writeErrorResponse(w, http.StatusServiceUnavailable, "contract not configured - transfers endpoint not available")
 		return
 	}
@@ -323,7 +376,7 @@ func (s *Server) handleGetTransfers(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
-	transfer, err := s.contractClient.GetTransferInfo(ctx, transferIDArray)
+	transfer, err := contractClient.GetTransferInfo(ctx, transferIDArray)
 	if err != nil {
 		log.Printf("Failed to retrieve transfer: %v", err)
 		writeErrorResponse(w, http.StatusNotFound, "transfer not found: "+err.Error())
@@ -351,7 +404,7 @@ func (s *Server) handleGetTransfers(w http.ResponseWriter, r *http.Request) {
 		// If not valid, try to verify the signature was signed by the seller.
 
 		// Get the seller's skavenge public key and see if this signature is from the seller.
-		owner, err := s.contractClient.GetTokenOwner(ctx, transfer.TokenID)
+		owner, err := contractClient.GetTokenOwner(ctx, transfer.TokenID)
 		if err != nil {
 			log.Printf("Failed to get token owner: %v", err)
 			writeErrorResponse(w, http.StatusInternalServerError, "failed to get token owner")
@@ -417,6 +470,87 @@ func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
 	})
 }
 
+// HandleContract routes requests to the appropriate handler based on method
+func (s *Server) HandleContract(w http.ResponseWriter, r *http.Request) {
+	// Handle CORS preflight request
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPost:
+		s.handlePostContract(w, r)
+	case http.MethodGet:
+		s.handleGetContract(w, r)
+	default:
+		writeErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handlePostContract processes POST /contract requests (register contract address)
+func (s *Server) handlePostContract(w http.ResponseWriter, r *http.Request) {
+	var req ContractRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid JSON payload")
+		return
+	}
+
+	// Validate required fields
+	if req.ContractAddress == "" {
+		writeErrorResponse(w, http.StatusBadRequest, "missing contract_address field")
+		return
+	}
+
+	// Check if contract is already registered
+	if s.GetContractClient() != nil {
+		writeErrorResponse(w, http.StatusConflict, "contract already registered")
+		return
+	}
+
+	// Create contract client
+	client, err := NewContractClient(s.rpcURL, req.ContractAddress)
+	if err != nil {
+		log.Printf("Failed to create contract client: %v", err)
+		writeErrorResponse(w, http.StatusBadRequest, "failed to create contract client: "+err.Error())
+		return
+	}
+
+	// Set the contract client
+	if err := s.SetContractClient(client, req.ContractAddress); err != nil {
+		client.Close()
+		writeErrorResponse(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	log.Printf("Contract registered at %s", req.ContractAddress)
+
+	// Success response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(ContractResponse{
+		Success:         true,
+		Message:         "contract registered successfully",
+		ContractAddress: req.ContractAddress,
+	})
+}
+
+// handleGetContract processes GET /contract requests (get current contract address)
+func (s *Server) handleGetContract(w http.ResponseWriter, r *http.Request) {
+	contractAddr := s.GetContractAddress()
+	if contractAddr == "" {
+		writeErrorResponse(w, http.StatusNotFound, "no contract registered")
+		return
+	}
+
+	// Success response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ContractResponse{
+		Success:         true,
+		ContractAddress: contractAddr,
+	})
+}
+
 // HandleHealth processes health check requests
 func HandleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -449,15 +583,17 @@ func main() {
 		log.Printf("Using contract at %s", *contractAddress)
 	} else {
 		log.Println("Warning: No contract address provided. /transfers endpoint will not be available.")
+		log.Println("Contract can be registered later via POST /contract endpoint")
 		contractClient = nil
 	}
 
 	// Create server
-	server := NewServer(store, transferStore, contractClient)
+	server := NewServer(store, transferStore, contractClient, *rpcURL)
 
 	// Register handlers with CORS middleware
 	http.HandleFunc("/link", corsMiddleware(server.HandleLink))
 	http.HandleFunc("/transfers", corsMiddleware(server.HandleTransfers))
+	http.HandleFunc("/contract", corsMiddleware(server.HandleContract))
 	http.HandleFunc("/health", HandleHealth)
 
 	// Start server

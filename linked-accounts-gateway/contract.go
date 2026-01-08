@@ -14,6 +14,7 @@ import (
 type ContractClientInterface interface {
 	GetTransferInfo(ctx context.Context, transferID [32]byte) (*TransferInfo, error)
 	GetTokenOwner(ctx context.Context, tokenID *big.Int) (common.Address, error)
+	GetAddress() common.Address
 	Close()
 }
 
@@ -49,6 +50,11 @@ func (c *ContractClient) Close() {
 	if c.client != nil {
 		c.client.Close()
 	}
+}
+
+// GetAddress returns the contract address
+func (c *ContractClient) GetAddress() common.Address {
+	return c.address
 }
 
 // GetTokenOwner retrieves the owner of a token
