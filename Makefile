@@ -13,6 +13,9 @@ compile-js:
 	@echo "export const SKAVENGE_ABI = " >> webapp/src/contractABI.js
 	@cat eth/build/Skavenge.abi >> webapp/src/contractABI.js
 	@echo ";" >> webapp/src/contractABI.js
+	@echo "export const SKAVENGE_ABI =" > admin-portal/src/utils/contractABI.js
+	@cat eth/build/Skavenge.abi >> admin-portal/src/utils/contractABI.js
+	@echo ";" >> admin-portal/src/utils/contractABI.js
 
 generate-cli:
 	@echo "Generating CLI query tool..."
@@ -40,6 +43,16 @@ rebuild-webapp-no-cache:
 	docker compose build --no-cache webapp
 	@echo "Webapp image rebuilt (no cache)"
 
+.PHONY: rebuild-admin-portal
+rebuild-admin-portal:
+	docker compose build admin-portal
+	@echo "Admin Portal image rebuilt"
+
+.PHONY: rebuild-admin-portal-no-cache
+rebuild-admin-portal-no-cache:
+	docker compose build --no-cache admin-portal
+	@echo "Admin Portal image rebuilt (no cache)"
+
 .PHONY: docker-up
 docker-up:
 	docker compose up -d hardhat
@@ -49,31 +62,33 @@ start: start-with-setup
 
 .PHONY: start-services
 start-services:
-	docker compose up -d hardhat webapp gateway indexer
+	docker compose up -d hardhat webapp gateway indexer admin-portal
 	@echo "Services starting..."
 	@echo "Hardhat: http://localhost:8545"
 	@echo "Webapp: http://localhost:8080"
 	@echo "Gateway: http://localhost:4591"
 	@echo "Indexer: running"
+	@echo "Admin Portal: http://localhost:3000"
 
 .PHONY: start-with-setup
 start-with-setup:
 	docker compose up -d hardhat
 	@echo "Waiting for Hardhat to be ready..."
 	@sleep 5
-	docker compose up -d webapp gateway indexer
+	docker compose up -d webapp gateway indexer admin-portal
 	@echo "Services started with contract deployment..."
 	@echo "Hardhat: http://localhost:8545"
 	@echo "Webapp: http://localhost:8080"
 	@echo "Gateway: http://localhost:4591"
 	@echo "Indexer: running"
+	@echo "Admin Portal: http://localhost:3000"
 
 .PHONY: stop
 stop: stop-services
 
 .PHONY: stop-services
 stop-services:
-	docker compose stop hardhat webapp gateway indexer
+	docker compose stop hardhat webapp gateway indexer admin-portal
 
 .PHONY: docker-test
 docker-test:

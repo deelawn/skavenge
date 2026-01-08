@@ -104,6 +104,20 @@ services:
       - skavenge-network
     restart: unless-stopped
 
+  admin-portal:
+    build:
+      context: ./admin-portal
+      dockerfile: Dockerfile
+    container_name: skavenge-admin-portal
+    depends_on:
+      - indexer
+      - gateway
+    ports:
+      - "3000:3000"
+    networks:
+      - skavenge-network
+    restart: unless-stopped
+
 networks:
   skavenge-network:
     driver: bridge
