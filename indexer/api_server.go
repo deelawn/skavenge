@@ -27,6 +27,9 @@ func NewAPIServer(storage Storage, logger *log.Logger, port int) *APIServer {
 
 	mux := http.NewServeMux()
 
+	// Health endpoint
+	mux.HandleFunc("/health", api.handleHealth)
+
 	// Clue endpoints
 	mux.HandleFunc("/api/clues", api.handleClues)
 	mux.HandleFunc("/api/clues/", api.handleClueByID)
@@ -58,6 +61,35 @@ func (api *APIServer) Start() error {
 func (api *APIServer) Shutdown(ctx context.Context) error {
 	api.logger.Println("Shutting down API server...")
 	return api.server.Shutdown(ctx)
+}
+
+// handleHealth handles GET /health
+// Returns 200 OK once the indexer has started syncing blocks
+func (api *APIServer) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		api.errorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// Check if the indexer has started syncing by checking if any blocks have been indexed
+	latestBlock, err := api.storage.GetLatestBlock(r.Context())
+	if err != nil || latestBlock == nil {
+		// Indexer hasn't started syncing yet
+		api.errorResponse(w, http.StatusServiceUnavailable, "indexer not yet syncing")
+		return
+	}
+
+	// Indexer has started syncing
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	response := map[string]interface{}{
+		"status":      "healthy",
+		"syncing":     true,
+		"latestBlock": latestBlock.Number,
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		api.logger.Printf("Failed to encode health response: %v", err)
+	}
 }
 
 // handleClues handles GET /api/clues (list all) and POST /api/clues (create/update)

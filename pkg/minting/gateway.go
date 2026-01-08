@@ -89,6 +89,10 @@ func (g *GatewayClient) GetPublicKey(ethereumAddress string) (*ecdsa.PublicKey, 
 	}
 
 	// Parse the public key (hex format: 0x04 + X + Y, total 65 bytes)
+	if !strings.HasPrefix(linkResp.SkavengePublicKey, "0x") {
+		linkResp.SkavengePublicKey = "0x" + linkResp.SkavengePublicKey
+	}
+
 	pubKeyBytes, err := hexutil.Decode(linkResp.SkavengePublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode public key: %w", err)

@@ -30,19 +30,20 @@ services:
     networks:
       - skavenge-network
 
-  setup:
+  deploy-contract:
     build:
       context: .
-      dockerfile: Dockerfile.setup
-    container_name: skavenge-setup
+      dockerfile: Dockerfile.deploy-contract
+    container_name: skavenge-deploy-contract
     restart: "no"
     depends_on:
       hardhat:
         condition: service_healthy
     environment:
       - HARDHAT_URL=http://hardhat:8545
+      - GATEWAY_URL=http://gateway:4591
     volumes:
-      - ./test-config.json:/app/test-config.json:ro
+      - ./deploy-config.json:/app/deploy-config.json:ro
       - ./webapp/config.json:/app/webapp/config.json
     networks:
       - skavenge-network
@@ -68,10 +69,8 @@ services:
       dockerfile: Dockerfile.gateway
     container_name: skavenge-gateway
     depends_on:
-      setup:
+      deploy-contract:
         condition: service_completed_successfully
-      hardhat:
-        condition: service_healthy
     ports:
       - "4591:4591"
     volumes:
@@ -103,6 +102,33 @@ services:
     networks:
       - skavenge-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4040/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  mint-clues:
+    build:
+      context: .
+      dockerfile: Dockerfile.mint-clues
+    container_name: skavenge-mint-clues
+    restart: "no"
+    depends_on:
+      gateway:
+        condition: service_healthy
+      indexer:
+        condition: service_healthy
+    environment:
+      - HARDHAT_URL=http://hardhat:8545
+      - GATEWAY_URL=http://gateway:4591
+      - INDEXER_URL=http://indexer:4040
+    volumes:
+      - ./mint-config.json:/app/mint-config.json:ro
+      - ./webapp/config.json:/app/webapp/config.json:ro
+    networks:
+      - skavenge-network
 
 networks:
   skavenge-network:

@@ -1,4 +1,4 @@
-# Dockerfile for running contract setup
+# Dockerfile for deploying contract
 FROM golang:1.23.5-alpine
 
 # Install git and other build dependencies
@@ -16,9 +16,8 @@ RUN go mod download
 # Copy the rest of the code
 COPY . .
 
-# Build the setup program
-RUN go build -o /app/setup ./cmd/setup
+# Build the deploy-contract program
+RUN go build -o /app/deploy-contract ./cmd/deploy-contract
 
-# Default command - run setup
-CMD ["/app/setup"]
-
+# Default command - run deploy-contract
+CMD ["/app/deploy-contract"]

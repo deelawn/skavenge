@@ -61,7 +61,7 @@ start-with-setup:
 	docker compose up -d hardhat
 	@echo "Waiting for Hardhat to be ready..."
 	@sleep 5
-	docker compose up -d webapp gateway indexer
+	docker compose up -d webapp gateway indexer mint-clues
 	@echo "Services started with contract deployment..."
 	@echo "Hardhat: http://localhost:8545"
 	@echo "Webapp: http://localhost:8080"
@@ -69,11 +69,7 @@ start-with-setup:
 	@echo "Indexer: running"
 
 .PHONY: stop
-stop: stop-services
-
-.PHONY: stop-services
-stop-services:
-	docker compose stop hardhat webapp gateway indexer
+stop: docker-down
 
 .PHONY: docker-test
 docker-test:
@@ -93,17 +89,3 @@ test-local: docker-build docker-up
 	@sleep 5
 	docker compose up --abort-on-container-exit test
 	docker compose down
-
-.PHONY: setup
-setup:
-	@echo "Running contract setup..."
-	docker compose up --abort-on-container-exit setup
-
-.PHONY: setup-local
-setup-local:
-	@echo "Running contract setup locally..."
-	@if [ ! -f test-config.json ]; then \
-		echo "Error: test-config.json not found"; \
-		exit 1; \
-	fi
-	go run ./cmd/setup

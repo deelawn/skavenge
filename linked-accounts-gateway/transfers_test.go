@@ -50,6 +50,11 @@ func (m *MockContractClient) GetTokenOwner(ctx context.Context, tokenID *big.Int
 	return owner, nil
 }
 
+func (m *MockContractClient) GetAddress() common.Address {
+	// Return a mock contract address for testing
+	return common.HexToAddress("0x0000000000000000000000000000000000000001")
+}
+
 func (m *MockContractClient) Close() {
 	// No-op for mock
 }

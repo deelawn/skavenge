@@ -51,6 +51,10 @@ function App() {
 
         if (result.exists) {
           // Verify that the server-side linkage matches the local one
+          if (!result.skavengePublicKey.startsWith('0x')) {
+            result.skavengePublicKey = '0x' + result.skavengePublicKey;
+          }
+
           if (result.skavengePublicKey === skavengerPublicKey) {
             setLinkageVerified(true);
             setScreen('dashboard');

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -12,6 +13,10 @@ import (
 // This replicates the Web3 eth.accounts.recover functionality
 func VerifySignature(message, signature, address string) (bool, error) {
 	// Decode the hex signature
+	if !strings.HasPrefix(signature, "0x") {
+		signature = "0x" + signature
+	}
+
 	sig, err := hexutil.Decode(signature)
 	if err != nil {
 		return false, fmt.Errorf("invalid signature format: %w", err)

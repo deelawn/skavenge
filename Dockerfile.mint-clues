@@ -1,0 +1,23 @@
+# Dockerfile for minting clues
+FROM golang:1.23.5-alpine
+
+# Install git and other build dependencies
+RUN apk add --no-cache git gcc musl-dev
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy the rest of the code
+COPY . .
+
+# Build the mint-clues program
+RUN go build -o /app/mint-clues ./cmd/mint-clues
+
+# Default command - run mint-clues
+CMD ["/app/mint-clues"]
