@@ -41,4 +41,4 @@ ENV DB_PATH=/data/indexer.db
 EXPOSE 4040
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
-CMD ["/app/indexer", "-config", "/app/config.json", "-db", "/data/indexer.db"]
+CMD ["/app/indexer", "-config", "/app/config.json"]
