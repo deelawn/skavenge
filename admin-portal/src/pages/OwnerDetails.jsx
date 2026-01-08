@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { IndexerAPI, GatewayAPI } from '../utils/api';
+import { formatEventMetadata } from '../utils/json';
 import { Loading } from '../components/Loading';
 import { ErrorMessage } from '../components/ErrorMessage';
 import { ClueLink } from '../components/ClueLink';
@@ -237,7 +238,7 @@ export const OwnerDetails = () => {
                         <div className="md:col-span-2">
                           <dt className="text-xs font-medium text-gray-500">Event Metadata</dt>
                           <dd className="mt-1 text-xs text-gray-900 font-mono bg-white p-2 rounded overflow-x-auto">
-                            <pre>{JSON.stringify(JSON.parse(event.metadata), null, 2)}</pre>
+                            <pre>{formatEventMetadata(event.metadata)}</pre>
                           </dd>
                         </div>
                       )}
