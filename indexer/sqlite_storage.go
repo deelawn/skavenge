@@ -116,46 +116,31 @@ func (s *SQLiteStorage) SaveEvent(ctx context.Context, event *Event) error {
 		return fmt.Errorf("failed to save event: %w", err)
 	}
 
-	// Update clue ownership based on event type
-	if event.ClueID > 0 {
-		return s.updateClueOwners(ctx, event)
-	}
-
 	return nil
 }
 
-// updateClueOwners updates the clue_owners table based on ownership change events
-func (s *SQLiteStorage) updateClueOwners(ctx context.Context, event *Event) error {
-	switch event.EventType {
-	case string(EventTypeClueMinted), string(EventTypeTransfer):
-		// Parse metadata to get owner
-		owner := event.InitiatedBy // Default to initiator
-		// For Transfer events, we'd need to parse metadata for the "to" address
-		// For now, we'll handle this in the indexer when creating events
-
-		query := `
-			INSERT OR REPLACE INTO clue_owners (
-				owner_address,
-				clue_id,
-				ownership_granted_block_number,
-				ownership_granted_transaction_index,
-				ownership_granted_event_index,
-				ownership_granted_event_type
-			)
-			VALUES (?, ?, ?, ?, ?, ?)
-		`
-		_, err := s.db.ExecContext(ctx, query,
-			owner,
-			event.ClueID,
-			event.BlockNumber,
-			event.TransactionIndex,
-			event.EventIndex,
-			event.EventType,
+// UpdateClueOwnership updates the ownership of a clue with the new owner address
+func (s *SQLiteStorage) UpdateClueOwnership(ctx context.Context, clueID uint64, newOwner string, blockNumber uint64, txIndex uint, eventIndex uint, eventType string) error {
+	query := `
+		INSERT OR REPLACE INTO clue_owners (
+			owner_address,
+			clue_id,
+			ownership_granted_block_number,
+			ownership_granted_transaction_index,
+			ownership_granted_event_index,
+			ownership_granted_event_type
 		)
-		return err
-	}
-
-	return nil
+		VALUES (?, ?, ?, ?, ?, ?)
+	`
+	_, err := s.db.ExecContext(ctx, query,
+		newOwner,
+		clueID,
+		blockNumber,
+		txIndex,
+		eventIndex,
+		eventType,
+	)
+	return err
 }
 
 // GetEventByUniqueKey retrieves an event by its unique key
