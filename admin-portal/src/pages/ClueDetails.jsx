@@ -65,7 +65,9 @@ export const ClueDetails = () => {
 
   const formatTimestamp = (timestamp) => {
     if (!timestamp) return 'N/A';
-    const date = new Date(timestamp * 1000);
+    // Convert BigInt to Number before multiplying
+    const timestampNum = typeof timestamp === 'bigint' ? Number(timestamp) : timestamp;
+    const date = new Date(timestampNum * 1000);
     return date.toLocaleString();
   };
 
