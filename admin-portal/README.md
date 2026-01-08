@@ -50,7 +50,7 @@ npm install
   "gatewayApiUrl": "http://localhost:4591",
   "contractAddress": "0x...",
   "rpcUrl": "http://localhost:8545",
-  "chainId": 31337
+  "chainId": 1337
 }
 ```
 
@@ -119,7 +119,7 @@ The application reads configuration from `/public/config.json` at runtime. In Do
   "gatewayApiUrl": "http://linked-accounts-gateway:4591",
   "contractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
   "rpcUrl": "http://hardhat-node:8545",
-  "chainId": 31337
+  "chainId": 1337
 }
 ```
 
