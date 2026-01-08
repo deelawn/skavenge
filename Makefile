@@ -89,17 +89,3 @@ test-local: docker-build docker-up
 	@sleep 5
 	docker compose up --abort-on-container-exit test
 	docker compose down
-
-.PHONY: setup
-setup:
-	@echo "Running contract setup..."
-	docker compose up --abort-on-container-exit setup
-
-.PHONY: setup-local
-setup-local:
-	@echo "Running contract setup locally..."
-	@if [ ! -f test-config.json ]; then \
-		echo "Error: test-config.json not found"; \
-		exit 1; \
-	fi
-	go run ./cmd/setup
