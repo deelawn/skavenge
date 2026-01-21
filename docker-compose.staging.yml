@@ -1,0 +1,171 @@
+version: "3.8"
+
+services:
+  hardhat:
+    build:
+      context: .
+      dockerfile: Dockerfile.hardhat
+    container_name: skavenge-hardhat-staging
+    ports:
+      - "8545:8545"
+    networks:
+      - skavenge-network
+    volumes:
+      # Persist hardhat cache data
+      - hardhat-cache:/app/cache
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8545"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: skavenge-test-staging
+    depends_on:
+      hardhat:
+        condition: service_healthy
+    environment:
+      - HARDHAT_URL=http://hardhat:8545
+    networks:
+      - skavenge-network
+
+  deploy-contract:
+    build:
+      context: .
+      dockerfile: Dockerfile.deploy-contract
+    container_name: skavenge-deploy-contract-staging
+    restart: "no"
+    depends_on:
+      hardhat:
+        condition: service_healthy
+    environment:
+      - HARDHAT_URL=http://hardhat:8545
+      - GATEWAY_URL=http://gateway:4591
+    volumes:
+      - ./deploy-config.json:/app/deploy-config.json:ro
+      - ./webapp/config.json:/app/webapp/config.json
+    networks:
+      - skavenge-network
+
+  webapp:
+    build:
+      context: ./webapp
+      dockerfile: Dockerfile
+    container_name: skavenge-webapp-staging
+    depends_on:
+      gateway:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    volumes:
+      - ./webapp/config.json:/usr/share/nginx/html/config.json:ro
+    networks:
+      - skavenge-network
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    container_name: skavenge-gateway-staging
+    depends_on:
+      deploy-contract:
+        condition: service_completed_successfully
+    ports:
+      - "4591:4591"
+    volumes:
+      - ./webapp/config.json:/app/config.json:ro
+    environment:
+      - CONFIG_FILE=/app/config.json
+    networks:
+      - skavenge-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4591/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  indexer:
+    build:
+      context: .
+      dockerfile: Dockerfile.indexer
+    container_name: skavenge-indexer-staging
+    depends_on:
+      gateway:
+        condition: service_healthy
+    ports:
+      - "4040:4040"
+    volumes:
+      - ./webapp/config.json:/app/webapp-config.json:ro
+      # Persist SQLite database on disk with named volume
+      - indexer-data:/data
+    environment:
+      # SQLite connection string with WAL mode for concurrent access
+      # cache=shared: allows multiple connections to share cache
+      # _journal_mode=WAL: enables Write-Ahead Logging for better concurrency
+      # _busy_timeout=5000: wait up to 5 seconds if database is locked
+      - DB_PATH=file:/data/indexer.db?cache=shared&_journal_mode=WAL&_busy_timeout=5000
+    networks:
+      - skavenge-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4040/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  mint-clues:
+    build:
+      context: .
+      dockerfile: Dockerfile.mint-clues
+    container_name: skavenge-mint-clues-staging
+    restart: "no"
+    depends_on:
+      gateway:
+        condition: service_healthy
+      indexer:
+        condition: service_healthy
+    environment:
+      - HARDHAT_URL=http://hardhat:8545
+      - GATEWAY_URL=http://gateway:4591
+      - INDEXER_URL=http://indexer:4040
+    volumes:
+      - ./mint-config.json:/app/mint-config.json:ro
+      - ./webapp/config.json:/app/webapp/config.json:ro
+    networks:
+      - skavenge-network
+
+  admin-portal:
+    build:
+      context: ./admin-portal
+      dockerfile: Dockerfile
+    container_name: skavenge-admin-portal-staging
+    depends_on:
+      gateway:
+        condition: service_healthy
+      indexer:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    networks:
+      - skavenge-network
+    restart: unless-stopped
+
+networks:
+  skavenge-network:
+    driver: bridge
+
+volumes:
+  # Named volume for indexer SQLite database persistence
+  indexer-data:
+    driver: local
+  # Named volume for hardhat cache data
+  hardhat-cache:
+    driver: local

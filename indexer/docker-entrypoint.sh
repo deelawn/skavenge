@@ -28,5 +28,12 @@ EOF
 echo "Indexer configuration created:"
 cat /app/config.json
 
-# Execute the indexer
-exec "$@"
+# Set default DB_PATH if not provided
+if [ -z "$DB_PATH" ]; then
+  DB_PATH="/data/indexer.db"
+fi
+
+echo "Using database: $DB_PATH"
+
+# Execute the indexer with database path
+exec /app/indexer -config /app/config.json -db "$DB_PATH"
