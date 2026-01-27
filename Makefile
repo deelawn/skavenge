@@ -111,7 +111,7 @@ start-staging: start-staging-setup
 
 .PHONY: start-staging-services
 start-staging-services:
-	docker compose -f docker-compose.staging.yml up -d hardhat gateway webapp indexer admin-portal
+	docker compose -f docker-compose.staging.yml up -d gateway webapp indexer admin-portal
 	@echo "Staging services starting..."
 	@echo "Hardhat: http://localhost:8545"
 	@echo "Gateway: http://localhost:4591"
@@ -140,8 +140,8 @@ stop-staging: docker-down-staging
 
 .PHONY: docker-down-staging
 docker-down-staging:
-	docker compose -f docker-compose.staging.yml down
+	docker compose -f docker-compose.staging.yml down gateway webapp indexer admin-portal
 
 .PHONY: docker-clean-staging
 docker-clean-staging:
-	docker compose -f docker-compose.staging.yml down -v --rmi all
+	docker compose -f docker-compose.staging.yml down -v 
