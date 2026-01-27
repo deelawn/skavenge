@@ -29,6 +29,15 @@ echo "Starting gateway with:"
 echo "  Contract Address: $CONTRACT_ADDRESS"
 echo "  RPC URL: $RPC_URL"
 
+# Build command arguments
+GATEWAY_ARGS="-contract $CONTRACT_ADDRESS -rpc $RPC_URL"
+
+# Add storage-dir if STORAGE_DIR environment variable is set
+if [ -n "$STORAGE_DIR" ]; then
+    echo "  Storage Directory: $STORAGE_DIR"
+    GATEWAY_ARGS="$GATEWAY_ARGS -storage-dir $STORAGE_DIR"
+fi
+
 # Start the gateway with the configuration
-exec ./gateway -contract "$CONTRACT_ADDRESS" -rpc "$RPC_URL"
+exec ./gateway $GATEWAY_ARGS
 

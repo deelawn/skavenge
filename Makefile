@@ -104,3 +104,44 @@ test-local: docker-build docker-up
 	@sleep 5
 	docker compose up --abort-on-container-exit test
 	docker compose down
+
+# Staging environment targets
+.PHONY: start-staging
+start-staging: start-staging-setup
+
+.PHONY: start-staging-services
+start-staging-services:
+	docker compose -f docker-compose.staging.yml up -d gateway webapp indexer admin-portal
+	@echo "Staging services starting..."
+	@echo "Hardhat: http://localhost:8545"
+	@echo "Gateway: http://localhost:4591"
+	@echo "Webapp: http://localhost:8080"
+	@echo "Indexer: http://localhost:4040"
+	@echo "Admin Portal: http://localhost:3000"
+
+.PHONY: start-staging-setup
+start-staging-setup:
+	docker compose -f docker-compose.staging.yml up -d hardhat
+	@echo "Waiting for Hardhat to be healthy..."
+	@until docker compose -f docker-compose.staging.yml ps hardhat | grep -q "healthy"; do sleep 1; done
+	@echo "Hardhat is ready. Running contract deployment..."
+	docker compose -f docker-compose.staging.yml up deploy-contract
+	@echo "Contract deployed. Starting remaining services..."
+	docker compose -f docker-compose.staging.yml up -d gateway webapp indexer mint-clues admin-portal
+	@echo "Staging environment started with contract deployment."
+	@echo "Hardhat: http://localhost:8545"
+	@echo "Gateway: http://localhost:4591"
+	@echo "Webapp: http://localhost:8080"
+	@echo "Indexer: http://localhost:4040"
+	@echo "Admin Portal: http://localhost:3000"
+
+.PHONY: stop-staging
+stop-staging: docker-down-staging
+
+.PHONY: docker-down-staging
+docker-down-staging:
+	docker compose -f docker-compose.staging.yml down gateway webapp indexer admin-portal
+
+.PHONY: docker-clean-staging
+docker-clean-staging:
+	docker compose -f docker-compose.staging.yml down -v 

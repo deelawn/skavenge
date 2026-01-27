@@ -72,15 +72,16 @@ services:
       context: .
       dockerfile: Dockerfile.gateway
     container_name: skavenge-gateway-staging
-    depends_on:
-      deploy-contract:
-        condition: service_completed_successfully
     ports:
       - "4591:4591"
     volumes:
       - ./webapp/config.json:/app/config.json:ro
+      # Persist gateway storage data on disk with named volume
+      - gateway-data:/data
     environment:
       - CONFIG_FILE=/app/config.json
+      # Enable disk storage persistence
+      - STORAGE_DIR=/data
     networks:
       - skavenge-network
     restart: unless-stopped
@@ -168,4 +169,7 @@ volumes:
     driver: local
   # Named volume for hardhat cache data
   hardhat-cache:
+    driver: local
+  # Named volume for gateway storage persistence
+  gateway-data:
     driver: local
