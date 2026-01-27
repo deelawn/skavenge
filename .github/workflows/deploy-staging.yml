@@ -1,0 +1,45 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [master, main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to staging server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          port: ${{ secrets.STAGING_SSH_PORT }}
+          script: |
+            cd ~/skavenge
+
+            # Pull latest changes
+            git fetch origin master
+            git reset --hard origin/master
+
+            # Rebuild and restart services
+            docker compose -f docker-compose.staging.yml build
+
+            # Stop existing services gracefully
+            docker compose -f docker-compose.staging.yml down --remove-orphans
+
+            # Start hardhat first
+            docker compose -f docker-compose.staging.yml up -d hardhat
+
+            # Wait for hardhat to be healthy before starting dependent services
+            echo "Waiting for Hardhat to be healthy..."
+            timeout 60 bash -c 'until docker compose -f docker-compose.staging.yml ps hardhat | grep -q "healthy"; do sleep 2; done'
+
+            # Start remaining services (will trigger deploy-contract, then others)
+            docker compose -f docker-compose.staging.yml up -d
+
+            # Clean up old images
+            docker image prune -f
+
+            echo "Deployment complete!"
