@@ -156,6 +156,17 @@ echo '    "hardhatUrl": "http://hardhat:8545"'
 echo '  }'
 echo "  EOF"
 echo ""
+echo "Create a placeholder webapp config file (will be updated by deploy-contract):"
+echo ""
+echo "  sudo -u ${DEPLOY_USER} cat > ${APP_DIR}/webapp/config.json << 'EOF'"
+echo '  {'
+echo '    "contractAddress": "0x0000000000000000000000000000000000000000",'
+echo '    "networkRpcUrl": "http://hardhat:8545",'
+echo '    "chainId": 1337,'
+echo '    "gatewayUrl": "http://gateway:4591"'
+echo '  }'
+echo "  EOF"
+echo ""
 echo "Optionally create mint-config.json for minting clues."
 echo ""
 
