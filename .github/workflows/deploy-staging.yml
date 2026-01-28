@@ -1,0 +1,38 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [master, main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to staging server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          port: ${{ secrets.STAGING_SSH_PORT }}
+          script: |
+            cd ~/skavenge
+
+            # Pull latest changes
+            git fetch origin master
+            git reset --hard origin/master
+
+            # Rebuild and restart services
+            docker compose -f docker-compose.staging.yml build gateway webapp indexer admin-portal
+
+            # Stop existing services gracefully
+            docker compose -f docker-compose.staging.yml down --remove-orphans gateway webapp indexer admin-portal
+
+            # Start services
+            docker compose -f docker-compose.staging.yml up -d gateway webapp indexer admin-portal
+
+            # Clean up old images
+            docker image prune -f
+
+            echo "Deployment complete!"
