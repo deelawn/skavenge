@@ -419,15 +419,33 @@ func main() {
 	port := flag.Int("port", 4591, "Port to listen on")
 	rpcURL := flag.String("rpc", "http://localhost:8545", "Blockchain RPC URL")
 	contractAddress := flag.String("contract", "", "Skavenge contract address")
+	storageDir := flag.String("storage-dir", "", "Directory for persistent disk storage (if empty, uses in-memory storage)")
 	flag.Parse()
 
 	if *contractAddress == "" {
 		log.Fatal("Contract address is required. Use -contract flag.")
 	}
 
-	// Initialize in-memory storage
-	store := NewInMemoryStorage()
-	transferStore := NewInMemoryTransferStorage()
+	// Initialize storage (disk or in-memory based on flag)
+	var store Storage
+	var transferStore TransferCiphertextStorage
+	var err error
+
+	if *storageDir != "" {
+		log.Printf("Using disk storage at: %s", *storageDir)
+		store, err = NewDiskStorage(*storageDir)
+		if err != nil {
+			log.Fatalf("Failed to create disk storage: %v", err)
+		}
+		transferStore, err = NewDiskTransferStorage(*storageDir)
+		if err != nil {
+			log.Fatalf("Failed to create disk transfer storage: %v", err)
+		}
+	} else {
+		log.Printf("Using in-memory storage")
+		store = NewInMemoryStorage()
+		transferStore = NewInMemoryTransferStorage()
+	}
 
 	// Initialize contract client
 	contractClient, err := NewContractClient(*rpcURL, *contractAddress)
