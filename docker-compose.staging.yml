@@ -155,6 +155,9 @@ services:
         condition: service_healthy
     ports:
       - "3000:3000"
+    volumes:
+      # Mount config file for staging environment settings
+      - ./admin-portal/public/config.json:/app/dist/config.json:ro
     networks:
       - skavenge-network
     restart: unless-stopped

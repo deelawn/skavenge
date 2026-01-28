@@ -87,11 +87,13 @@ export async function loadConfig() {
     console.error('Error loading configuration:', error);
 
     // Return default values for development (with chainId fallback)
+    // Use current browser host for URLs to work in both local and remote environments
+    const host = window.location.hostname;
     return {
       contractAddress: '0x0000000000000000000000000000000000000000',
-      networkRpcUrl: 'http://localhost:8545',
+      networkRpcUrl: `http://${host}:8545`,
       chainId: 1337,
-      gatewayUrl: 'http://localhost:4591'
+      gatewayUrl: `http://${host}:4591`
     };
   }
 }
