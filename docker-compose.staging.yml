@@ -162,6 +162,17 @@ services:
       - skavenge-network
     restart: unless-stopped
 
+  landing-page:
+    build:
+      context: ./landing-page
+      dockerfile: Dockerfile
+    container_name: skavenge-landing-page-staging
+    ports:
+      - "80:80"
+    networks:
+      - skavenge-network
+    restart: unless-stopped
+
 networks:
   skavenge-network:
     driver: bridge

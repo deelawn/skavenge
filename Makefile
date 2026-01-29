@@ -53,6 +53,16 @@ rebuild-admin-portal-no-cache:
 	docker compose build --no-cache admin-portal
 	@echo "Admin Portal image rebuilt (no cache)"
 
+.PHONY: rebuild-landing-page
+rebuild-landing-page:
+	docker compose build landing-page
+	@echo "Landing Page image rebuilt"
+
+.PHONY: rebuild-landing-page-no-cache
+rebuild-landing-page-no-cache:
+	docker compose build --no-cache landing-page
+	@echo "Landing Page image rebuilt (no cache)"
+
 .PHONY: docker-up
 docker-up:
 	docker compose up -d hardhat
@@ -62,26 +72,28 @@ start: start-with-setup
 
 .PHONY: start-services
 start-services:
-	docker compose up -d hardhat webapp gateway indexer admin-portal
+	docker compose up -d hardhat webapp gateway indexer admin-portal landing-page
 	@echo "Services starting..."
 	@echo "Hardhat: http://localhost:8545"
 	@echo "Webapp: http://localhost:8080"
 	@echo "Gateway: http://localhost:4591"
 	@echo "Indexer: running"
 	@echo "Admin Portal: http://localhost:3000"
+	@echo "Landing Page: http://localhost:80"
 
 .PHONY: start-with-setup
 start-with-setup:
 	docker compose up -d hardhat
 	@echo "Waiting for Hardhat to be ready..."
 	@sleep 5
-	docker compose up -d webapp gateway indexer mint-clues admin-portal
+	docker compose up -d webapp gateway indexer mint-clues admin-portal landing-page
 	@echo "Services started with contract deployment..."
 	@echo "Hardhat: http://localhost:8545"
 	@echo "Webapp: http://localhost:8080"
 	@echo "Gateway: http://localhost:4591"
 	@echo "Indexer: running"
 	@echo "Admin Portal: http://localhost:3000"
+	@echo "Landing Page: http://localhost:80"
 
 .PHONY: stop
 stop: docker-down
@@ -111,13 +123,14 @@ start-staging: start-staging-setup
 
 .PHONY: start-staging-services
 start-staging-services:
-	docker compose -f docker-compose.staging.yml up -d gateway webapp indexer admin-portal
+	docker compose -f docker-compose.staging.yml up -d gateway webapp indexer admin-portal landing-page
 	@echo "Staging services starting..."
 	@echo "Hardhat: http://localhost:8545"
 	@echo "Gateway: http://localhost:4591"
 	@echo "Webapp: http://localhost:8080"
 	@echo "Indexer: http://localhost:4040"
 	@echo "Admin Portal: http://localhost:3000"
+	@echo "Landing Page: http://localhost:80"
 
 .PHONY: start-staging-setup
 start-staging-setup:
@@ -127,20 +140,21 @@ start-staging-setup:
 	@echo "Hardhat is ready. Running contract deployment..."
 	docker compose -f docker-compose.staging.yml up deploy-contract
 	@echo "Contract deployed. Starting remaining services..."
-	docker compose -f docker-compose.staging.yml up -d gateway webapp indexer mint-clues admin-portal
+	docker compose -f docker-compose.staging.yml up -d gateway webapp indexer mint-clues admin-portal landing-page
 	@echo "Staging environment started with contract deployment."
 	@echo "Hardhat: http://localhost:8545"
 	@echo "Gateway: http://localhost:4591"
 	@echo "Webapp: http://localhost:8080"
 	@echo "Indexer: http://localhost:4040"
 	@echo "Admin Portal: http://localhost:3000"
+	@echo "Landing Page: http://localhost:80"
 
 .PHONY: stop-staging
 stop-staging: docker-down-staging
 
 .PHONY: docker-down-staging
 docker-down-staging:
-	docker compose -f docker-compose.staging.yml down gateway webapp indexer admin-portal
+	docker compose -f docker-compose.staging.yml down gateway webapp indexer admin-portal landing-page
 
 .PHONY: docker-clean-staging
 docker-clean-staging:

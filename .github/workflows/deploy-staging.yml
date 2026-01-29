@@ -24,13 +24,13 @@ jobs:
             git reset --hard origin/master
 
             # Rebuild and restart services
-            docker compose -f docker-compose.staging.yml build gateway webapp indexer admin-portal
+            docker compose -f docker-compose.staging.yml build gateway webapp indexer admin-portal landing-page
 
             # Stop existing services gracefully
-            docker compose -f docker-compose.staging.yml down --remove-orphans gateway webapp indexer admin-portal
+            docker compose -f docker-compose.staging.yml down --remove-orphans gateway webapp indexer admin-portal landing-page
 
             # Start services
-            docker compose -f docker-compose.staging.yml up -d gateway webapp indexer admin-portal
+            docker compose -f docker-compose.staging.yml up -d gateway webapp indexer admin-portal landing-page
 
             # Clean up old images
             docker image prune -f
