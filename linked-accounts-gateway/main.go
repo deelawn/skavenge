@@ -125,17 +125,39 @@ func (s *Server) handlePostLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Normalize the ethereum address to lowercase for consistent storage
+	// Normalize the ethereum address to lowercase hex with 0x prefix
 	normalizedAddress := strings.ToLower(req.EthereumAddress)
+	if !strings.HasPrefix(normalizedAddress, "0x") {
+		normalizedAddress = "0x" + normalizedAddress
+	}
 
-	// Check if the address is already linked (immutability check)
-	if _, err := s.storage.Get(normalizedAddress); err == nil {
+	// Normalize the skavenge public key to lowercase hex with 0x prefix
+	normalizedPublicKey := strings.ToLower(req.SkavengePublicKey)
+	if !strings.HasPrefix(normalizedPublicKey, "0x") {
+		normalizedPublicKey = "0x" + normalizedPublicKey
+	}
+
+	// Check if the address is already linked
+	existingPublicKey, err := s.storage.Get(normalizedAddress)
+	if err == nil {
+		// Address is already linked - check if it's the same public key
+		if existingPublicKey == normalizedPublicKey {
+			// Same linkage already exists, return success
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(LinkResponse{
+				Success: true,
+				Message: "linkage already exists",
+			})
+			return
+		}
+		// Different public key - immutability violation
 		writeErrorResponse(w, http.StatusConflict, "ethereum address already linked (keys are immutable)")
 		return
 	}
 
-	// Store the linkage
-	s.storage.Set(normalizedAddress, req.SkavengePublicKey)
+	// Store the linkage with normalized values
+	s.storage.Set(normalizedAddress, normalizedPublicKey)
 
 	// Success response
 	w.Header().Set("Content-Type", "application/json")
@@ -155,8 +177,11 @@ func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Normalize the ethereum address to lowercase
+	// Normalize the ethereum address to lowercase hex with 0x prefix
 	normalizedAddress := strings.ToLower(ethereumAddress)
+	if !strings.HasPrefix(normalizedAddress, "0x") {
+		normalizedAddress = "0x" + normalizedAddress
+	}
 
 	// Retrieve the linkage
 	skavengePublicKey, err := s.storage.Get(normalizedAddress)
