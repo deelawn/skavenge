@@ -6,35 +6,58 @@ import { loadConfig } from './config.js';
 import { sendToExtension } from './extensionUtils.js';
 
 /**
+ * Get the browser-accessible host.
+ * Returns the current browser hostname, which works for both
+ * local development (localhost) and remote deployments.
+ *
+ * @returns {string} The browser-accessible hostname
+ */
+function getBrowserHost() {
+  return window.location.hostname;
+}
+
+/**
  * Convert RPC URL for browser access
- * Replaces Docker internal hostnames with localhost
+ * Replaces Docker internal hostnames with the current browser host.
+ * This allows the same config to work in both local development
+ * and remote deployments.
  *
  * @param {string} rpcUrl - The RPC URL from config
  * @returns {string} Browser-accessible RPC URL
  */
 export function getBrowserRpcUrl(rpcUrl) {
+  const host = getBrowserHost();
+
   if (!rpcUrl) {
-    return 'http://localhost:8545';
+    return `http://${host}:8545`;
   }
 
-  // Replace hardhat (Docker service name) with localhost for browser access
-  return rpcUrl.replace(/http:\/\/hardhat:/, 'http://localhost:');
+  // Replace hardhat (Docker service name) or localhost with current browser host
+  return rpcUrl
+    .replace(/http:\/\/hardhat:/, `http://${host}:`)
+    .replace(/http:\/\/localhost:/, `http://${host}:`);
 }
 
 /**
  * Convert Gateway URL for browser access
- * Replaces Docker internal hostnames with localhost
+ * Replaces Docker internal hostnames with the current browser host.
+ * This allows the same config to work in both local development
+ * and remote deployments.
  *
  * @param {string} gatewayUrl - The Gateway URL from config
  * @returns {string} Browser-accessible Gateway URL
  */
 export function getBrowserGatewayUrl(gatewayUrl) {
+  const host = getBrowserHost();
+
   if (!gatewayUrl) {
-    return 'http://localhost:4591';
+    return `http://${host}:4591`;
   }
 
-  // Replace gateway (Docker service name) with localhost for browser access
-  return gatewayUrl.replace(/http:\/\/gateway:/, 'http://localhost:');
+  // Replace gateway (Docker service name) or localhost with current browser host
+  return gatewayUrl
+    .replace(/http:\/\/gateway:/, `http://${host}:`)
+    .replace(/http:\/\/localhost:/, `http://${host}:`);
 }
 
 /**
